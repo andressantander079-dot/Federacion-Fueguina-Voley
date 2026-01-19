@@ -38,13 +38,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Escuchar cambios en la sesión
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
+      console.log(session);
       if (session?.user) {
         setUser(session.user);
         await fetchUserRole(session.user.id);
       } else {
         setUser(null);
         setRole(null);
-        router.push('/');
+        router.push('/login');
       }
       setLoading(false);
     });
