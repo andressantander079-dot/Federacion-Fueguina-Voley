@@ -3,12 +3,16 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
+// CORRECCIÓN 1: Ajuste de ruta (4 niveles hacia arriba)
 import { supabase } from '../../../../lib/supabase';
 import { 
   Trophy, Eye, EyeOff, Plus, Trash2, Edit3, 
-  ArrowLeft, AlertTriangle, Clock, MapPin, Calendar 
+  ArrowLeft, AlertTriangle, Clock, MapPin, Calendar, FileText 
 } from 'lucide-react';
 import Link from 'next/link';
+
+// CORRECCIÓN 1: Ajuste de ruta también para el componente
+import MatchSheetsTable from '../../../../components/admin/MatchSheetsTable';
 
 export default function DetalleTorneoPage() {
   const params = useParams();
@@ -60,17 +64,18 @@ export default function DetalleTorneoPage() {
         
         let listaEquipos: any[] = [];
         if (equiposRel) {
+            // CORRECCIÓN 2: Tipado explícito (item: any, a: any, b: any)
             listaEquipos = equiposRel.map((item: any) => item.team).sort((a:any, b:any) => a.name.localeCompare(b.name));
             setEquiposInscriptos(listaEquipos);
         }
 
         if (mData) {
-            setPartidosPendientes(mData.filter(m => m.status === 'borrador'));
-            setPartidosOficiales(mData.filter(m => m.status !== 'borrador'));
-            if (tData) calcularTabla(mData.filter(m => m.status !== 'borrador'), tData.point_system, listaEquipos);
+            setPartidosPendientes(mData.filter((m: any) => m.status === 'borrador'));
+            setPartidosOficiales(mData.filter((m: any) => m.status !== 'borrador'));
+            if (tData) calcularTabla(mData.filter((m: any) => m.status !== 'borrador'), tData.point_system, listaEquipos);
         }
 
-    } catch (error) {
+    } catch (error: any) { // CORRECCIÓN 3: Tipado del error
         console.error("Error cargando datos:", error);
     } finally {
         setLoading(false);
@@ -79,16 +84,16 @@ export default function DetalleTorneoPage() {
 
   function calcularTabla(matches: any[], sistemaPuntos: string, equiposParticipantes: any[]) {
      const stats: any = {};
-     equiposParticipantes.forEach(eq => {
+     equiposParticipantes.forEach((eq: any) => {
          stats[eq.id] = { id: eq.id, name: eq.name, pts: 0, pg: 0, pp: 0, setsW: 0, setsL: 0, pW: 0, pL: 0 };
      });
 
-     matches.forEach(m => {
+     matches.forEach((m: any) => {
         if (!stats[m.home_team_id]) stats[m.home_team_id] = { id: m.home_team_id, name: m.home_team?.name, pts: 0, pg: 0, pp: 0, setsW: 0, setsL: 0, pW: 0, pL: 0 };
         if (!stats[m.away_team_id]) stats[m.away_team_id] = { id: m.away_team_id, name: m.away_team?.name, pts: 0, pg: 0, pp: 0, setsW: 0, setsL: 0, pW: 0, pL: 0 };
      });
 
-     matches.filter(m => m.status === 'finalizado').forEach(m => {
+     matches.filter((m: any) => m.status === 'finalizado').forEach((m: any) => {
         let swHome = 0, swAway = 0, pwHome = 0, pwAway = 0; 
         if (m.set_scores) {
            m.set_scores.forEach((s: string) => {
@@ -101,31 +106,42 @@ export default function DetalleTorneoPage() {
         }
         const ganadorLocal = swHome > swAway;
         
-        stats[m.home_team_id].pg += ganadorLocal ? 1 : 0;
-        stats[m.home_team_id].pp += ganadorLocal ? 0 : 1;
-        stats[m.home_team_id].setsW += swHome;
-        stats[m.home_team_id].setsL += swAway;
-        stats[m.home_team_id].pW += pwHome;
-        stats[m.home_team_id].pL += pwAway;
+        // Evitar error si el equipo fue borrado pero el partido existe
+        if (stats[m.home_team_id]) {
+            stats[m.home_team_id].pg += ganadorLocal ? 1 : 0;
+            stats[m.home_team_id].pp += ganadorLocal ? 0 : 1;
+            stats[m.home_team_id].setsW += swHome;
+            stats[m.home_team_id].setsL += swAway;
+            stats[m.home_team_id].pW += pwHome;
+            stats[m.home_team_id].pL += pwAway;
+        }
 
-        stats[m.away_team_id].pg += ganadorLocal ? 0 : 1;
-        stats[m.away_team_id].pp += ganadorLocal ? 1 : 0;
-        stats[m.away_team_id].setsW += swAway;
-        stats[m.away_team_id].setsL += swHome;
-        stats[m.away_team_id].pW += pwAway;
-        stats[m.away_team_id].pL += pwHome;
+        if (stats[m.away_team_id]) {
+            stats[m.away_team_id].pg += ganadorLocal ? 0 : 1;
+            stats[m.away_team_id].pp += ganadorLocal ? 1 : 0;
+            stats[m.away_team_id].setsW += swAway;
+            stats[m.away_team_id].setsL += swHome;
+            stats[m.away_team_id].pW += pwAway;
+            stats[m.away_team_id].pL += pwHome;
+        }
 
         if (sistemaPuntos === 'fivb') {
            if (ganadorLocal) {
-              if (swAway <= 1) stats[m.home_team_id].pts += 3;
-              else { stats[m.home_team_id].pts += 2; stats[m.away_team_id].pts += 1; }
+              if (swAway <= 1 && stats[m.home_team_id]) stats[m.home_team_id].pts += 3;
+              else { 
+                  if(stats[m.home_team_id]) stats[m.home_team_id].pts += 2; 
+                  if(stats[m.away_team_id]) stats[m.away_team_id].pts += 1; 
+              }
            } else {
-              if (swHome <= 1) stats[m.away_team_id].pts += 3;
-              else { stats[m.away_team_id].pts += 2; stats[m.home_team_id].pts += 1; }
+              if (swHome <= 1 && stats[m.away_team_id]) stats[m.away_team_id].pts += 3;
+              else { 
+                  if(stats[m.away_team_id]) stats[m.away_team_id].pts += 2; 
+                  if(stats[m.home_team_id]) stats[m.home_team_id].pts += 1; 
+              }
            }
         } else {
-           stats[m.home_team_id].pts += ganadorLocal ? 2 : 1;
-           stats[m.away_team_id].pts += ganadorLocal ? 1 : 2;
+           if(stats[m.home_team_id]) stats[m.home_team_id].pts += ganadorLocal ? 2 : 1;
+           if(stats[m.away_team_id]) stats[m.away_team_id].pts += ganadorLocal ? 1 : 2;
         }
      });
      setTablaPosiciones(Object.values(stats).sort((a: any, b: any) => b.pts - a.pts));
@@ -133,12 +149,10 @@ export default function DetalleTorneoPage() {
 
   // --- VALIDACIÓN DE CONFLICTOS BLINDADA ---
   async function validarCruce(homeId: string, awayId: string, round: string, fechaHora: string) {
-    // 1. Validaciones básicas para no romper la app si faltan datos
     if (!homeId || !awayId || !round || !fechaHora) return null; 
     if (homeId === awayId) return "¡Un equipo no puede jugar contra sí mismo!";
 
     try {
-        // 2. Validar misma JORNADA/FECHA
         const { data: conflictosRound, error: errorRound } = await supabase
             .from('matches')
             .select('id')
@@ -146,59 +160,34 @@ export default function DetalleTorneoPage() {
             .eq('round', round)
             .or(`home_team_id.eq.${homeId},away_team_id.eq.${homeId},home_team_id.eq.${awayId},away_team_id.eq.${awayId}`);
 
-        if (errorRound) {
-            console.error("Error BD Round:", errorRound);
-            return null; // Si falla la BD, permitimos continuar para no bloquear
-        }
+        if (errorRound) { console.error("Error BD Round:", errorRound); return null; }
+        if (conflictosRound && conflictosRound.length > 0) return `⚠️ ERROR: Uno de los equipos ya tiene partido programado en la ${round}.`;
 
-        if (conflictosRound && conflictosRound.length > 0) {
-            return `⚠️ ERROR: Uno de los equipos ya tiene partido programado en la ${round}.`;
-        }
-
-        // 3. Validar misma HORA EXACTA
         const isoDate = new Date(fechaHora).toISOString();
-        
         const { data: conflictosHora, error: errorHora } = await supabase
             .from('matches')
             .select('id')
             .eq('scheduled_time', isoDate) 
             .or(`home_team_id.eq.${homeId},away_team_id.eq.${homeId},home_team_id.eq.${awayId},away_team_id.eq.${awayId}`);
 
-        if (errorHora) {
-            console.error("Error BD Hora:", errorHora);
-            return null;
-        }
-
-        if (conflictosHora && conflictosHora.length > 0) {
-            return "⚠️ ERROR: Conflicto de horario. Uno de los equipos ya juega a esa hora exacta.";
-        }
+        if (errorHora) { console.error("Error BD Hora:", errorHora); return null; }
+        if (conflictosHora && conflictosHora.length > 0) return "⚠️ ERROR: Conflicto de horario. Uno de los equipos ya juega a esa hora exacta.";
 
     } catch (err) {
         console.error("Error en validación:", err);
         return null;
     }
-
     return null; 
   }
 
   async function agregarPartido(e: React.FormEvent) {
      e.preventDefault();
-     // Validaciones básicas antes de enviar
      if (!nuevoPartido.round) return alert("Debes indicar la fecha/jornada (Ej: Fecha 1)");
      if (!nuevoPartido.home_team_id || !nuevoPartido.away_team_id) return alert("Selecciona ambos equipos");
      if (!nuevoPartido.scheduled_time) return alert("Falta la fecha y hora");
 
-     const errorValidacion = await validarCruce(
-        nuevoPartido.home_team_id, 
-        nuevoPartido.away_team_id, 
-        nuevoPartido.round, 
-        nuevoPartido.scheduled_time
-     );
-
-     if (errorValidacion) {
-        alert(errorValidacion); 
-        return; 
-     }
+     const errorValidacion = await validarCruce(nuevoPartido.home_team_id, nuevoPartido.away_team_id, nuevoPartido.round, nuevoPartido.scheduled_time);
+     if (errorValidacion) { alert(errorValidacion); return; }
 
      const { error } = await supabase.from('matches').insert([{ 
         ...nuevoPartido, 
@@ -216,18 +205,15 @@ export default function DetalleTorneoPage() {
      }
   }
 
-  // --- FUNCIÓN ELIMINAR CORREGIDA ---
   async function eliminarPartido(e: React.MouseEvent, matchId: string) {
-      e.preventDefault();
-      e.stopPropagation(); // CLAVE: Evita que el click abra el partido
-      
+      e.preventDefault(); e.stopPropagation();
       if(!confirm("🗑️ ¿Estás seguro de eliminar este partido definitivamente?")) return;
       
       const { error } = await supabase.from('matches').delete().eq('id', matchId);
       
       if(!error) {
-          setPartidosPendientes(current => current.filter(p => p.id !== matchId));
-          setPartidosOficiales(current => current.filter(p => p.id !== matchId));
+          setPartidosPendientes(current => current.filter((p: any) => p.id !== matchId));
+          setPartidosOficiales(current => current.filter((p: any) => p.id !== matchId));
       } else {
           alert("❌ Error al eliminar: " + error.message);
       }
@@ -251,11 +237,11 @@ export default function DetalleTorneoPage() {
            </div>
         </div>
 
-        {/* TABS */}
+        {/* TABS (CON 'PLANILLAS' AGREGADO) */}
         <div className="flex gap-4 border-b border-slate-200 mb-8 overflow-x-auto">
-           {['fixture', 'tabla', 'playoffs'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-3 px-2 font-bold capitalize transition border-b-2 ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-                 {tab === 'tabla' ? 'Posiciones' : tab}
+           {['fixture', 'tabla', 'playoffs', 'planillas'].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-3 px-2 font-bold capitalize transition border-b-2 flex items-center gap-2 ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                 {tab === 'tabla' ? 'Posiciones' : tab === 'planillas' ? <><FileText size={16}/> Planillas</> : tab}
               </button>
            ))}
         </div>
@@ -283,7 +269,7 @@ export default function DetalleTorneoPage() {
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                       {tablaPosiciones.map((fila, i) => (
+                       {tablaPosiciones.map((fila: any, i: number) => (
                           <tr key={fila.id} className="hover:bg-slate-50 transition">
                              <td className={`p-4 text-center font-bold ${i < 4 ? 'text-indigo-600' : 'text-slate-400'}`}>{i + 1}</td>
                              <td className="p-4 font-bold text-slate-800">{fila.name}</td>
@@ -318,7 +304,7 @@ export default function DetalleTorneoPage() {
                         <AlertTriangle size={18}/> Pendientes de Confirmación
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {partidosPendientes.map(p => (
+                        {partidosPendientes.map((p: any) => (
                             <div key={p.id} className="bg-white p-4 rounded-xl border border-orange-100 shadow-sm flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
@@ -343,7 +329,7 @@ export default function DetalleTorneoPage() {
               <div>
                  {partidosOficiales.length > 0 && <h3 className="text-sm font-bold text-slate-400 uppercase mb-3">Agenda Oficial</h3>}
                  <div className="space-y-3">
-                    {partidosOficiales.map(p => (
+                    {partidosOficiales.map((p: any) => (
                        <div key={p.id} className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4 hover:border-indigo-300 transition group">
                           
                           <div className="flex items-center gap-4 w-full md:w-auto justify-center">
@@ -369,7 +355,6 @@ export default function DetalleTorneoPage() {
                           </div>
 
                           <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-                             {/* BOTÓN ELIMINAR CORREGIDO CON (e) */}
                              <button onClick={(e) => eliminarPartido(e, p.id)} className="p-2 text-slate-300 hover:text-red-500 transition" title="Eliminar"><Trash2 size={16}/></button>
                              <Link href={`/admin/partido/${p.id}`} className="p-2 bg-slate-50 text-indigo-600 rounded hover:bg-indigo-50"><Edit3 size={16}/></Link>
                           </div>
@@ -389,6 +374,19 @@ export default function DetalleTorneoPage() {
               <p className="text-slate-400">Próximamente.</p>
            </div>
         )}
+
+        {/* === PLANILLAS (INTEGRACIÓN NUEVA) === */}
+        {activeTab === 'planillas' && (
+            <div className="animate-in fade-in">
+                <div className="mb-6">
+                    <h2 className="text-lg font-black text-slate-800">Control de Planillas</h2>
+                    <p className="text-sm text-slate-500">Visualiza y descarga las planillas oficiales enviadas.</p>
+                </div>
+                {/* COMPONENTE DE PLANILLAS */}
+                <MatchSheetsTable />
+            </div>
+        )}
+
       </div>
 
       {/* MODAL: NUEVO PARTIDO */}
@@ -397,34 +395,26 @@ export default function DetalleTorneoPage() {
             <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
                <h3 className="text-xl font-bold mb-4">Programar Encuentro</h3>
                <form onSubmit={agregarPartido} className="space-y-4">
-                  {/* INPUT JORNADA */}
                   <div>
                       <label className="text-xs font-bold text-slate-500 block mb-1">Jornada / Fecha</label>
                       <div className="relative">
                         <Calendar size={16} className="absolute left-3 top-3 text-slate-400"/>
-                        <input 
-                            className="w-full border p-2 pl-9 rounded font-bold" 
-                            placeholder="Ej: Fecha 1" 
-                            value={nuevoPartido.round} 
-                            onChange={e => setNuevoPartido({...nuevoPartido, round: e.target.value})} 
-                            required
-                        />
+                        <input className="w-full border p-2 pl-9 rounded font-bold" placeholder="Ej: Fecha 1" value={nuevoPartido.round} onChange={e => setNuevoPartido({...nuevoPartido, round: e.target.value})} required />
                       </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
                      <div>
                         <label className="text-xs font-bold text-slate-500 block mb-1">Local</label>
                         <select className="w-full border p-2 rounded" required onChange={e => setNuevoPartido({...nuevoPartido, home_team_id: e.target.value})} value={nuevoPartido.home_team_id}>
                            <option value="">Seleccionar...</option>
-                           {equiposInscriptos.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                           {equiposInscriptos.map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
                         </select>
                      </div>
                      <div>
                         <label className="text-xs font-bold text-slate-500 block mb-1">Visita</label>
                         <select className="w-full border p-2 rounded" required onChange={e => setNuevoPartido({...nuevoPartido, away_team_id: e.target.value})} value={nuevoPartido.away_team_id}>
                            <option value="">Seleccionar...</option>
-                           {equiposInscriptos.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                           {equiposInscriptos.map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
                         </select>
                      </div>
                   </div>

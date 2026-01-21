@@ -1,59 +1,43 @@
 // src/components/Navbar.tsx
 'use client';
+import Link from 'next/link';
+import { User } from 'lucide-react';
 
-import { useState } from 'react';
-import Link from 'next/link'; // <--- IMPORTANTE: Importamos Link
-import { Bell, Lock } from 'lucide-react';
-import LoginModal from './LoginModal';
-
-export default function Navbar() {
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-
+export default function Navbar({ onLoginClick }: { onLoginClick: () => void }) {
   return (
-    <>
-      <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-700 rounded-lg flex items-center justify-center text-white font-bold shadow-md">
-              F
+    <nav className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 h-20 flex justify-between items-center">
+        
+        {/* LOGO */}
+        <Link href="/" className="flex items-center gap-3 group shrink-0">
+            <div className="w-10 h-10 bg-blue-700 text-white rounded-full flex items-center justify-center font-black text-sm shadow-md group-hover:scale-105 transition">
+                FVU
             </div>
-            <div className="leading-tight hidden sm:block">
-              <h1 className="font-bold text-slate-900 tracking-tight">FEDERACIÓN OFICIAL</h1>
-              <p className="text-xs text-blue-700 font-semibold tracking-widest">DE VOLEY USHUAIA</p>
+            <div className="flex flex-col leading-none">
+                <span className="font-bold text-slate-900 text-sm md:text-base uppercase tracking-tight">Federación de Voley</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ushuaia</span>
             </div>
-            <div className="leading-tight sm:hidden">
-              <h1 className="font-bold text-slate-900 text-sm">Fed. Voley Ushuaia</h1>
-            </div>
-          </Link>
+        </Link>
 
-          {/* Menú Desktop - AHORA CON LINKS REALES */}
-          <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-600">
-            <Link href="/" className="hover:text-blue-700 transition">Inicio</Link>
-            <Link href="/fixture" className="hover:text-blue-700 transition">Fixture</Link>
-            <Link href="/posiciones" className="hover:text-blue-700 transition">Posiciones</Link>
-            <Link href="/reglamento" className="hover:text-blue-700 transition">Reglamento</Link>
-          </nav>
-
-          {/* Iconos Derecha */}
-          <div className="flex items-center gap-3">
-            <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition relative">
-              <Bell className="w-5 h-5" />
-            </button>
-            <div className="h-6 w-px bg-slate-200 mx-1"></div>
-            <button 
-              onClick={() => setIsLoginOpen(true)}
-              className="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full transition group"
-            >
-              <Lock className="w-4 h-4 text-slate-400 group-hover:text-blue-600" />
-              <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900">Acceso</span>
-            </button>
-          </div>
+        {/* MENÚ CENTRAL - CAMBIO AQUÍ: 'hidden md:flex' para que se vea antes */}
+        <div className="hidden md:flex items-center gap-4 lg:gap-6 text-[10px] lg:text-[11px] font-black text-slate-500 uppercase tracking-wide">
+            <Link href="/" className="hover:text-blue-700 transition py-2">INICIO</Link>
+            <Link href="/noticias" className="hover:text-blue-700 transition py-2">NOTICIAS</Link>
+            <Link href="/fixture" className="hover:text-blue-700 transition py-2">FIXTURE</Link>
+            <Link href="/posiciones" className="hover:text-blue-700 transition py-2">POSICIONES</Link>
+            <Link href="/reglamento" className="hover:text-blue-700 transition py-2">REGLAMENTO</Link>
+            <Link href="/descargas" className="hover:text-blue-700 transition py-2">DESCARGAS</Link>
         </div>
-      </header>
 
-      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
-    </>
+        {/* BOTÓN ACCESO */}
+        <button 
+          onClick={onLoginClick}
+          className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-900/10"
+        >
+           <User size={14}/>
+           <span>Acceso Oficial</span>
+        </button>
+      </div>
+    </nav>
   );
 }

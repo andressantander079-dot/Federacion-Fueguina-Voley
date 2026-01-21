@@ -2,8 +2,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { useVolleyMatch } from '../../../../hooks/useVolleyMatch';
 import { supabase } from '../../../../lib/supabase';
+import LogoutButton from '../../../../components/LogoutButton'; // Asegúrate que la ruta sea correcta
 import { 
   RefreshCw, Trophy, X, Check, Search, Plus,
   Download, User, Calendar, Clock, ArrowRightLeft, Volleyball,
@@ -11,6 +13,10 @@ import {
 } from 'lucide-react';
 
 export default function PartidoPlanillaPage() {
+  const router = useRouter();
+  const params = useParams();
+  const matchId = params.id;
+
   const { 
     sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
     servingTeam, setServingTeam, addPoint, subtractPoint, 
@@ -54,7 +60,7 @@ export default function PartidoPlanillaPage() {
       setReferees(data || []);
   }
 
-  // --- LÓGICA BUSCADOR ---
+  // --- LÓGICA BUSCADOR (Simulada para demo) ---
   const openAddPlayerModal = (team: 'home'|'away') => {
       setTargetTeamForAdd(team); setSearchTerm(''); setSearchResults([]); setModalAddPlayerOpen(true);
   };
@@ -113,6 +119,56 @@ export default function PartidoPlanillaPage() {
       ctx.lineTo(x,y); ctx.stroke();
   };
 
+  // --- ENVÍO A BASE DE DATOS ---
+  const submitMatchSheet = async () => {
+    try {
+      if (!matchId) {
+        alert("Modo Prueba: No hay ID de partido en la URL. (En producción esto guardaría en DB)");
+        // En producción descomentar return;
+      }
+
+      const finalSheetData = {
+         submittedAt: new Date().toISOString(),
+         sets_history: sets,
+         final_score: { 
+            home: sets[currentSetIdx].home,
+            away: sets[currentSetIdx].away  
+         },
+         roster_home: [...posHome, ...benchHome].map(p => ({ number: p.number, name: p.name })),
+         roster_away: [...posAway, ...benchAway].map(p => ({ number: p.number, name: p.name })),
+         staff: staff,
+         signatures: signatures,
+         observations: observations,
+         metadata: {
+            category: 'Mayores',
+            gender: 'Masculino',
+            competition: 'Apertura 2026'
+         }
+      };
+
+      // Si tenemos ID, guardamos en Supabase
+      if (matchId) {
+          const { error } = await supabase
+            .from('matches')
+            .update({ 
+                sheet_data: finalSheetData,
+                sheet_status: 'submitted',
+                status: 'finalizado'
+            })
+            .eq('id', matchId);
+          
+          if (error) throw error;
+      }
+
+      alert("¡Planilla enviada correctamente a la Federación!");
+      router.push('/planillero');
+
+    } catch (error: any) {
+      console.error("Error:", error);
+      alert("Error al guardar: " + error.message);
+    }
+  };
+
   // --- COMPONENTE CAMISETA ---
   const Jersey = ({ player, team, isPos1 }: { player: any, team: 'home'|'away', isPos1?: boolean }) => {
       if (!player) return <div className="w-14 h-14 bg-slate-100 rounded-full animate-pulse"/>;
@@ -133,22 +189,29 @@ export default function PartidoPlanillaPage() {
   };
 
   const activeBench = selectedPlayer?.team === 'home' ? benchHome : benchAway;
-  
-  // Listas Completas para el PDF
   const fullRosterHome = [...posHome, ...benchHome].sort((a,b) => a.number - b.number);
   const fullRosterAway = [...posAway, ...benchAway].sort((a,b) => a.number - b.number);
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
       
-      {/* HEADER APP */}
+      {/* HEADER APP (Con Logout) */}
       <header className={`bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-20 ${closingStep === 4 ? 'hidden' : ''}`}>
-          <div className="flex gap-4">
+          <div className="flex gap-4 items-center">
               <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Calendar size={14}/> HOY</div>
               <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Clock size={14}/> 20:00</div>
               <div className="flex items-center gap-2 text-blue-600 text-xs font-black uppercase bg-blue-50 px-3 py-1 rounded-full"><Trophy size={14}/> Fase Regular</div>
           </div>
-          <div className="flex items-center gap-2"><span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span><span className="text-xs font-bold text-green-700">EN VIVO</span></div>
+          
+          <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  <span className="text-xs font-bold text-green-700">EN VIVO</span>
+              </div>
+              <div className="border-l border-slate-200 pl-4">
+                  <LogoutButton />
+              </div>
+          </div>
       </header>
 
       {/* ÁREA DE JUEGO */}
@@ -360,7 +423,7 @@ export default function PartidoPlanillaPage() {
                               </div>
                           </div>
 
-                          {/* DATOS ENCUENTRO (MODIFICADO - 7 Campos) */}
+                          {/* DATOS ENCUENTRO (7 CAMPOS COMPLETO) */}
                           <div className="grid grid-cols-4 gap-4 mb-8 text-xs uppercase bg-slate-50 p-4 border border-slate-200 rounded-lg">
                               <div><strong className="block text-slate-400 mb-1">Fecha</strong> {new Date().toLocaleDateString()}</div>
                               <div><strong className="block text-slate-400 mb-1">Hora</strong> 20:00</div>
@@ -403,13 +466,14 @@ export default function PartidoPlanillaPage() {
                                           <td className="py-2 font-bold">{s.number}</td>
                                           <td>{s.home}</td>
                                           <td>{s.away}</td>
+                                          {/* ESTADO LIMPIO: Si no terminó, no muestra nada */}
                                           <td className="text-xs font-bold uppercase text-slate-500">{s.finished ? 'Finalizado' : ''}</td>
                                       </tr>
                                   ))}
                               </tbody>
                           </table>
 
-                          {/* LISTAS DE JUGADORES (TITULARES + SUPLENTES) */}
+                          {/* LISTAS DE JUGADORES */}
                           <div className="grid grid-cols-2 gap-8 mb-8 flex-1">
                               {/* Local Roster */}
                               <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -477,7 +541,7 @@ export default function PartidoPlanillaPage() {
                       {/* BOTONES ACCIÓN FLOTANTES */}
                       <div className="fixed bottom-8 right-8 flex gap-4 z-50 print:hidden">
                           <button onClick={()=>window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-black transition"><Download size={16}/> Imprimir</button>
-                          <button onClick={()=>{alert("Enviado a Federación"); setClosingFlow(false);}} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-green-700 transition"><Check size={16}/> Finalizar y Enviar</button>
+                          <button onClick={submitMatchSheet} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-green-700 transition"><Check size={16}/> Finalizar y Enviar</button>
                       </div>
                   </div>
               )}

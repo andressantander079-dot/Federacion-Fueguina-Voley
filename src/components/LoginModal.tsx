@@ -1,10 +1,9 @@
-// src/components/LoginModal.tsx
 'use client';
 
 import { useState } from 'react';
-import { X, Lock, ArrowRight, Loader2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'next/navigation';
+import { supabase } from '../lib/supabase';
+import { Lock, Mail, Loader2, X, LogIn } from 'lucide-react';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -12,107 +11,89 @@ interface LoginModalProps {
 }
 
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
-  const { signIn } = useAuth(); // Solo traemos la función signIn
   const router = useRouter();
-  
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); // Evita que la página se recargue sola
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoading(true);
     setErrorMsg('');
 
-    console.log("🟢 1. Botón presionado. Intentando entrar con:", email);
-
     try {
-      // Intentamos loguear
-      const { error } = await signIn(email, password);
+      // 1. Autenticación
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
 
-      if (error) {
-        console.error("🔴 2. Error devuelto por Supabase:", error);
-        // MOSTRAR ALERTA EN PANTALLA
-        alert("ERROR DE LOGIN: " + error.message);
-        setErrorMsg(error.message); // Mostramos el mensaje técnico
-        setLoading(false);
-      } else {
-        console.log("🟢 3. Login Exitoso. Redirigiendo...");
-        // Si no hay error, cerramos y redirigimos
-        onClose();
-        router.push('/admin/dashboard');
+      if (authError) throw new Error("Credenciales incorrectas.");
+      if (!authData.user) throw new Error("No se pudo iniciar sesión.");
+
+      // 2. Verificar ROL
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        throw new Error("Usuario sin perfil asignado.");
       }
-    } catch (err) {
-      console.error("💥 4. Error catastrófico:", err);
-      alert("Ocurrió un error inesperado. Mira la consola.");
-      setLoading(false);
+
+      // 3. Redirección
+      onClose();
+      switch (profile.role) {
+        case 'admin': router.push('/admin/dashboard'); break;
+        case 'planillero': router.push('/planillero'); break;
+        case 'club': router.push('/club'); break;
+        default: router.push('/');
+      }
+
+    } catch (error: any) {
+      setErrorMsg(error.message || "Error al ingresar.");
+    } finally {
+        setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-all">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative overflow-hidden">
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={20}/></button>
         
-        <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-          <div className="flex items-center gap-2">
-            <Lock className="w-5 h-5 text-blue-400" />
-            <h2 className="font-bold text-lg">Acceso Oficial</h2>
-          </div>
-          <button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full transition">
-            <X className="w-5 h-5" />
-          </button>
+        <div className="bg-slate-900 p-6 text-center text-white">
+            <h2 className="text-xl font-bold uppercase">Acceso Oficial</h2>
+            <p className="text-xs text-slate-400">Sistema de Gestión FVU</p>
         </div>
 
-        <div className="p-8 space-y-6">
-          
-          {/* Mensaje de Error en Rojo */}
-          {errorMsg && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-medium text-center border border-red-100 break-words">
-              ⚠️ {errorMsg}
-            </div>
-          )}
-
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Correo Oficial</label>
-              <input 
-                type="email" 
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-600 focus:outline-none transition"
-                placeholder="admin@federacion.com"
-              />
-            </div>
+        <form onSubmit={handleLogin} className="p-8 space-y-4">
+            {errorMsg && <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded">{errorMsg}</div>}
             
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
-              <input 
-                type="password" 
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-600 focus:outline-none transition"
-                placeholder="••••••••"
-              />
+                <label className="text-xs font-bold text-slate-400 uppercase">Email</label>
+                <div className="relative">
+                    <Mail className="absolute left-3 top-3 text-slate-400" size={16} />
+                    <input type="email" required className="w-full pl-10 p-2 border rounded-lg font-bold text-slate-700" 
+                        onChange={e => setFormData({...formData, email: e.target.value})} />
+                </div>
+            </div>
+            <div>
+                <label className="text-xs font-bold text-slate-400 uppercase">Contraseña</label>
+                <div className="relative">
+                    <Lock className="absolute left-3 top-3 text-slate-400" size={16} />
+                    <input type="password" required className="w-full pl-10 p-2 border rounded-lg font-bold text-slate-700" 
+                        onChange={e => setFormData({...formData, password: e.target.value})} />
+                </div>
             </div>
 
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-blue-400 text-white font-bold py-3 rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-blue-700/20"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Ingresar al Panel <ArrowRight className="w-4 h-4" /></>}
+            <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2">
+                {loading ? <Loader2 className="animate-spin"/> : "Ingresar"}
             </button>
-          </form>
-
-          <div className="pt-4 border-t border-slate-100 text-center">
-             <p className="text-xs text-slate-400">Si el botón no funciona, revisa la consola con F12</p>
-          </div>
-        </div>
+        </form>
       </div>
     </div>
   );
