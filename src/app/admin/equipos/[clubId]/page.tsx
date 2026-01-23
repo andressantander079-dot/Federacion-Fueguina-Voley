@@ -1,0 +1,280 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
+import { ChevronLeft, Users, Plus, Edit, Shield, Save, X } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+
+type Squad = {
+    id: string
+    name: string
+    category_id: string
+    coach_name: string | null
+    players_count?: number
+}
+
+type Club = {
+    id: string
+    name: string
+    city: string
+    shield_url: string | null
+}
+
+type Category = {
+    id: string
+    name: string
+}
+
+export default function ClubDetailsPage() {
+    const params = useParams()
+    const clubId = params?.clubId as string
+    const router = useRouter()
+    const supabase = createClient()
+
+    const [club, setClub] = useState<Club | null>(null)
+    const [squads, setSquads] = useState<Squad[]>([])
+    const [categories, setCategories] = useState<Category[]>([])
+
+    // UI States
+    const [loading, setLoading] = useState(true)
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+
+    // Form States
+    const [newSquadCategory, setNewSquadCategory] = useState('')
+    const [newSquadName, setNewSquadName] = useState('')
+    const [newSquadCoach, setNewSquadCoach] = useState('')
+
+    useEffect(() => {
+        const fetchData = async () => {
+            if (!clubId) return
+
+            try {
+                // 1. Fetch Club Details
+                const { data: clubData } = await supabase
+                    .from('teams')
+                    .select('*')
+                    .eq('id', clubId)
+                    .single()
+
+                if (clubData) setClub(clubData)
+
+                // 2. Fetch Squads
+                // Note: We need to join with players count strictly speaking, but for now simple fetch
+                const { data: squadsData } = await supabase
+                    .from('squads')
+                    .select('*')
+                    .eq('team_id', clubId)
+
+                if (squadsData) setSquads(squadsData)
+
+                // 3. Fetch Categories for dropdown
+                const { data: catData } = await supabase
+                    .from('categories')
+                    .select('*')
+                    .order('name')
+
+                if (catData) setCategories(catData)
+
+            } catch (error) {
+                console.error(error)
+            } finally {
+                setLoading(false)
+            }
+        }
+        fetchData()
+    }, [clubId])
+
+    // Auto-generate name when category changes
+    useEffect(() => {
+        if (newSquadCategory && club) {
+            const catName = categories.find(c => c.id === newSquadCategory)?.name
+            if (catName) {
+                setNewSquadName(`${club.name} ${catName}`)
+            }
+        }
+    }, [newSquadCategory, club, categories])
+
+    const handleCreateSquad = async (e: React.FormEvent) => {
+        e.preventDefault()
+        try {
+            const { data, error } = await supabase
+                .from('squads')
+                .insert({
+                    team_id: clubId,
+                    category_id: newSquadCategory,
+                    name: newSquadName,
+                    coach_name: newSquadCoach
+                })
+                .select()
+                .single()
+
+            if (error) throw error
+            if (data) {
+                setSquads([...squads, data])
+                setIsCreateModalOpen(false)
+                // Reset form
+                setNewSquadCategory('')
+                setNewSquadName('')
+                setNewSquadCoach('')
+            }
+        } catch (error: any) {
+            console.error('Error creating squad:', JSON.stringify(error, null, 2))
+            alert('Error al crear el plantel: ' + (error.message || 'Permisos insuficientes o error desconocido'))
+        }
+    }
+
+    if (loading) return <div className="p-12 text-center text-gray-500">Cargando club...</div>
+    if (!club) return <div className="p-12 text-center text-red-500">Club no encontrado</div>
+
+    return (
+        <div className="p-8 min-h-screen">
+            {/* Header */}
+            <div className="mb-8">
+                <Link href="/admin/equipos" className="inline-flex items-center text-sm text-gray-500 hover:text-tdf-orange mb-4 transition-colors">
+                    <ChevronLeft size={16} /> Volver a Clubes
+                </Link>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                        <div className="w-24 h-24 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center">
+                            {club.shield_url ? (
+                                <img src={club.shield_url} alt={club.name} className="w-16 h-16 object-contain" />
+                            ) : (
+                                <Shield className="w-10 h-10 text-gray-300" />
+                            )}
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{club.name}</h1>
+                            <p className="text-gray-500">{club.city}</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setIsCreateModalOpen(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
+                    >
+                        <Plus size={20} />
+                        Nuevo Plantel
+                    </button>
+                </div>
+            </div>
+
+            {/* Squads Grid */}
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                <Users className="text-tdf-blue" size={24} />
+                Planteles Activos
+            </h2>
+
+            {squads.length === 0 ? (
+                <div className="bg-gray-50 dark:bg-white/5 border border-dashed border-gray-200 dark:border-white/10 rounded-xl p-12 text-center">
+                    <p className="text-gray-500 mb-4">Este club no tiene planteles registrados aún.</p>
+                    <button
+                        onClick={() => setIsCreateModalOpen(true)}
+                        className="text-tdf-blue font-bold hover:underline"
+                    >
+                        Crear el primero ahora
+                    </button>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {squads.map(squad => (
+                        <Link
+                            key={squad.id}
+                            href={`/admin/equipos/${clubId}/${squad.id}`}
+                            className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-white/5 rounded-xl p-6 hover:shadow-lg hover:border-tdf-blue/30 transition-all group"
+                        >
+                            <div className="flex justify-between items-start mb-4">
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-tdf-blue transition-colors">
+                                    {squad.name}
+                                </h3>
+                                <span className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded font-semibold">
+                                    {categories.find(c => c.id === squad.category_id)?.name || 'Categoría'}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
+                                <Users size={16} />
+                                <span>Ver Jugadores</span>
+                            </div>
+
+                            <div className="text-xs text-gray-400 border-t border-gray-50 dark:border-white/5 pt-3">
+                                DT: {squad.coach_name || 'Sin asignar'}
+                            </div>
+                        </Link>
+                    ))}
+                </div>
+            )}
+
+            {/* Create Modal */}
+            {isCreateModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="px-6 py-4 bg-gray-50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5 flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Nuevo Plantel</h3>
+                            <button onClick={() => setIsCreateModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateSquad} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Categoría</label>
+                                <select
+                                    required
+                                    value={newSquadCategory}
+                                    onChange={(e) => setNewSquadCategory(e.target.value)}
+                                    className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-gray-700 outline-none focus:ring-2 focus:ring-tdf-orange"
+                                >
+                                    <option value="">Seleccionar Categoría...</option>
+                                    {categories.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
+                                {categories.length === 0 && <p className="text-xs text-red-500 mt-1">No hay categorías cargadas en el sistema.</p>}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Nombre del Plantel</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={newSquadName}
+                                    onChange={(e) => setNewSquadName(e.target.value)}
+                                    placeholder="Ej: Club Galicia Sub 13 Verde"
+                                    className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-gray-700 outline-none focus:ring-2 focus:ring-tdf-orange"
+                                />
+                                <p className="text-xs text-gray-400 mt-1">Puedes personalizarlo si hay varios equipos (ej. "Rojo", "Verde").</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Director Técnico (DT)</label>
+                                <input
+                                    type="text"
+                                    value={newSquadCoach}
+                                    onChange={(e) => setNewSquadCoach(e.target.value)}
+                                    placeholder="Nombre del DT"
+                                    className="w-full p-2 border rounded-lg bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-gray-700 outline-none focus:ring-2 focus:ring-tdf-orange"
+                                />
+                            </div>
+
+                            <div className="pt-4 flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCreateModalOpen(false)}
+                                    className="flex-1 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-semibold transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 text-white bg-tdf-orange hover:bg-tdf-orange-hover rounded-lg font-semibold shadow-lg transition-colors flex justify-center items-center gap-2"
+                                >
+                                    <Save size={18} />
+                                    Crear Plantel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}

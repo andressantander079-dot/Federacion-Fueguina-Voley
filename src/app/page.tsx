@@ -1,99 +1,91 @@
-// src/app/page.tsx
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import Navbar from '../components/Navbar';
-import SponsorsBanner from '../components/SponsorsBanner';
-import LoginModal from '../components/LoginModal';
-import { Heart, MessageCircle } from 'lucide-react';
+import { useState } from 'react'
+import Navbar from '@/components/layout/Navbar'
+import SponsorsBanner from '@/components/home/SponsorsBanner'
+import NewsFeed from '@/components/home/NewsFeed'
+import LoginModal from '@/components/auth/LoginModal'
+import Footer from '@/components/layout/Footer'
+import { Calendar, Trophy } from 'lucide-react'
+import Link from 'next/link'
 
 export default function HomePage() {
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [noticias, setNoticias] = useState<any[]>([]);
+    const [isLoginOpen, setIsLoginOpen] = useState(false)
 
-  // Cargar noticias reales de la BD
-  useEffect(() => {
-    const fetchNews = async () => {
-      const { data } = await supabase.from('news').select('*').order('created_at', { ascending: false });
-      if (data) setNoticias(data);
-    };
-    fetchNews();
-  }, []);
+    return (
+        <div className="min-h-screen bg-white dark:bg-black font-sans text-slate-800 dark:text-slate-100 pb-20">
 
-  return (
-    <div className="min-h-screen bg-white font-sans text-slate-800">
-      
-      {/* Usamos el Navbar nuevo */}
-      <Navbar onLoginClick={() => setIsLoginOpen(true)} />
+            {/* Navbar con acceso a callback */}
+            <Navbar onOpenLogin={() => setIsLoginOpen(true)} />
 
-      {/* PORTADA (HERO) */}
-      <header className="bg-slate-900 text-white py-20 px-6 text-center relative overflow-hidden">
-         <div className="absolute top-0 left-0 w-full h-full bg-blue-600/20 mix-blend-overlay"></div>
-         <div className="relative z-10 max-w-3xl mx-auto">
-             <span className="text-blue-400 font-black tracking-widest text-xs uppercase mb-4 block">Temporada 2026</span>
-             <h1 className="text-4xl md:text-6xl font-black mb-6 uppercase leading-none">El Voley de Ushuaia <br/>en un solo lugar</h1>
-             <p className="text-slate-400 text-lg mb-8">Seguí los partidos en vivo, consultá tablas y accedé a la información oficial.</p>
-         </div>
-      </header>
+            {/* HERO SECTION */}
+            <header className="relative w-full min-h-[90vh] flex items-center justify-center overflow-hidden bg-tdf-blue">
 
-      {/* BANNER DE SPONSORS (A mitad de página) */}
-      <SponsorsBanner />
+                {/* Background Image / Overlay */}
+                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?q=80&w=2607&auto=format&fit=crop')] bg-cover bg-center">
+                    {/* TdF Gradient Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-tdf-blue/95 via-tdf-blue/80 to-tdf-orange/40 mix-blend-multiply" />
+                    <div className="absolute inset-0 bg-black/20" />
+                </div>
 
-      {/* SECCIÓN NOTICIAS (Estilo Instagram) */}
-      <section id="noticias" className="max-w-xl mx-auto px-4 pb-20">
-          <h2 className="text-2xl font-black text-slate-900 mb-8 text-center uppercase tracking-tight">Últimas Novedades</h2>
-          
-          <div className="space-y-12">
-              {noticias.length === 0 ? (
-                  <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                      <p className="text-slate-400 italic text-sm">No hay noticias cargadas aún.</p>
-                      <p className="text-[10px] text-slate-300 mt-1 uppercase font-bold">Panel de Admin próximamente</p>
-                  </div>
-              ) : (
-                  noticias.map((post) => (
-                      <article key={post.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                          {/* Cabecera del Post */}
-                          <div className="p-4 flex items-center gap-3">
-                              <div className="w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center text-white font-bold text-xs">FVU</div>
-                              <div>
-                                  <p className="text-xs font-bold text-slate-900">Federación Oficial</p>
-                                  <p className="text-[10px] text-slate-400">Ushuaia • {new Date(post.created_at).toLocaleDateString()}</p>
-                              </div>
-                          </div>
-                          
-                          {/* Imagen */}
-                          <div className="w-full bg-slate-100 relative">
-                             <img src={post.image_url} alt={post.title} className="w-full h-auto object-cover max-h-[500px]" />
-                          </div>
+                {/* Content */}
+                <div className="relative z-10 max-w-7xl mx-auto px-6 w-full pt-32 md:pt-40 pb-20">
+                    <div className="flex flex-col items-center text-center max-w-4xl mx-auto">
 
-                          {/* Iconos "Like" visuales */}
-                          <div className="p-4 flex gap-4 text-slate-700">
-                             <Heart className="hover:text-red-500 cursor-pointer transition"/>
-                             <MessageCircle className="hover:text-blue-500 cursor-pointer transition"/>
-                          </div>
+                        <div className="mb-8 inline-flex items-center gap-3 px-6 py-3 rounded-full border border-white/20 bg-white/10 backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-tdf-orange opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-tdf-orange"></span>
+                            </span>
+                            <span className="text-sm font-bold text-white tracking-widest uppercase shadow-black drop-shadow-md">
+                                Temporada 2026
+                            </span>
+                        </div>
 
-                          {/* Texto */}
-                          <div className="px-4 pb-4">
-                              <h3 className="font-black text-sm mb-1">{post.title}</h3>
-                              <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                                  {post.content}
-                              </p>
-                          </div>
-                      </article>
-                  ))
-              )}
-          </div>
-      </section>
+                        <h1 className="text-6xl md:text-8xl font-black text-white mb-8 tracking-tighter uppercase drop-shadow-2xl animate-in fade-in zoom-in duration-1000 leading-[0.9]">
+                            Voley <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-orange-100 to-white transform hover:scale-105 inline-block transition-transform duration-500 cursor-default">
+                                Ushuaia
+                            </span>
+                        </h1>
 
-      {/* PIE DE PÁGINA */}
-      <footer className="bg-slate-50 border-t border-slate-200 py-10 text-center text-xs font-bold text-slate-400 uppercase">
-          &copy; 2026 Federación de Voley de Ushuaia
-      </footer>
+                        <p className="text-xl md:text-2xl text-blue-50 mb-12 max-w-2xl mx-auto font-light leading-relaxed animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200">
+                            La plataforma oficial del deporte en el fin del mundo.
+                        </p>
 
-      {/* MODAL LOGIN */}
-      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
+                        <div className="flex flex-col sm:flex-row items-center gap-6 animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300 w-full sm:w-auto">
+                            <Link
+                                href="/fixture"
+                                className="w-full sm:w-auto px-10 py-5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-2xl font-bold text-lg transition-all shadow-xl hover:shadow-orange-500/20 transform hover:-translate-y-1 flex items-center justify-center gap-3 border border-white/10"
+                            >
+                                <Calendar className="w-6 h-6" />
+                                Ver Partidos
+                            </Link>
+                            <Link
+                                href="/posiciones"
+                                className="w-full sm:w-auto px-10 py-5 bg-white/5 hover:bg-white/10 text-white border border-white/20 rounded-2xl font-bold text-lg transition-all backdrop-blur-md flex items-center justify-center gap-3 hover:border-white/30"
+                            >
+                                <Trophy className="w-6 h-6" />
+                                Posiciones
+                            </Link>
+                        </div>
 
-    </div>
-  );
+                    </div>
+                </div>
+            </header>
+
+            {/* SPONSORS */}
+            <SponsorsBanner />
+
+            {/* NEWS FEED */}
+            <NewsFeed />
+
+            {/* FOOTER */}
+            {/* FOOTER */}
+            <Footer />
+
+            {/* LOGIN MODAL - RENDERED HERE AT ROOT LEVEL */}
+            <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
+        </div>
+    )
 }
