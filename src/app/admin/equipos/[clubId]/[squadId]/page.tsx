@@ -284,32 +284,32 @@ export default function SquadPlayersPage() {
                                     <div className="space-y-3 pt-2">
                                         <p className="text-xs font-bold text-gray-400 uppercase">Documentación</p>
 
-                                        <div className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50">
+                                        <label className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50 block">
                                             <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Upload size={16} /></div>
                                             <div className="overflow-hidden">
                                                 <div className="text-sm font-medium text-gray-700">Foto de Perfil</div>
                                                 <div className="text-xs text-gray-400 truncate">{newPlayer.photo ? newPlayer.photo.name : 'Subir JPG/PNG'}</div>
                                             </div>
                                             <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'photo')} />
-                                        </div>
+                                        </label>
 
-                                        <div className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50">
+                                        <label className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50 block">
                                             <div className="p-2 bg-green-50 text-green-600 rounded-lg"><FileText size={16} /></div>
                                             <div>
                                                 <div className="text-sm font-medium text-gray-700">Ficha Médica</div>
                                                 <div className="text-xs text-gray-400">{newPlayer.medical ? newPlayer.medical.name : 'Subir PDF Requerido'}</div>
                                             </div>
                                             <input type="file" className="hidden" accept=".pdf,.jpg" onChange={e => handleFileUpload(e, 'medical')} />
-                                        </div>
+                                        </label>
 
-                                        <div className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50">
+                                        <label className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50 block">
                                             <div className="p-2 bg-orange-50 text-orange-600 rounded-lg"><FileText size={16} /></div>
                                             <div>
                                                 <div className="text-sm font-medium text-gray-700">Pago Inscripción</div>
                                                 <div className="text-xs text-gray-400">{newPlayer.payment ? newPlayer.payment.name : 'Subir Comprobante'}</div>
                                             </div>
                                             <input type="file" className="hidden" accept=".pdf,.jpg" onChange={e => handleFileUpload(e, 'payment')} />
-                                        </div>
+                                        </label>
                                     </div>
 
                                     <button type="submit" className="w-full py-3 bg-tdf-blue hover:bg-tdf-blue-dark text-white rounded-lg font-bold shadow-lg transition-colors flex items-center justify-center gap-2 mt-4">

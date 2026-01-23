@@ -60,6 +60,16 @@ CREATE TABLE public.teams (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Planteles (Squads) - Divisiones dentro de un club
+CREATE TABLE public.squads (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
+    category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
+    name TEXT NOT NULL, 
+    coach_name TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- Árbitros
 CREATE TABLE public.referees (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -100,11 +110,23 @@ CREATE TABLE public.profiles (
 -- Jugadores
 CREATE TABLE public.players (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    
+    -- Relaciones
     team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
+    squad_id UUID REFERENCES public.squads(id) ON DELETE CASCADE, -- Link directo al plantel
     category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
+
+    -- Datos Personales
     name TEXT NOT NULL,
     number INTEGER NOT NULL,
+    dni TEXT,
     gender TEXT, -- 'Masculino', 'Femenino'
+    
+    -- Documentación
+    photo_url TEXT,
+    medical_url TEXT,
+    payment_url TEXT,
+    
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -180,6 +202,7 @@ CREATE TABLE public.documents (
 -- ==========================================
 -- Habilitar RLS en todas las tablas
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.squads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.players ENABLE ROW LEVEL SECURITY;
@@ -195,6 +218,7 @@ ALTER TABLE public.venues ENABLE ROW LEVEL SECURITY;
 -- La escritura se debe restringir vía Backend/API o policies específicas de Admin.
 
 CREATE POLICY "Public Read All" ON public.teams FOR SELECT USING (true);
+CREATE POLICY "Public Read Squads" ON public.squads FOR SELECT USING (true);
 CREATE POLICY "Public Read Profiles" ON public.profiles FOR SELECT USING (true);
 -- ... (Repetir patrón SELECT true para todas las tablas públicas)
 
