@@ -44,19 +44,7 @@ export default function LoginPage() {
 
         try {
             if (isRegister) {
-                // REGISTRO
-                const { error: signUpError } = await supabase.auth.signUp({
-                    email,
-                    password,
-                    options: {
-                        data: {
-                            full_name: 'Usuario Registrado',
-                        }
-                    }
-                })
-                if (signUpError) throw signUpError
-                setMessage('¡Cuenta creada! Revisa tu email o intenta iniciar sesión.')
-                setIsRegister(false)
+                // Feature removed in favor of /registro
             } else {
                 // LOGIN
                 const { data, error: authError } = await supabase.auth.signInWithPassword({
@@ -184,36 +172,26 @@ export default function LoginPage() {
                                 </>
                             ) : (
                                 <>
-                                    {isRegister ? <User className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-                                    {isRegister ? 'Registrar Cuenta' : 'Ingresar al Portal'}
+                                    <Lock className="w-5 h-5" />
+                                    Ingresar al Portal
                                 </>
                             )}
                         </button>
                     </form>
 
-                    <div className="mt-8 pt-6 border-t border-gray-100 dark:border-white/5 text-center">
+                    <div className="flex flex-col gap-2 mt-8 pt-6 border-t border-gray-100 dark:border-white/5 text-center">
                         <p className="text-sm text-gray-500 mb-3">
-                            {isRegister ? '¿Ya tienes credenciales?' : '¿Es tu primera vez aquí?'}
+                            ¿No tienes acceso?
                         </p>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsRegister(!isRegister)
-                                setError(null)
-                                setMessage(null)
-                            }}
-                            className="text-tdf-blue hover:text-tdf-blue-dark font-bold hover:underline transition-colors"
-                        >
-                            {isRegister ? 'Inicia Sesión' : 'Solicitar Acceso (Registro)'}
-                        </button>
+                        <Link href="/registro" className="text-tdf-blue hover:text-tdf-blue-dark font-bold hover:underline transition-colors block">
+                            Solicita tu alta aquí
+                        </Link>
                     </div>
                 </div>
             </div>
-
-            {/* Footer Tag */}
             <div className="absolute bottom-6 text-white/40 text-xs font-medium">
                 &copy; 2026 Federación de Voley Ushuaia
             </div>
         </div>
-    )
+    );
 }
