@@ -161,19 +161,19 @@ export default function AdminConfigPage() {
    );
 
    return (
-      <div className="space-y-6">
-         <div className="flex items-center gap-3 mb-6">
+      <div className="space-y-6 text-white min-h-screen">
+         <div className="flex items-center gap-3 mb-6 bg-zinc-900 p-6 rounded-xl border border-zinc-800 shadow-sm">
             <div className="p-3 bg-tdf-blue rounded-xl text-white shadow-lg shadow-blue-900/20">
                <Settings size={28} />
             </div>
             <div>
-               <h1 className="text-3xl font-black text-gray-800">Configuración</h1>
-               <p className="text-gray-500 font-medium">Administra aspectos generales de la plataforma.</p>
+               <h1 className="text-3xl font-black text-white">Configuración</h1>
+               <p className="text-zinc-400 font-medium">Administra aspectos generales de la plataforma.</p>
             </div>
          </div>
 
          {/* TABS */}
-         <div className="flex gap-2 overflow-x-auto pb-2 border-b border-gray-200">
+         <div className="flex gap-2 overflow-x-auto pb-2 border-b border-zinc-800">
             {[
                { id: 'general', label: 'General y Contacto', icon: Info },
                { id: 'sponsors', label: 'Sponsors', icon: Image },
@@ -184,7 +184,7 @@ export default function AdminConfigPage() {
                <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap transition ${activeTab === tab.id ? 'bg-tdf-blue text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-50'} `}
+                  className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap transition ${activeTab === tab.id ? 'bg-zinc-800 text-white border border-zinc-700' : 'bg-transparent text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'} `}
                >
                   <tab.icon size={16} /> {tab.label}
                </button>
@@ -198,21 +198,21 @@ export default function AdminConfigPage() {
             {activeTab === 'general' && (
                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in zoom-in-95 duration-200">
                   {/* 1. Inscripciones y Alertas */}
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
-                     <h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><Info size={20} className="text-tdf-orange" /> Control de Accesos</h3>
+                  <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 space-y-6">
+                     <h3 className="text-lg font-black text-white flex items-center gap-2"><Info size={20} className="text-tdf-orange" /> Control de Accesos</h3>
 
-                     <div className={`p-4 rounded-xl border-l-4 transition ${settings.registration_open ? 'bg-green-50 border-green-500' : 'bg-red-50 border-red-500'}`}>
+                     <div className={`p-4 rounded-xl border-l-4 transition ${settings.registration_open ? 'bg-green-500/10 border-green-500' : 'bg-red-500/10 border-red-500'}`}>
                         <div className="flex justify-between items-center mb-2">
-                           <span className="font-bold text-gray-800">Lista de Buena Fe (Jugadores)</span>
+                           <span className="font-bold text-white">Lista de Buena Fe (Jugadores)</span>
                            <label className="relative inline-flex items-center cursor-pointer">
                               <input type="checkbox" checked={settings.registration_open} onChange={e => setSettings({ ...settings, registration_open: e.target.checked })} className="sr-only peer" />
-                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                              <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
                            </label>
                         </div>
-                        <p className="text-xs text-gray-500 font-medium mb-2">{settings.registration_open ? 'Clubes pueden agregar/editar jugadores.' : 'Inscripciones cerradas. Clubes no pueden modificar listas.'}</p>
+                        <p className="text-xs text-zinc-400 font-medium mb-2">{settings.registration_open ? 'Clubes pueden agregar/editar jugadores.' : 'Inscripciones cerradas. Clubes no pueden modificar listas.'}</p>
                         {!settings.registration_open && (
                            <input
-                              className="w-full text-xs font-bold bg-white border border-gray-200 p-2 rounded text-red-500"
+                              className="w-full text-xs font-bold bg-zinc-950 border border-zinc-800 p-2 rounded text-red-500 placeholder-red-500/50"
                               placeholder="Mensaje de cierre..."
                               value={settings.registration_message || ''}
                               onChange={e => setSettings({ ...settings, registration_message: e.target.value })}
@@ -220,16 +220,16 @@ export default function AdminConfigPage() {
                         )}
                      </div>
 
-                     <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-100">
+                     <div className="p-4 bg-yellow-500/10 rounded-xl border border-yellow-500/20">
                         <div className="flex justify-between items-center mb-2">
-                           <span className="font-bold text-gray-800">Banner de Alerta Global</span>
+                           <span className="font-bold text-white">Banner de Alerta Global</span>
                            <label className="relative inline-flex items-center cursor-pointer">
                               <input type="checkbox" checked={settings.warning_banner_active} onChange={e => setSettings({ ...settings, warning_banner_active: e.target.checked })} className="sr-only peer" />
-                              <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 peer-checked:bg-yellow-400"></div>
+                              <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 peer-checked:bg-yellow-500"></div>
                            </label>
                         </div>
                         <textarea
-                           className="w-full text-sm font-medium bg-white border border-gray-200 p-3 rounded-lg outline-none focus:border-yellow-400"
+                           className="w-full text-sm font-medium bg-zinc-950 border border-zinc-800 p-3 rounded-lg outline-none focus:border-yellow-500 text-white"
                            placeholder="Mensaje de alerta para clubes (ej: Mantenimiento programado)..."
                            value={settings.warning_banner_text || ''}
                            onChange={e => setSettings({ ...settings, warning_banner_text: e.target.value })}
@@ -239,39 +239,39 @@ export default function AdminConfigPage() {
                   </div>
 
                   {/* 2. Identidad y Contacto */}
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
-                     <h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><Image size={20} className="text-tdf-blue" /> Identidad y Contacto</h3>
+                  <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 space-y-6">
+                     <h3 className="text-lg font-black text-white flex items-center gap-2"><Image size={20} className="text-tdf-blue" /> Identidad y Contacto</h3>
 
                      <div className="space-y-4">
                         <div>
-                           <label className="block text-xs font-black text-gray-400 uppercase mb-1">Logo Institucional</label>
+                           <label className="block text-xs font-black text-zinc-500 uppercase mb-1">Logo Institucional</label>
                            <div className="flex items-center gap-4">
-                              {settings.logo_url && <img src={settings.logo_url} className="w-16 h-16 object-contain bg-gray-50 rounded-lg p-1 border" />}
+                              {settings.logo_url && <img src={settings.logo_url} className="w-16 h-16 object-contain bg-zinc-800 rounded-lg p-1 border border-zinc-700" />}
                               <div className="flex-1">
-                                 <input type="file" accept="image/*" onChange={e => setLogoFile(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition" />
+                                 <input type="file" accept="image/*" onChange={e => setLogoFile(e.target.files?.[0] || null)} className="block w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-500 hover:file:bg-blue-500/20 transition" />
                               </div>
                            </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
                            <div>
-                              <label className="block text-xs font-black text-gray-400 uppercase mb-1">Teléfono</label>
-                              <input className="w-full bg-gray-50 border border-gray-100 rounded-lg p-2 font-bold text-sm" value={settings.contact_phone || ''} onChange={e => setSettings({ ...settings, contact_phone: e.target.value })} placeholder="+54 9 2901..." />
+                              <label className="block text-xs font-black text-zinc-500 uppercase mb-1">Teléfono</label>
+                              <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2 font-bold text-sm text-white" value={settings.contact_phone || ''} onChange={e => setSettings({ ...settings, contact_phone: e.target.value })} placeholder="+54 9 2901..." />
                            </div>
                            <div>
-                              <label className="block text-xs font-black text-gray-400 uppercase mb-1">Email</label>
-                              <input className="w-full bg-gray-50 border border-gray-100 rounded-lg p-2 font-bold text-sm" value={settings.contact_email || ''} onChange={e => setSettings({ ...settings, contact_email: e.target.value })} placeholder="admin@fev.com..." />
+                              <label className="block text-xs font-black text-zinc-500 uppercase mb-1">Email</label>
+                              <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2 font-bold text-sm text-white" value={settings.contact_email || ''} onChange={e => setSettings({ ...settings, contact_email: e.target.value })} placeholder="admin@fev.com..." />
                            </div>
                         </div>
 
                         <div>
-                           <label className="block text-xs font-black text-gray-400 uppercase mb-1">Dirección / Sede</label>
-                           <input className="w-full bg-gray-50 border border-gray-100 rounded-lg p-2 font-bold text-sm" value={settings.contact_address || ''} onChange={e => setSettings({ ...settings, contact_address: e.target.value })} placeholder="Calle Falsa 123..." />
+                           <label className="block text-xs font-black text-zinc-500 uppercase mb-1">Dirección / Sede</label>
+                           <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2 font-bold text-sm text-white" value={settings.contact_address || ''} onChange={e => setSettings({ ...settings, contact_address: e.target.value })} placeholder="Calle Falsa 123..." />
                         </div>
 
                         <div>
-                           <label className="block text-xs font-black text-gray-400 uppercase mb-1">Instagram (@usuario o URL)</label>
-                           <input className="w-full bg-gray-50 border border-gray-100 rounded-lg p-2 font-bold text-sm" value={settings.contact_instagram || ''} onChange={e => setSettings({ ...settings, contact_instagram: e.target.value })} placeholder="https://instagram.com/..." />
+                           <label className="block text-xs font-black text-zinc-500 uppercase mb-1">Instagram (@usuario o URL)</label>
+                           <input className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2 font-bold text-sm text-white" value={settings.contact_instagram || ''} onChange={e => setSettings({ ...settings, contact_instagram: e.target.value })} placeholder="https://instagram.com/..." />
                         </div>
                      </div>
                   </div>
@@ -287,110 +287,103 @@ export default function AdminConfigPage() {
 
             {/* === SPONSORS === */}
             {activeTab === 'sponsors' && (
-               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 animate-in fade-in zoom-in-95 duration-200">
-                  <h3 className="text-lg font-black text-gray-800 mb-4">Sponsors Oficiales</h3>
-                  <form onSubmit={addSponsor} className="flex gap-4 items-end mb-6 bg-gray-50 p-4 rounded-xl">
+               <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+                  <h3 className="text-lg font-black text-white mb-4">Sponsors Oficiales</h3>
+                  <form onSubmit={addSponsor} className="flex gap-4 items-end mb-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                      <div className="w-20">
-                        <label className="text-xs font-bold text-gray-400 uppercase">Orden</label>
-                        <input type="number" required className="w-full p-2 rounded border font-bold text-sm" placeholder="#" value={newSponsor.display_order} onChange={e => setNewSponsor({ ...newSponsor, display_order: parseInt(e.target.value) })} />
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Orden</label>
+                        <input type="number" required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="#" value={newSponsor.display_order} onChange={e => setNewSponsor({ ...newSponsor, display_order: parseInt(e.target.value) })} />
                      </div>
                      <div className="flex-1">
-                        <label className="text-xs font-bold text-gray-400 uppercase">Nombre</label>
-                        <input required className="w-full p-2 rounded border font-bold text-sm" placeholder="Ej: Banco TDF" value={newSponsor.name} onChange={e => setNewSponsor({ ...newSponsor, name: e.target.value })} />
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Nombre</label>
+                        <input required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Banco TDF" value={newSponsor.name} onChange={e => setNewSponsor({ ...newSponsor, name: e.target.value })} />
                      </div>
                      <div className="flex-1">
-                        <label className="text-xs font-bold text-gray-400 uppercase">URL (Opcional)</label>
-                        <input className="w-full p-2 rounded border font-bold text-sm" placeholder="https://..." value={newSponsor.link_url} onChange={e => setNewSponsor({ ...newSponsor, link_url: e.target.value })} />
+                        <label className="text-xs font-bold text-zinc-500 uppercase">URL (Opcional)</label>
+                        <input className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="https://..." value={newSponsor.link_url} onChange={e => setNewSponsor({ ...newSponsor, link_url: e.target.value })} />
                      </div>
-                     {/* Falta upload de imagen individual para sponsor, simplificado aquí */}
                      <button className="bg-tdf-orange text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition flex items-center gap-2"><Plus size={16} /> Agregar</button>
                   </form>
 
                   <div className="space-y-2">
                      {sponsors.map((s) => (
-                        <div key={s.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-tdf-blue transition">
+                        <div key={s.id} className="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-lg hover:border-tdf-blue transition">
                            <div className="flex items-center gap-3">
                               <input
                                  type="number"
                                  value={s.display_order}
                                  onChange={(e) => updateSponsorOrder(s.id, parseInt(e.target.value))}
-                                 className="w-12 p-1 border rounded text-center font-bold text-sm"
+                                 className="w-12 p-1 border border-zinc-800 bg-zinc-900 rounded text-center font-bold text-sm text-white"
                               />
                               <input
                                  type="checkbox"
                                  checked={s.active ?? true}
                                  onChange={(e) => updateSponsorStatus(s.id, e.target.checked)}
-                                 className="w-5 h-5 accent-tdf-blue cursor-pointer"
+                                 className="w-5 h-5 accent-tdf-blue cursor-pointer bg-zinc-700"
                                  title="Mostrar/Ocultar"
                               />
-                              <span className={`font-bold text-gray-700 ${!s.active ? 'opacity-50 line-through' : ''}`}>{s.name}</span>
+                              <span className={`font-bold text-zinc-300 ${!s.active ? 'opacity-50 line-through' : ''}`}>{s.name}</span>
                               {s.link_url && <a href={s.link_url} target="_blank" className="text-xs text-blue-500 hover:underline">{s.link_url}</a>}
                            </div>
                            <button onClick={() => deleteSponsor(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
                         </div>
                      ))}
-                     {sponsors.length === 0 && <p className="text-gray-400 text-sm text-center italic">No hay sponsors cargados.</p>}
+                     {sponsors.length === 0 && <p className="text-zinc-500 text-sm text-center italic">No hay sponsors cargados.</p>}
                   </div>
                </div>
             )}
 
             {activeTab === 'categorias' && (
-               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 animate-in fade-in zoom-in-95 duration-200">
-                  <h3 className="text-lg font-black text-gray-800 mb-4">Categorías de Competencia</h3>
-                  <p className="text-sm text-gray-500 mb-4">Estas categorías definen qué divisiones están disponibles para crear planteles y torneos.</p>
+               <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+                  <h3 className="text-lg font-black text-white mb-4">Categorías de Competencia</h3>
+                  <p className="text-sm text-zinc-500 mb-4">Estas categorías definen qué divisiones están disponibles para crear planteles y torneos.</p>
 
-                  <form onSubmit={addCategory} className="flex gap-4 items-end mb-6 bg-gray-50 p-4 rounded-xl">
+                  <form onSubmit={addCategory} className="flex gap-4 items-end mb-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                      <div className="flex-1">
-                        <label className="text-xs font-bold text-gray-400 uppercase">Nueva Categoría</label>
-                        <input required className="w-full p-2 rounded border font-bold text-sm" placeholder="Ej: Sub-14, Mayores, Maxi Voley" value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} />
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Nueva Categoría</label>
+                        <input required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Sub-14, Mayores, Maxi Voley" value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} />
                      </div>
                      <button className="bg-tdf-orange text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition flex items-center gap-2"><Plus size={16} /> Crear</button>
                   </form>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                      {categories.map((c) => (
-                        <div key={c.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-tdf-blue transition shadow-sm">
-                           <span className="font-bold text-gray-700">{c.name}</span>
-                           <button onClick={() => deleteCategory(c.id)} className="text-gray-300 hover:text-red-600 transition"><Trash2 size={16} /></button>
+                        <div key={c.id} className="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-lg hover:border-tdf-blue transition shadow-sm">
+                           <span className="font-bold text-zinc-300">{c.name}</span>
+                           <button onClick={() => deleteCategory(c.id)} className="text-zinc-500 hover:text-red-600 transition"><Trash2 size={16} /></button>
                         </div>
                      ))}
                   </div>
                </div>
             )}
 
-            {/* Placeholders for other tabs for brevity, logic follows same pattern */}
+            {/* Placeholders for other tabs for brevity */}
             {activeTab === 'sedes' && (
-               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 animate-in fade-in zoom-in-95 duration-200">
-                  <h3 className="text-lg font-black text-gray-800 mb-4">Sedes y Estadios</h3>
-                  <p className="text-sm text-gray-500 mb-6">Administra los lugares de juego. Agrega el link de Google Maps para facilitar la ubicación.</p>
+               <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+                  <h3 className="text-lg font-black text-white mb-4">Sedes y Estadios</h3>
+                  <p className="text-sm text-zinc-500 mb-6">Administra los lugares de juego. Agrega el link de Google Maps para facilitar la ubicación.</p>
 
                   <form onSubmit={async (e) => {
                      e.preventDefault();
-                     // State for new Venue not created yet, using local for now or add to top
                      const form = e.target as HTMLFormElement;
                      const name = (form.elements.namedItem('name') as HTMLInputElement).value;
                      const address = (form.elements.namedItem('address') as HTMLInputElement).value;
                      const mapUrl = (form.elements.namedItem('mapUrl') as HTMLInputElement).value;
-
                      if (!name) return;
-
                      const { error } = await supabase.from('venues').insert([{ name, address, google_maps_url: mapUrl }]);
-                     if (!error) {
-                        form.reset();
-                        fetchSubData();
-                     }
-                  }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-gray-50 p-4 rounded-xl">
+                     if (!error) { form.reset(); fetchSubData(); }
+                  }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                      <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase">Nombre Sede</label>
-                        <input name="name" required className="w-full p-2 rounded border font-bold text-sm" placeholder="Ej: Polideportivo Municipal" />
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Nombre Sede</label>
+                        <input name="name" required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Polideportivo Municipal" />
                      </div>
                      <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase">Dirección</label>
-                        <input name="address" className="w-full p-2 rounded border font-bold text-sm" placeholder="Calle 123" />
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Dirección</label>
+                        <input name="address" className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Calle 123" />
                      </div>
                      <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase">Link Google Maps</label>
-                        <input name="mapUrl" className="w-full p-2 rounded border font-bold text-sm" placeholder="https://maps.google..." />
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Link Google Maps</label>
+                        <input name="mapUrl" className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="https://maps.google..." />
                      </div>
                      <div className="md:col-span-3 text-right">
                         <button className="bg-tdf-orange text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600 transition inline-flex items-center gap-2"><Plus size={16} /> Agregar Sede</button>
@@ -399,13 +392,13 @@ export default function AdminConfigPage() {
 
                   <div className="grid grid-cols-1 gap-3">
                      {venues.map((v) => (
-                        <div key={v.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-tdf-blue transition shadow-sm">
+                        <div key={v.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-zinc-950 border border-zinc-800 rounded-lg hover:border-tdf-blue transition shadow-sm">
                            <div>
                               <div className="flex items-center gap-2">
                                  <MapPin size={18} className="text-tdf-blue" />
-                                 <span className="font-bold text-gray-800">{v.name}</span>
+                                 <span className="font-bold text-zinc-200">{v.name}</span>
                               </div>
-                              <div className="text-xs text-gray-500 ml-6 flex gap-3 mt-1">
+                              <div className="text-xs text-zinc-500 ml-6 flex gap-3 mt-1">
                                  <span>{v.address || 'Sin dirección'}</span>
                                  {v.google_maps_url && <a href={v.google_maps_url} target="_blank" className="text-blue-500 font-bold hover:underline flex items-center gap-1">Ver Mapa <MapPin size={10} /></a>}
                               </div>
@@ -415,32 +408,32 @@ export default function AdminConfigPage() {
                                  await supabase.from('venues').delete().eq('id', v.id);
                                  fetchSubData();
                               }
-                           }} className="text-gray-300 hover:text-red-600 p-2 mt-2 md:mt-0 self-end"><Trash2 size={16} /></button>
+                           }} className="text-zinc-600 hover:text-red-500 p-2 mt-2 md:mt-0 self-end"><Trash2 size={16} /></button>
                         </div>
                      ))}
-                     {venues.length === 0 && <p className="text-center text-gray-400 italic py-8">No hay sedes cargadas.</p>}
+                     {venues.length === 0 && <p className="text-center text-zinc-500 italic py-8">No hay sedes cargadas.</p>}
                   </div>
                </div>
             )}
 
             {activeTab === 'tramites' && (
-               <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 animate-in fade-in zoom-in-95 duration-200">
-                  <h3 className="text-lg font-black text-gray-800 mb-4">Costos de Trámites Federativos</h3>
+               <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
+                  <h3 className="text-lg font-black text-white mb-4">Costos de Trámites Federativos</h3>
                   <div className="space-y-4">
                      {tramites.map((t: any, i: number) => (
                         <div key={i} className="flex gap-4">
-                           <input className="flex-1 p-3 bg-gray-50 border rounded-lg font-bold text-gray-700" placeholder="Nombre (Ej: Pase Interclub)" value={t.title} onChange={e => {
+                           <input className="flex-1 p-3 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600" placeholder="Nombre (Ej: Pase Interclub)" value={t.title} onChange={e => {
                               const newT = [...tramites]; newT[i].title = e.target.value; setTramites(newT);
                            }} />
-                           <input className="w-32 p-3 bg-gray-50 border rounded-lg font-bold text-gray-700" placeholder="$$$" value={t.price} onChange={e => {
+                           <input className="w-32 p-3 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600" placeholder="$$$" value={t.price} onChange={e => {
                               const newT = [...tramites]; newT[i].price = e.target.value; setTramites(newT);
                            }} />
                            <button onClick={() => {
                               const newT = tramites.filter((_, idx) => idx !== i); setTramites(newT);
-                           }} className="text-red-400 hover:bg-red-50 p-2 rounded"><Trash2 size={18} /></button>
+                           }} className="text-red-400 hover:bg-red-500/10 p-2 rounded"><Trash2 size={18} /></button>
                         </div>
                      ))}
-                     <button onClick={() => setTramites([...tramites, { title: '', price: '' }])} className="text-tdf-blue font-bold text-sm flex items-center gap-2 hover:bg-blue-50 px-4 py-2 rounded-lg w-fit transition"><Plus size={16} /> Agregar Item</button>
+                     <button onClick={() => setTramites([...tramites, { title: '', price: '' }])} className="text-tdf-blue font-bold text-sm flex items-center gap-2 hover:bg-blue-500/10 px-4 py-2 rounded-lg w-fit transition"><Plus size={16} /> Agregar Item</button>
 
                      <button onClick={handleSaveGeneral} disabled={saving} className="mt-4 w-full py-4 bg-tdf-blue text-white font-black rounded-xl hover:bg-blue-800 transition shadow-lg flex items-center justify-center gap-2">
                         {saving ? 'Guardando...' : <><Save size={20} /> Guardar Tarifario</>}

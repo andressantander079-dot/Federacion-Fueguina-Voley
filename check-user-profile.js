@@ -21,15 +21,19 @@ console.log('--- DIAGNOSTIC SCRIPT ---');
 const supabase = createClient(url, key);
 
 async function checkData() {
-    console.log('\n--- 1. PROFILES (JSON) ---');
-    const { data: profiles, error: pError } = await supabase.from('profiles').select('*');
-    if (pError) console.error(pError);
-    else console.log(JSON.stringify(profiles, null, 2));
+    console.log('\n--- LISTING ALL TABLES ---');
+    // We cannot query information_schema easily via supabase-js client directly usually without rpc or specific permissions on some setups, 
+    // but we can try listing a known set or just error handling.
+    // ACTUALLY, let's try to just list what we can see. 
+    // Since we can't query information_schema directly with supabase-js easily on anon key usually,
+    // let's try to infer or just check common names.
 
-    console.log('\n--- 2. TEAMS (JSON) ---');
-    const { data: teams, error: tError } = await supabase.from('teams').select('id, name');
-    if (tError) console.error(tError);
-    else console.log(JSON.stringify(teams, null, 2));
+    const candidates = ['organization_settings', 'settings', 'config', 'app_config', 'parameters'];
+
+    for (const table of candidates) {
+        const { data, error } = await supabase.from(table).select('*').limit(1);
+        console.log(`Table '${table}':`, error ? `❌ ${error.message}` : `✅ FOUND (${data.length} rows)`);
+    }
 }
 
 checkData();

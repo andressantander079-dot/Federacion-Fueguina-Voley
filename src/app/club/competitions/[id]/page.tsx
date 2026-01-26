@@ -29,8 +29,8 @@ export default function CompetitionDetail() {
             if (!user) return router.push('/login');
 
             // 1. Get My Team ID
-            const { data: profile } = await supabase.from('profiles').select('team_id').eq('id', user.id).single();
-            const currentTeamId = profile?.team_id;
+            const { data: profile } = await supabase.from('profiles').select('club_id').eq('id', user.id).single();
+            const currentTeamId = profile?.club_id;
             setMyTeamId(currentTeamId);
 
             // 2. Tournament Details
