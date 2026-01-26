@@ -2,10 +2,11 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Users, Trophy, ClipboardList, LogOut, Settings, Mail, Megaphone, FileText } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, ClipboardList, LogOut, Settings, Mail, Megaphone, FileText, UserPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import WarningBanner from '@/components/admin/WarningBanner'
+import ThemeToggle from '@/components/ui/ThemeToggle'
 
 export default function AdminLayout({
     children,
@@ -34,6 +35,7 @@ export default function AdminLayout({
                 <nav className="flex-1 p-4 space-y-1">
                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-4">Gestión</div>
                     <AdminNavLink href="/admin" icon={<LayoutDashboard size={20} />} label="Inicio" />
+                    <AdminNavLink href="/admin/solicitudes" icon={<UserPlus size={20} />} label="Solicitudes" />
                     <AdminNavLink href="/admin/mensajes" icon={<Mail size={20} />} label="Mensajes" />
                     <AdminNavLink href="/admin/noticias" icon={<Megaphone size={20} />} label="Noticias" />
 
@@ -47,7 +49,8 @@ export default function AdminLayout({
                     <AdminNavLink href="/admin/configuracion" icon={<Settings size={20} />} label="Configuración" />
                 </nav>
 
-                <div className="p-4 border-t border-white/10 bg-black/20">
+                <div className="p-4 border-t border-white/10 bg-black/20 flex flex-col gap-2">
+                    <ThemeToggle className="w-full flex justify-center bg-white/5 hover:bg-white/10 text-slate-300 hover:text-yellow-400 border border-transparent hover:border-white/10" />
                     <button
                         onClick={handleLogout}
                         className="flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg w-full transition-all group"
