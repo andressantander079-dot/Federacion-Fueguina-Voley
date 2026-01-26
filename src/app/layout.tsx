@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/context/ThemeContext';
+import MobileNav from '@/components/MobileNav';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -20,6 +21,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider>
           {children}
+          <MobileNav />
         </ThemeProvider>
       </body>
     </html>

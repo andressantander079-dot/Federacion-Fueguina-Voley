@@ -22,7 +22,7 @@ export default function HomePage() {
             <header className="relative w-full min-h-[90vh] flex items-center justify-center overflow-hidden bg-tdf-blue">
 
                 {/* Background Image / Overlay */}
-                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?q=80&w=2607&auto=format&fit=crop')] bg-cover bg-center">
+                <div className="absolute inset-0 bg-[url('/images/indoor-voley-bg.png')] bg-cover bg-center">
                     {/* TdF Gradient Overlay */}
                     <div className="absolute inset-0 bg-gradient-to-br from-tdf-blue/95 via-tdf-blue/80 to-tdf-orange/40 mix-blend-multiply" />
                     <div className="absolute inset-0 bg-black/20" />

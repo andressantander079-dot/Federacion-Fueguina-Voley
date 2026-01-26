@@ -66,32 +66,61 @@ export default function AdminCompetenciasList() {
         setIsSearchingTeams(true);
 
         try {
-            const { data, error } = await supabase
-                .from('teams')
-                .select(`
-                id, 
-                name,
-                players!inner ( id ) 
-            `)
-                .eq('players.category_id', newTourney.category_id)
-                .eq('players.gender', newTourney.gender);
+            // STEP 1: Fetch Squads (Planteles) for this Category
+            const { data: squadsData, error: squadsError } = await supabase
+                .from('squads')
+                .select('id, name, team_id') // No join here to avoid errors
+                .eq('category_id', newTourney.category_id);
 
-            if (error) throw error;
+            if (squadsError) {
+                console.error("Error fetching squads:", squadsError);
+                throw squadsError;
+            }
 
-            if (data) {
-                const uniqueTeams = Array.from(new Map(data.map((item: any) => [item.id, item])).values());
-                uniqueTeams.sort((a: any, b: any) => a.name.localeCompare(b.name));
+            if (squadsData && squadsData.length > 0) {
+                // STEP 2: Fetch related Clubs (Teams) manually
+                const teamIds = Array.from(new Set(squadsData.map((s: any) => s.team_id))).filter(Boolean);
 
-                setEquiposFiltrados(uniqueTeams);
+                let teamsMap = new Map();
 
-                // Auto-seleccionar todos por defecto
+                if (teamIds.length > 0) {
+                    const { data: teamsData, error: teamsError } = await supabase
+                        .from('teams')
+                        .select('id, name')
+                        .in('id', teamIds);
+
+                    if (teamsError) {
+                        console.error("Error fetching teams details:", teamsError);
+                    } else {
+                        teamsMap = new Map(teamsData?.map((t: any) => [t.id, t]) || []);
+                    }
+                }
+
+                // STEP 3: Combine Data
+                const combinedData = squadsData.map((s: any) => ({
+                    ...s,
+                    teams: teamsMap.get(s.team_id) || { name: 'Club Desconocido' }
+                }));
+
+                // Sort by Club Name then Squad Name
+                const sortedSquads = combinedData.sort((a: any, b: any) => {
+                    const clubA = a.teams?.name || '';
+                    const clubB = b.teams?.name || '';
+                    return clubA.localeCompare(clubB) || a.name.localeCompare(b.name);
+                });
+
+                setEquiposFiltrados(sortedSquads);
+
+                // Auto-select all by default
                 setNewTourney(prev => ({
                     ...prev,
-                    selected_teams: uniqueTeams.map((t: any) => t.id)
+                    selected_teams: sortedSquads.map((t: any) => t.id)
                 }));
+            } else {
+                setEquiposFiltrados([]);
             }
         } catch (error) {
-            console.error("Error filtrando equipos:", error);
+            console.error("Error filtrando planteles (Catch):", error);
             setEquiposFiltrados([]);
         } finally {
             setIsSearchingTeams(false);
@@ -118,18 +147,29 @@ export default function AdminCompetenciasList() {
 
         if (error) return alert("Error al crear torneo: " + error.message);
 
-        // 2. Inscribir Equipos
+        // 2. Inscribir Equipos (Planteles)
         if (newTourney.selected_teams.length > 0) {
-            const pivotData = newTourney.selected_teams.map(teamId => ({
-                tournament_id: torneoCreado.id,
-                team_id: teamId
-            }));
+            // selected_teams array contains Squad IDs now
+            // We need to map them to { tournament_id, team_id, squad_id }
+            // Note: We need to find the team_id for each squad_id from 'equiposFiltrados'
+
+            const pivotData = newTourney.selected_teams.map(squadId => {
+                const squad = equiposFiltrados.find(sq => sq.id === squadId);
+                return {
+                    tournament_id: torneoCreado.id,
+                    team_id: squad?.team_id, // Club ID
+                    squad_id: squadId        // Plantel ID (New Column)
+                };
+            }).filter(item => item.team_id); // Ensure we found the club
 
             const { error: errorPivot } = await supabase
                 .from('tournament_teams')
                 .insert(pivotData);
 
-            if (errorPivot) alert("Torneo creado pero hubo error al inscribir equipos.");
+            if (errorPivot) {
+                console.error("Error pivot:", errorPivot);
+                alert("Torneo creado pero hubo error al inscribir equipos (DB Schema?).\n" + errorPivot.message);
+            }
         }
 
         setModalOpen(false);
@@ -324,7 +364,10 @@ export default function AdminCompetenciasList() {
                                                             className={`p-3 rounded-lg border flex justify-between items-center cursor-pointer transition select-none group ${isSelected ? 'bg-tdf-blue border-tdf-blue text-white shadow-md' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-tdf-blue'
                                                                 }`}
                                                         >
-                                                            <span className="font-bold text-sm truncate">{team.name}</span>
+                                                            <div className="flex flex-col text-left">
+                                                                <span className="font-bold text-sm truncate text-white">{team.teams?.name || 'Club Desconocido'}</span>
+                                                                <span className="text-xs text-zinc-500 font-mono">{team.name}</span>
+                                                            </div>
                                                             {isSelected ?
                                                                 <CheckCircle size={18} className="text-white" /> :
                                                                 <div className="w-4 h-4 rounded-full border-2 border-zinc-700 group-hover:border-tdf-blue"></div>
