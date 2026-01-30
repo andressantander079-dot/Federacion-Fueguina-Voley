@@ -33,7 +33,9 @@ export default function AdminConfigPage() {
    const [tramites, setTramites] = useState<any[]>([{ title: '', price: '' }]);
    const [categories, setCategories] = useState<any[]>([]);
    const [newCategory, setNewCategory] = useState({ name: '' });
-   const [newSponsor, setNewSponsor] = useState({ name: '', link_url: '', display_order: 1 });
+   const [newSponsor, setNewSponsor] = useState<{ name: string, link_url: string, display_order: number, logo_url: string, file: File | null }>({
+      name: '', link_url: '', display_order: 1, logo_url: '', file: null
+   });
 
    // Uploads
    const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -99,15 +101,44 @@ export default function AdminConfigPage() {
    // --- SPONSORS LOGIC ---
    async function addSponsor(e: React.FormEvent) {
       e.preventDefault();
-      const { error } = await supabase.from('sponsors').insert([{
-         name: newSponsor.name,
-         link_url: newSponsor.link_url,
-         display_order: newSponsor.display_order,
-         active: true
-      }]);
-      if (!error) {
-         setNewSponsor({ name: '', link_url: '', display_order: newSponsor.display_order + 1 });
+
+      let finalLogoUrl = newSponsor.logo_url;
+
+      try {
+         if (newSponsor.file) {
+            const fileExt = newSponsor.file.name.split('.').pop();
+            const fileName = `sponsor-${Date.now()}.${fileExt}`;
+            const { error: uploadError } = await supabase.storage
+               .from('config-assets')
+               .upload(fileName, newSponsor.file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: publicUrl } = supabase.storage
+               .from('config-assets')
+               .getPublicUrl(fileName);
+
+            finalLogoUrl = publicUrl.publicUrl;
+         }
+
+         const { error } = await supabase.from('sponsors').insert([{
+            name: newSponsor.name,
+            link_url: newSponsor.link_url,
+            logo_url: finalLogoUrl,
+            display_order: newSponsor.display_order,
+            active: true
+         }]);
+
+         if (error) throw error;
+
+         setNewSponsor({ name: '', link_url: '', logo_url: '', display_order: newSponsor.display_order + 1, file: null });
+         // Reset file input manually if needed or just rely on state
          fetchSubData();
+         alert('Sponsor agregado correctamente');
+
+      } catch (err: any) {
+         console.error(err);
+         alert('Error al agregar sponsor: ' + err.message);
       }
    }
 
@@ -289,20 +320,26 @@ export default function AdminConfigPage() {
             {activeTab === 'sponsors' && (
                <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
                   <h3 className="text-lg font-black text-white mb-4">Sponsors Oficiales</h3>
-                  <form onSubmit={addSponsor} className="flex gap-4 items-end mb-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+
+
+                  <form onSubmit={addSponsor} className="flex flex-wrap gap-4 items-end mb-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                      <div className="w-20">
                         <label className="text-xs font-bold text-zinc-500 uppercase">Orden</label>
                         <input type="number" required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="#" value={newSponsor.display_order} onChange={e => setNewSponsor({ ...newSponsor, display_order: parseInt(e.target.value) })} />
                      </div>
-                     <div className="flex-1">
+                     <div className="flex-1 min-w-[200px]">
                         <label className="text-xs font-bold text-zinc-500 uppercase">Nombre</label>
                         <input required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Banco TDF" value={newSponsor.name} onChange={e => setNewSponsor({ ...newSponsor, name: e.target.value })} />
                      </div>
-                     <div className="flex-1">
+                     <div className="flex-1 min-w-[200px]">
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Logo</label>
+                        <input type="file" accept="image/*" className="w-full text-xs text-zinc-400 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-zinc-800 file:text-white hover:file:bg-zinc-700" onChange={e => setNewSponsor({ ...newSponsor, file: e.target.files?.[0] || null })} />
+                     </div>
+                     <div className="flex-1 min-w-[200px]">
                         <label className="text-xs font-bold text-zinc-500 uppercase">URL (Opcional)</label>
                         <input className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="https://..." value={newSponsor.link_url} onChange={e => setNewSponsor({ ...newSponsor, link_url: e.target.value })} />
                      </div>
-                     <button className="bg-tdf-orange text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition flex items-center gap-2"><Plus size={16} /> Agregar</button>
+                     <button type="submit" className="bg-tdf-orange text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition flex items-center gap-2 h-[38px]"><Plus size={16} /> Agregar</button>
                   </form>
 
                   <div className="space-y-2">
@@ -419,7 +456,36 @@ export default function AdminConfigPage() {
             {activeTab === 'tramites' && (
                <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
                   <h3 className="text-lg font-black text-white mb-4">Costos de Trámites Federativos</h3>
-                  <div className="space-y-4">
+                  <div className="space-y-6">
+                     {/* BANK INFO SECTION */}
+                     <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 space-y-4">
+                        <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-2">Datos Bancarios para Transferencias</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                           <div>
+                              <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Banco</label>
+                              <input className="w-full p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white font-bold text-sm" placeholder="Ej: Banco Tierra del Fuego" value={settings.bank_name || ''} onChange={e => setSettings({ ...settings, bank_name: e.target.value })} />
+                           </div>
+                           <div>
+                              <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Titular</label>
+                              <input className="w-full p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white font-bold text-sm" placeholder="Ej: Feva Ushuaia" value={settings.bank_holder || ''} onChange={e => setSettings({ ...settings, bank_holder: e.target.value })} />
+                           </div>
+                           <div>
+                              <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">CBU / CVU</label>
+                              <input className="w-full p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white font-bold text-sm font-mono" placeholder="000000..." value={settings.bank_cbu || ''} onChange={e => setSettings({ ...settings, bank_cbu: e.target.value })} />
+                           </div>
+                           <div>
+                              <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Alias</label>
+                              <input className="w-full p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white font-bold text-sm" placeholder="somos.voley.tdf" value={settings.bank_alias || ''} onChange={e => setSettings({ ...settings, bank_alias: e.target.value })} />
+                           </div>
+                           <div className="md:col-span-2">
+                              <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">CUIT / CUIL</label>
+                              <input className="w-full p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white font-bold text-sm font-mono" placeholder="20-12345678-9" value={settings.bank_cuit || ''} onChange={e => setSettings({ ...settings, bank_cuit: e.target.value })} />
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* EXISTING FEES SECTION */}
+                     <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-2 pt-2">Tarifario de Aranceles</h4>
                      {tramites.map((t: any, i: number) => (
                         <div key={i} className="flex gap-4">
                            <input className="flex-1 p-3 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600" placeholder="Nombre (Ej: Pase Interclub)" value={t.title} onChange={e => {
