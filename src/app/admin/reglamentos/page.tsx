@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { FileText, Upload, Trash2, Download, Eye, Plus, ArrowLeft } from 'lucide-react'
+import { FileText, Upload, Trash2, Download, Eye, Plus, ArrowLeft, Archive, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 type Document = {
@@ -12,6 +12,7 @@ type Document = {
     file_url: string
     type: 'reglamento' | 'descarga' | 'ficha_medica'
     created_at: string
+    archived: boolean
 }
 
 const DOC_TYPES = [
@@ -22,22 +23,19 @@ const DOC_TYPES = [
 
 export default function AdminReglamentosPage() {
     const supabase = createClient()
-    const router = useRouter()
+    // ... imports and states
     const [docs, setDocs] = useState<Document[]>([])
     const [loading, setLoading] = useState(true)
     const [isUploading, setIsUploading] = useState(false)
-
-    // Form States
     const [showForm, setShowForm] = useState(false)
     const [newDocTitle, setNewDocTitle] = useState('')
     const [newDocType, setNewDocType] = useState('reglamento')
     const [file, setFile] = useState<File | null>(null)
 
-    useEffect(() => {
-        fetchDocs()
-    }, [])
+    useEffect(() => { fetchDocs() }, [])
 
     const fetchDocs = async () => {
+        // Fetch ALL docs (archived and active)
         const { data } = await supabase
             .from('documents')
             .select('*')
@@ -53,35 +51,31 @@ export default function AdminReglamentosPage() {
 
         setIsUploading(true)
         try {
-            // 1. Upload File
             const fileExt = file.name.split('.').pop()
             const fileName = `${newDocType}-${Date.now()}.${fileExt}`
             const { error: uploadError } = await supabase.storage
-                .from('players-docs') // Reuse existing bucket or create new 'documents' bucket
+                .from('players-docs') // Keeping bucket for now
                 .upload(`public-docs/${fileName}`, file, { upsert: true })
 
             if (uploadError) throw uploadError
 
-            // 2. Get URL
             const { data: { publicUrl } } = supabase.storage
                 .from('players-docs')
                 .getPublicUrl(`public-docs/${fileName}`)
 
-            // 3. Save to DB
             const { error: dbError } = await supabase.from('documents').insert({
                 title: newDocTitle,
                 type: newDocType,
-                file_url: publicUrl
+                file_url: publicUrl,
+                archived: false
             })
 
             if (dbError) throw dbError
 
-            // Reset
             setNewDocTitle('')
             setFile(null)
             setShowForm(false)
             fetchDocs()
-
         } catch (error: any) {
             alert('Error al subir: ' + error.message)
         } finally {
@@ -90,14 +84,27 @@ export default function AdminReglamentosPage() {
     }
 
     const handleDelete = async (id: string, url: string) => {
-        if (!confirm('¿Seguro que deseas eliminar este documento?')) return
+        if (!confirm('¿Seguro que deseas eliminar este documento permanentemente?')) return
 
         try {
             await supabase.from('documents').delete().eq('id', id)
-            // Optional: Delete from storage too if needed
+            // Storage delete optional (good practice)
             fetchDocs()
         } catch (error) {
             console.error(error)
+        }
+    }
+
+    const handleToggleArchive = async (doc: Document) => {
+        try {
+            await supabase
+                .from('documents')
+                .update({ archived: !doc.archived })
+                .eq('id', doc.id)
+
+            fetchDocs()
+        } catch (error) {
+            console.error("Error archiving:", error)
         }
     }
 
@@ -187,13 +194,16 @@ export default function AdminReglamentosPage() {
                     </div>
                 ) : (
                     docs.map(doc => (
-                        <div key={doc.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-100 dark:border-white/5 flex items-center justify-between shadow-sm hover:shadow-md transition-all">
+                        <div key={doc.id} className={`bg-white dark:bg-zinc-900 p-4 rounded-xl border flex items-center justify-between shadow-sm transition-all ${doc.archived ? 'border-orange-200 opacity-60' : 'border-gray-100 dark:border-white/5 hover:shadow-md'}`}>
                             <div className="flex items-center gap-4">
                                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${doc.type === 'reglamento' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
                                     <FileText size={24} />
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-slate-900 dark:text-white">{doc.title}</h4>
+                                    <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                        {doc.title}
+                                        {doc.archived && <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full border border-orange-200">ARCHIVADO</span>}
+                                    </h4>
                                     <span className="text-xs uppercase font-bold text-gray-400 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded">{DOC_TYPES.find(t => t.value === doc.type)?.label}</span>
                                     <span className="text-xs text-gray-400 ml-2">{new Date(doc.created_at).toLocaleDateString()}</span>
                                 </div>
@@ -202,7 +212,16 @@ export default function AdminReglamentosPage() {
                                 <a href={doc.file_url} target="_blank" className="p-2 text-gray-500 hover:text-tdf-blue hover:bg-blue-50 rounded-lg transition" title="Ver / Descargar">
                                     <Download size={20} />
                                 </a>
-                                <button onClick={() => handleDelete(doc.id, doc.file_url)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Eliminar">
+
+                                <button
+                                    onClick={() => handleToggleArchive(doc)}
+                                    className={`p-2 rounded-lg transition ${doc.archived ? 'text-green-600 hover:bg-green-50' : 'text-orange-500 hover:bg-orange-50'}`}
+                                    title={doc.archived ? "Desarchivar (Mostrar en Home)" : "Archivar (Ocultar en Home)"}
+                                >
+                                    {doc.archived ? <Eye size={20} /> : <EyeOff size={20} />}
+                                </button>
+
+                                <button onClick={() => handleDelete(doc.id, doc.file_url)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Eliminar Permanentemente">
                                     <Trash2 size={20} />
                                 </button>
                             </div>

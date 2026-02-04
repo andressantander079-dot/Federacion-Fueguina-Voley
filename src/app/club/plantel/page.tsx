@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign } from 'lucide-react';
+import { useClubAuth } from '@/hooks/useClubAuth';
 
 export default function PlantelPage() {
   const router = useRouter();
@@ -13,9 +14,10 @@ export default function PlantelPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Datos del Club Logueado
-  const [teamId, setTeamId] = useState<string | null>(null);
+  const { clubId, profile, loading: authLoading, error: authError } = useClubAuth();
+
   const [clubName, setClubName] = useState('');
-  const [clubCity, setClubCity] = useState('Ushuaia'); // Simulamos ciudad
+  const [clubCity, setClubCity] = useState('Ushuaia');
 
   // Estado de Vistas
   const [vista, setVista] = useState<'categorias' | 'jugadores'>('categorias');
@@ -28,19 +30,21 @@ export default function PlantelPage() {
 
   // Formularios
   const [creandoSquad, setCreandoSquad] = useState(false);
-  const [mostrarFormJugador, setMostrarFormJugador] = useState(false); // No se usa en diseño nuevo (es modal o sidebar)
+  const [uploading, setUploading] = useState(false);
 
   // Nuevo Plantel Form
   const [nuevoSquad, setNuevoSquad] = useState({
     name: '',
     coach_name: '',
-    category_id: ''
+    category_id: '',
+    gender: 'Femenino'
   });
 
-  // Nuevo Jugador Form (Simple)
+  // Nuevo Jugador Form
   const [nuevoJugador, setNuevoJugador] = useState({
     name: '',
     dni: '',
+    birth_date: '',
     number: '',
     position: 'Universal',
     license_type: 'Jugador',
@@ -49,75 +53,34 @@ export default function PlantelPage() {
     payment_file: null as File | null
   });
 
-  const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [clubLogo, setClubLogo] = useState<string | null>(null);
 
   useEffect(() => {
-    let mounted = true;
-
-    async function initAuth() {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-
-      if (mounted && currentSession) {
-        await cargarDatosUsuario(currentSession.user);
-      } else {
-        setLoading(false);
-        if (mounted) setError("No se detectó sesión. Intenta recargar.");
-      }
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-          if (session && mounted) {
-            setError(null);
-            setLoading(true);
-            await cargarDatosUsuario(session.user);
-          }
-        } else if (event === 'SIGNED_OUT') {
-          if (mounted) {
-            setError("Sesión cerrada.");
-            setLoading(false);
-          }
-        }
-      });
-
-      return () => {
-        mounted = false;
-        subscription.unsubscribe();
-      };
+    if (clubId) {
+      cargarDatosClub(clubId);
     }
+    if (authError) {
+      setError(authError);
+    }
+  }, [clubId, authError]);
 
-    initAuth();
-  }, []);
-
-  async function cargarDatosUsuario(user: any) {
+  async function cargarDatosClub(id: string) {
     try {
-      // Cargar Categorias Globales primero para tener el map listo
+      setLoading(true);
+      // Cargar Categorias Globales
       const { data: cats } = await supabase.from('categories').select('*').order('name');
       setGlobalCategories(cats || []);
 
-      const { data: perfil, error: perfilError } = await supabase
-        .from('profiles')
-        .select('club_id, full_name, role')
-        .eq('id', user.id)
-        .single();
+      if (profile?.full_name) setClubName(profile.full_name);
 
-      if (perfilError) throw perfilError;
-
-      if (!perfil?.club_id) {
-        if (perfil?.role === 'admin') {
-          setTeamId(null);
-        } else {
-          setLoading(false);
-          return setError("🚫 Tu usuario no tiene un Club asignado. Contacta al administrador.");
-        }
-      } else {
-        setTeamId(perfil.club_id);
+      // Fetch Logo and City from Teams table
+      const { data: teamData } = await supabase.from('teams').select('shield_url, city').eq('id', id).single();
+      if (teamData) {
+        if (teamData.shield_url) setClubLogo(teamData.shield_url);
+        if (teamData.city) setClubCity(teamData.city);
       }
-
-      setClubName(perfil.full_name || 'Mi Club');
-
-      if (perfil.club_id) {
-        await cargarSquads(perfil.club_id);
-      }
+      await cargarSquads(id);
 
     } catch (err: any) {
       console.error(err);
@@ -127,8 +90,40 @@ export default function PlantelPage() {
     }
   }
 
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!e.target.files || e.target.files.length === 0) return;
+    if (!clubId) return alert("No se detectó el Club ID.");
+
+    const file = e.target.files[0];
+    setUploadingLogo(true);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `logo-${clubId}-${Date.now()}.${fileExt}`;
+
+      // 1. Upload to Storage
+      const { error: uploadError } = await supabase.storage.from('club-logos').upload(fileName, file);
+      if (uploadError) throw uploadError;
+
+      // 2. Get Public URL
+      const { data: { publicUrl } } = supabase.storage.from('club-logos').getPublicUrl(fileName);
+
+      // 3. Update Teams Table
+      const { error: dbError } = await supabase.from('teams').update({ shield_url: publicUrl }).eq('id', clubId);
+      if (dbError) throw dbError;
+
+      setClubLogo(publicUrl);
+      window.location.reload();
+
+    } catch (error: any) {
+      console.error("Error uploading logo:", error);
+      alert("Error al subir el escudo: " + error.message);
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   async function cargarSquads(idEquipo: string) {
-    // Solución al error de relación: Traemos solo datos planos y mapeamos en cliente
     const { data } = await supabase
       .from('squads')
       .select('*')
@@ -138,7 +133,6 @@ export default function PlantelPage() {
     setSquads(data || []);
   }
 
-  // Helper para obtener nombre de categoría
   const getCategoryName = (id: string) => {
     return globalCategories.find(c => c.id === id)?.name || 'Sin Categoría';
   };
@@ -147,37 +141,22 @@ export default function PlantelPage() {
     e.preventDefault();
     if (!nuevoSquad.name || !nuevoSquad.category_id) return alert("Completa todos los campos");
 
-    let activeTeamId = teamId;
-
-    // Failsafe: Si no hay teamId en estado, intentamos recuperarlo de la sesión
-    if (!activeTeamId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        // Fix: Use club_id as per schema
-        const { user } = session; // Extract user
-        const { data: profile } = await supabase.from('profiles').select('club_id').eq('id', user.id).single();
-        if (profile?.club_id) {
-          activeTeamId = profile.club_id;
-          setTeamId(profile.club_id);
-        }
-      }
-    }
-
-    if (!activeTeamId) return alert("Error: No se ha detectado el ID del Club. Tu usuario podría no estar vinculado a un club.");
+    if (!clubId) return alert("Error: No se ha detectado el ID del Club.");
 
     setCreandoSquad(true);
     try {
       const { error } = await supabase.from('squads').insert([{
-        team_id: activeTeamId,
+        team_id: clubId,
         name: nuevoSquad.name,
         coach_name: nuevoSquad.coach_name,
-        category_id: nuevoSquad.category_id
+        category_id: nuevoSquad.category_id,
+        gender: nuevoSquad.gender
       }]);
 
       if (error) throw error;
 
-      setNuevoSquad({ name: '', coach_name: '', category_id: '' });
-      await cargarSquads(activeTeamId);
+      setNuevoSquad({ name: '', coach_name: '', category_id: '', gender: 'Femenino' });
+      await cargarSquads(clubId);
       (document.getElementById('dialog-new-squad') as HTMLDialogElement)?.close();
       alert("Plantel creado exitosamente.");
 
@@ -188,8 +167,21 @@ export default function PlantelPage() {
     }
   }
 
+  async function borrarSquad(id: string) {
+    if (!confirm("¿Estás seguro de que quieres eliminar este plantel? Se borrarán todos los jugadores asociados.")) return;
+
+    try {
+      const { error } = await supabase.from('squads').delete().eq('id', id);
+      if (error) throw error;
+
+      alert("Plantel eliminado correctamente.");
+      if (clubId) await cargarSquads(clubId);
+    } catch (error: any) {
+      alert("Error al eliminar el plantel: " + error.message);
+    }
+  }
+
   function abrirSquad(squad: any) {
-    // Inject category name
     const s = { ...squad, category_name: getCategoryName(squad.category_id) };
     setSquadActual(s);
     setVista('jugadores');
@@ -205,65 +197,71 @@ export default function PlantelPage() {
     setJugadores(data || []);
   }
 
-  // --- LÓGICA DE JUGADORES ---
-
   async function guardarJugador(e: React.FormEvent) {
     e.preventDefault();
-    if (!nuevoJugador.dni || !nuevoJugador.name) return alert("Completa Nombre y DNI.");
+    if (!nuevoJugador.dni || !nuevoJugador.name || !nuevoJugador.birth_date) return alert("Completa Nombre, DNI y Fecha de Nacimiento.");
 
-    let activeTeamId = teamId;
-    if (!activeTeamId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: profile } = await supabase.from('profiles').select('club_id').eq('id', session.user.id).single();
-        if (profile?.club_id) activeTeamId = profile.club_id;
+    if (squadActual && squadActual.category_id) {
+      const category = globalCategories.find(c => c.id === squadActual.category_id);
+      if (category) {
+        const birthYear = parseInt(nuevoJugador.birth_date.split('-')[0]);
+
+        if (category.min_year && birthYear < category.min_year) {
+          return alert(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es menor al permitido para la categoría ${category.name} (Min: ${category.min_year})`);
+        }
+        if (category.max_year && birthYear > category.max_year) {
+          return alert(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es mayor al permitido para la categoría ${category.name} (Max: ${category.max_year})`);
+        }
       }
     }
 
-    if (!activeTeamId) return alert("Error crítico: No hay Club ID.");
+    if (!clubId) return alert("Error crítico: No hay Club ID.");
 
     setUploading(true);
     try {
       let photoUrl = null;
       if (nuevoJugador.photo_file) {
-        const fileName = `foto-${Date.now()}-${nuevoJugador.dni}`;
+        const fileExt = nuevoJugador.photo_file.name.split('.').pop();
+        const fileName = `foto-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
         await supabase.storage.from('player-photos').upload(fileName, nuevoJugador.photo_file);
         photoUrl = supabase.storage.from('player-photos').getPublicUrl(fileName).data.publicUrl;
       }
 
-      // Lógica para comprobante de pago
-      // (Asumiendo que hay un bucket o campo para esto, si no existe lo simulamos o agregamos placeholder)
-      // Por ahora solo validamos que se haya cargado si es requerido, o lo subimos a un bucket genérico
-      // TODO: Agregar bucket 'player-payments' si es necesario.
-
       let paymentUrl = null;
       if (nuevoJugador.payment_file) {
-        const payFileName = `pago-${Date.now()}-${nuevoJugador.dni}`;
-        // Usamos el mismo bucket de fotos por simplicidad o el de trámites
+        const fileExt = nuevoJugador.payment_file.name.split('.').pop();
+        const payFileName = `pago-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
         await supabase.storage.from('procedure-files').upload(payFileName, nuevoJugador.payment_file);
         paymentUrl = supabase.storage.from('procedure-files').getPublicUrl(payFileName).data.publicUrl;
       }
 
-      // ... resto de lógica de subida (docs) simplificada para demo
+      let medicalUrl = null;
+      if (nuevoJugador.medical_file) {
+        const fileExt = nuevoJugador.medical_file.name.split('.').pop();
+        const medFileName = `medico-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
+        await supabase.storage.from('procedure-files').upload(medFileName, nuevoJugador.medical_file);
+        medicalUrl = supabase.storage.from('procedure-files').getPublicUrl(medFileName).data.publicUrl;
+      }
 
       const { error } = await supabase.from('players').insert([{
-        team_id: activeTeamId,
+        team_id: clubId,
         squad_id: squadActual.id,
         category_id: squadActual.category_id,
         name: nuevoJugador.name,
         dni: nuevoJugador.dni,
+        birth_date: nuevoJugador.birth_date,
         number: nuevoJugador.number ? parseInt(nuevoJugador.number) : null,
         position: nuevoJugador.position,
-        license_type: nuevoJugador.license_type,
         photo_url: photoUrl,
-        // payment_url: paymentUrl // Pendiente de agregar a la tabla players si no existe
-        // Por ahora lo dejamos comentado hasta confirmar schema, pero el input ya está.
+        payment_url: paymentUrl,
+        medical_url: medicalUrl,
+        status: 'pending' // Added pending status here, matching Plan.
       }]);
 
       if (error) throw error;
 
       alert("Jugador inscripto.");
-      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', photo_file: null });
+      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', photo_file: null, medical_file: null, payment_file: null });
       cargarJugadores(squadActual.id);
 
     } catch (error: any) {
@@ -279,7 +277,7 @@ export default function PlantelPage() {
     cargarJugadores(squadActual.id);
   }
 
-  if (loading) return (
+  if (authLoading || loading) return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white">
       <div className="animate-pulse flex flex-col items-center">
         <Shield size={48} className="text-zinc-800 mb-4" />
@@ -301,12 +299,9 @@ export default function PlantelPage() {
     </div>
   );
 
-  // --- RENDERIZADO ESTILO "CLUB CHICHA" ---
-
   return (
     <div className="min-h-screen bg-zinc-950 font-sans text-white pb-20 selection:bg-orange-500 selection:text-white">
 
-      {/* HEADER DE NAVEGACIÓN SIMPLE (Para volver) */}
       <div className="px-6 py-4 flex items-center gap-2 text-sm text-zinc-500">
         <Link href="/club" className="flex items-center gap-1 hover:text-white transition font-medium">
           <ChevronRight size={14} className="rotate-180" /> Volver a Clubes
@@ -315,12 +310,38 @@ export default function PlantelPage() {
 
       <div className="p-6 md:p-12 max-w-7xl mx-auto">
 
-        {/* ENCABEZADO CLUB */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12 animate-in fade-in slide-in-from-top-4 duration-700">
           <div className="flex items-center gap-6">
-            <div className="w-24 h-24 bg-zinc-900 border border-zinc-800 rounded-3xl flex items-center justify-center shadow-2xl">
-              <Shield size={48} className="text-white" strokeWidth={1.5} />
+            <div className="relative group">
+              <div
+                onClick={() => document.getElementById('logo-upload')?.click()}
+                className="w-24 h-24 bg-zinc-900 border border-zinc-800 rounded-3xl flex items-center justify-center shadow-2xl overflow-hidden cursor-pointer hover:border-orange-500 transition-colors relative"
+              >
+                {clubLogo ? (
+                  <img src={clubLogo} alt="Escudo Club" className="w-full h-full object-cover" />
+                ) : (
+                  <Shield size={48} className="text-white" strokeWidth={1.5} />
+                )}
+                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera size={24} className="text-white mb-1" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">Editar</span>
+                </div>
+              </div>
+              <input
+                id="logo-upload"
+                type="file"
+                accept="image/*.jpg,image/*.png"
+                className="hidden"
+                onChange={handleLogoUpload}
+                disabled={uploadingLogo}
+              />
+              {uploadingLogo && (
+                <div className="absolute -right-2 -top-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center animate-spin border-2 border-zinc-950">
+                  <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full" />
+                </div>
+              )}
             </div>
+
             <div>
               <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight leading-none mb-2">
                 {clubName}
@@ -340,7 +361,6 @@ export default function PlantelPage() {
           )}
         </div>
 
-        {/* VISTA 1: PLANTELES GRID */}
         {vista === 'categorias' && (
           <div>
             <div className="flex items-center gap-3 mb-8">
@@ -351,39 +371,57 @@ export default function PlantelPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {squads.map((squad) => {
                 const catName = getCategoryName(squad.category_id);
+                const isMale = squad.gender === 'Masculino';
+
+                const cardClasses = isMale
+                  ? "group bg-zinc-900 border-2 border-white rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-white/10 relative overflow-hidden"
+                  : "group bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50 relative overflow-hidden";
+
                 return (
                   <div
                     key={squad.id}
                     onClick={() => abrirSquad(squad)}
-                    className="group bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50 relative overflow-hidden"
+                    className={cardClasses}
                   >
                     <div className="flex justify-between items-start mb-8">
                       <div className="space-y-1">
-                        <h3 className="font-extrabold text-xl text-white group-hover:text-orange-500 transition-colors">
+                        <h3 className={`font-extrabold text-xl transition-colors ${isMale ? 'text-white' : 'text-white group-hover:text-orange-500'}`}>
                           {clubName}
                         </h3>
                         <h4 className="font-bold text-xl text-white">
                           {catName}
                         </h4>
-                        <p className="text-zinc-500 text-sm font-medium">{squad.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-zinc-500 text-sm font-medium">{squad.name}</p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${isMale ? 'bg-white text-black' : 'bg-pink-500/20 text-pink-500'}`}>
+                            {squad.gender || 'Femenino'}
+                          </span>
+                        </div>
                       </div>
                       <span className="bg-white text-zinc-900 text-xs font-black px-3 py-1 rounded-lg uppercase tracking-wider">
                         {catName.split(' ')[0]}
                       </span>
                     </div>
 
-                    <div className="border-t border-zinc-800 pt-4 mt-auto">
-                      <div className="flex items-center gap-2 text-zinc-400 group-hover:text-white transition-colors mb-4">
+                    <div className="border-t border-zinc-800 pt-4 mt-auto flex justify-between items-center">
+                      <div className="flex items-center gap-2 text-zinc-400 group-hover:text-white transition-colors">
                         <Users size={16} />
                         <span className="text-sm font-bold">Ver Jugadores</span>
                       </div>
-                      <p className="text-xs text-zinc-600 font-mono">DT: {squad.coach_name || 'Sin asignar'}</p>
+
+                      <button
+                        onClick={(e) => { e.stopPropagation(); borrarSquad(squad.id); }}
+                        className="text-zinc-600 hover:text-red-500 hover:bg-red-500/10 p-2 rounded-lg transition"
+                        title="Eliminar Plantel"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>
+                    <div className="mt-2 text-xs text-zinc-600 font-mono">DT: {squad.coach_name || 'Sin asignar'}</div>
                   </div>
                 );
               })}
 
-              {/* Empty State */}
               {squads.length === 0 && !loading && (
                 <div className="col-span-full py-12 text-center border border-dashed border-zinc-800 rounded-3xl bg-zinc-900/50">
                   <p className="text-zinc-500 font-medium">No tienes planteles creados.</p>
@@ -393,11 +431,8 @@ export default function PlantelPage() {
           </div>
         )}
 
-        {/* VISTA 2: DETAIL JUGADORES + FORMULARIO SIDEBAR (Admin Style) */}
         {vista === 'jugadores' && squadActual && (
           <div className="animate-in fade-in slide-in-from-right-8 duration-500">
-
-            {/* Header Jugadores */}
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-3xl font-black text-white flex items-center gap-3">
                 <span className="text-orange-500">{squadActual.category_name}</span>
@@ -413,8 +448,6 @@ export default function PlantelPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-              {/* COLUMNA IZQUIERDA: LISTA */}
               <div className="lg:col-span-2 space-y-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Users size={18} className="text-orange-500" />
@@ -429,23 +462,50 @@ export default function PlantelPage() {
                   </div>
                 ) : (
                   jugadores.map((j) => (
-                    <div key={j.id} className="bg-zinc-900 border border-zinc-800/80 p-4 rounded-xl flex items-center gap-4 hover:border-zinc-700 transition group">
+                    <div
+                      key={j.id}
+                      onClick={() => {
+                        if (j.status === 'pending') {
+                          alert("Pendiente esperando la aprobación del administrador");
+                        }
+                      }}
+                      className={`
+                        border p-4 rounded-xl flex items-center gap-4 transition group cursor-pointer relative overflow-hidden
+                        ${j.status === 'pending'
+                          ? 'bg-yellow-500/10 border-yellow-500/50 hover:bg-yellow-500/20'
+                          : 'bg-zinc-900 border-zinc-800/80 hover:border-zinc-700'
+                        }
+                      `}
+                    >
+                      {j.status === 'pending' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500" />}
+
                       <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center font-black text-zinc-500 text-sm">
                         {j.number || '#'}
                       </div>
                       <div className="flex-1">
-                        <h4 className="font-bold text-white">{j.name}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-white">{j.name}</h4>
+                          {j.status === 'pending' && (
+                            <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              Pendiente
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 text-xs text-zinc-500">
                           <span>DNI {j.dni}</span>
                           <span className="w-1 h-1 bg-zinc-700 rounded-full" />
                           <span>{j.position}</span>
+                          {j.birth_date && (
+                            <span className="text-zinc-600">({j.birth_date.split('-')[0]})</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2">
                         {j.medical_url && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
                         {j.photo_url && <span title="Foto OK"><Camera size={16} className="text-blue-500" /></span>}
                       </div>
-                      <button onClick={() => borrarJugador(j.id)} className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-0 group-hover:opacity-100">
+
+                      <button onClick={(e) => { e.stopPropagation(); borrarJugador(j.id); }} className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-0 group-hover:opacity-100 z-10">
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -453,7 +513,6 @@ export default function PlantelPage() {
                 )}
               </div>
 
-              {/* COLUMNA DERECHA: SIDEBAR FORM (Sticky) */}
               <div className="lg:col-span-1">
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sticky top-24 shadow-2xl shadow-black/50">
                   <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-white">
@@ -483,20 +542,30 @@ export default function PlantelPage() {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">DNI (Sin Puntos)</label>
-                      <input
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
-                        placeholder="Ej: 12345678"
-                        value={nuevoJugador.dni}
-                        onChange={e => setNuevoJugador({ ...nuevoJugador, dni: e.target.value })}
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">DNI (Sin Puntos)</label>
+                        <input
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
+                          placeholder="Ej: 12345678"
+                          value={nuevoJugador.dni}
+                          onChange={e => setNuevoJugador({ ...nuevoJugador, dni: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Fecha Nacimiento</label>
+                        <input
+                          type="date"
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
+                          value={nuevoJugador.birth_date}
+                          onChange={e => setNuevoJugador({ ...nuevoJugador, birth_date: e.target.value })}
+                        />
+                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-zinc-800 space-y-3">
                       <p className="text-[10px] font-bold text-zinc-500 uppercase">Documentación</p>
 
-                      {/* Inputs de Archivo Estilizados */}
                       <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                         <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><Camera size={16} /></div>
                         <div className="flex-1 overflow-hidden">
@@ -545,7 +614,6 @@ export default function PlantelPage() {
 
       </div>
 
-      {/* MODAL NUEVO PLANTEL (Native Dialog) */}
       <dialog id="dialog-new-squad" className="bg-zinc-900 border border-zinc-800 text-white p-8 rounded-3xl shadow-2xl backdrop:bg-black/80 max-w-md w-full">
         <form onSubmit={(e) => { crearSquad(e); }}>
           <h3 className="text-2xl font-black mb-6">Nuevo Plantel</h3>
@@ -562,6 +630,19 @@ export default function PlantelPage() {
                 {globalCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
+
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Rama / Género</label>
+              <select
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 outline-none focus:border-orange-600 font-bold"
+                value={nuevoSquad.gender}
+                onChange={e => setNuevoSquad({ ...nuevoSquad, gender: e.target.value })}
+              >
+                <option value="Femenino">Femenino</option>
+                <option value="Masculino">Masculino</option>
+              </select>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Nombre Equipo (Ej: "A")</label>
               <input
@@ -588,8 +669,6 @@ export default function PlantelPage() {
           </div>
         </form>
       </dialog>
-
-
 
     </div>
   );

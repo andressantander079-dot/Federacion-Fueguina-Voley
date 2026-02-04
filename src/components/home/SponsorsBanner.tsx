@@ -25,7 +25,15 @@ export default function SponsorsBanner() {
         fetchSponsors()
     }, [])
 
-    if (sponsors.length === 0 && !loading) return null
+    // if (sponsors.length === 0 && !loading) return null // Removed to show placeholder
+
+    // Placeholder sponsors for demo/empty state
+    const displaySponsors = sponsors.length > 0 ? sponsors : [
+        { id: 'p1', name: 'Tu Marca Aquí', logo_url: '/placeholder-sponsor.png', website: null },
+        { id: 'p2', name: 'Sponsor Oficial', logo_url: '/placeholder-sponsor.png', website: null },
+        { id: 'p3', name: 'Apoya el Voley', logo_url: '/placeholder-sponsor.png', website: null },
+        { id: 'p4', name: 'Sumate', logo_url: '/placeholder-sponsor.png', website: null },
+    ];
 
     return (
         <section className="w-full bg-white dark:bg-zinc-950 py-24 border-y border-gray-100 dark:border-white/5">
@@ -45,14 +53,14 @@ export default function SponsorsBanner() {
                     </div>
                 ) : (
                     <div className="flex flex-wrap justify-center items-center gap-12 md:gap-20">
-                        {sponsors.map((sponsor) => (
+                        {displaySponsors.map((sponsor) => (
                             <a
                                 key={sponsor.id}
-                                href={sponsor.link_url || '#'}
-                                target={sponsor.link_url ? "_blank" : undefined}
-                                className={`relative group transition-all duration-300 transform hover:scale-110 ${!sponsor.link_url && 'pointer-events-none'}`}
+                                href={sponsor.website || '#'}
+                                target={sponsor.website ? "_blank" : undefined}
+                                className={`relative group transition-all duration-300 transform hover:scale-110 ${!sponsor.website && 'pointer-events-none'}`}
                             >
-                                <div className="relative w-32 h-16 md:w-48 md:h-24 filter grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500">
+                                <div className="relative w-32 h-16 md:w-48 md:h-24 bg-white rounded-xl shadow-sm p-4 flex items-center justify-center filter grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500 hover:shadow-lg hover:scale-105">
                                     <img
                                         src={sponsor.logo_url}
                                         alt={sponsor.name}

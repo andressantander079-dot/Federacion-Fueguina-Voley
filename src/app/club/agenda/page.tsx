@@ -8,42 +8,30 @@ import {
     Calendar as CalendarIcon, MapPin, Clock, Users,
     ChevronLeft, ChevronRight, AlertCircle, ArrowLeft, Trophy
 } from 'lucide-react';
+import { useClubAuth } from '@/hooks/useClubAuth';
+import CalendarSyncButton from '@/components/common/CalendarSyncButton';
 
 export default function AgendaClub() {
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
+    const { clubId, profile, loading: authLoading } = useClubAuth();
 
     // Contexto
-    const [teamId, setTeamId] = useState<string | null>(null);
-    const [profile, setProfile] = useState<any>(null);
+    // const [teamId, setTeamId] = useState<string | null>(null); // derived from useClubAuth
+    // const [profile, setProfile] = useState<any>(null); // derived from useClubAuth
 
     // Estado Calendario (Default: Febrero 2026)
     const [currentDate, setCurrentDate] = useState(new Date(2026, 1, 1)); // Mes 1 = Febrero
     const [matches, setMatches] = useState<any[]>([]);
     const [selectedDateEvents, setSelectedDateEvents] = useState<any[]>([]);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [dataLoading, setDataLoading] = useState(true);
 
     useEffect(() => {
-        inicializar();
-    }, []);
+        if (clubId) loadData(clubId);
+    }, [clubId]);
 
-    async function inicializar() {
+    async function loadData(id: string) {
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return router.push('/login');
-
-            // 1. Validar Usuario y Equipo
-            const { data: perfil } = await supabase.from('profiles').select('team_id').eq('id', user.id).single();
-
-            // Si no tiene equipo, volver al lobby o mostrar error (pero no loop a /club/dashboard)
-            if (!perfil?.team_id) {
-                // Opción A: Mandar a /club (Dashboard raíz)
-                return router.push('/club');
-            }
-
-            setTeamId(perfil.team_id);
-            setProfile(perfil);
-
             // 2. Cargar Partidos del Equipo (Local o Visitante)
             const { data: partidos } = await supabase
                 .from('matches')
@@ -51,31 +39,43 @@ export default function AgendaClub() {
                   *,
                   venue:venues(name),
                   category:categories(name),
-                  home_team:teams!home_team_id(id, name, logo_url),
-                  away_team:teams!away_team_id(id, name, logo_url)
+                  home_team:teams!home_team_id(id, name, shield_url),
+                  away_team:teams!away_team_id(id, name, shield_url)
                 `)
-                .or(`home_team_id.eq.${perfil.team_id},away_team_id.eq.${perfil.team_id}`);
+                .or(`home_team_id.eq.${id},away_team_id.eq.${id}`);
 
-            // 3. Agregar Eventos Mock (Reunión 14 Feb 2026)
-            const mockEvents = [
-                {
-                    id: 'mock-1',
-                    type: 'meeting',
-                    title: 'Reunión de Delegados',
-                    date_time: '2026-02-14T18:00:00',
-                    venue: { name: 'Sede Central FEV' },
-                    description: 'Presentación de Torneo Apertura 2026 y entrega de listas de buena fe.'
-                }
-            ];
+            // 3. Cargar Eventos de Calendario (Reuniones, Fechas Límite)
+            const { data: eventos } = await supabase
+                .from('calendar_events')
+                .select('*');
+
+            // 4. Normalizar y Combinar
+            const matchesFormatted = (partidos || []).map((p: any) => ({
+                ...p,
+                type: 'match',
+                date_time: p.date_time,
+                title: p.home_team_id === id
+                    ? `vs ${p.away_team?.name || 'Rival'}`
+                    : `vs ${p.home_team?.name || 'Rival'}`
+            }));
+
+            const eventsFormatted = (eventos || []).map((e: any) => ({
+                ...e,
+                type: 'meeting',
+                date_time: e.start_time,
+                venue: { name: 'Administración' },
+                title: e.title,
+                description: e.description
+            }));
 
             // Combinar todo
-            const allEvents = [...(partidos || []), ...mockEvents];
+            const allEvents = [...matchesFormatted, ...eventsFormatted];
             setMatches(allEvents);
 
         } catch (error) {
             console.error("Error inicializando agenda:", error);
         } finally {
-            setLoading(false);
+            setDataLoading(false);
         }
     }
 
@@ -119,7 +119,7 @@ export default function AgendaClub() {
         });
     };
 
-    if (loading) return (
+    if (authLoading || dataLoading) return (
         <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white">
             <div className="animate-pulse flex flex-col items-center">
                 <CalendarIcon size={48} className="text-zinc-800 mb-4" />
@@ -139,10 +139,23 @@ export default function AgendaClub() {
             <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
 
                 {/* Calendar Controls */}
-                <div className="flex items-center justify-between bg-zinc-900 p-4 rounded-2xl border border-zinc-800 shadow-lg">
-                    <button onClick={prevMonth} className="p-2 hover:bg-zinc-800 rounded-full text-slate-400 hover:text-white transition"><ChevronLeft size={24} /></button>
-                    <h2 className="text-xl md:text-2xl font-black text-white capitalize text-center">{monthName}</h2>
-                    <button onClick={nextMonth} className="p-2 hover:bg-zinc-800 rounded-full text-slate-400 hover:text-white transition"><ChevronRight size={24} /></button>
+                <div className="flex items-center justify-between bg-zinc-900 p-4 rounded-2xl border border-zinc-800 shadow-lg flex-wrap gap-4">
+                    <div className="flex items-center justify-between w-full md:w-auto gap-4">
+                        <button onClick={prevMonth} className="p-2 hover:bg-zinc-800 rounded-full text-slate-400 hover:text-white transition"><ChevronLeft size={24} /></button>
+                        <h2 className="text-xl md:text-2xl font-black text-white capitalize text-center">{monthName}</h2>
+                        <button onClick={nextMonth} className="p-2 hover:bg-zinc-800 rounded-full text-slate-400 hover:text-white transition"><ChevronRight size={24} /></button>
+                    </div>
+
+                    <CalendarSyncButton
+                        events={matches.map(m => ({
+                            title: m.title || 'Evento de Club',
+                            description: m.description || (m.type === 'match' ? `Partido contra ${m.home_team_id === clubId ? m.away_team?.name : m.home_team?.name}` : ''),
+                            location: m.venue?.name || 'Sede a confirmar',
+                            startTime: new Date(m.date_time),
+                            endTime: new Date(new Date(m.date_time).getTime() + (m.type === 'match' ? 90 : 60) * 60000)
+                        }))}
+                        label="Sincronizar Agenda"
+                    />
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -213,7 +226,7 @@ export default function AgendaClub() {
                                         return (
                                             <div key={i} className="bg-purple-500/10 border-l-4 border-purple-500 rounded-r-xl p-4">
                                                 <div className="flex justify-between items-start mb-1">
-                                                    <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">Reunión</span>
+                                                    <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">{ev.event_type || 'Evento'}</span>
                                                     <span className="text-white font-bold text-sm">{new Date(ev.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</span>
                                                 </div>
                                                 <h4 className="font-bold text-white text-lg leading-tight mb-2">{ev.title}</h4>
@@ -223,7 +236,7 @@ export default function AgendaClub() {
                                         );
                                     } else {
                                         // Es un partido
-                                        const isHome = ev.home_team_id === teamId;
+                                        const isHome = ev.home_team_id === clubId;
                                         const rival = isHome ? ev.away_team : ev.home_team;
                                         return (
                                             <div key={i} className="bg-blue-500/10 border-l-4 border-blue-500 rounded-r-xl p-4">
@@ -233,7 +246,7 @@ export default function AgendaClub() {
                                                 </div>
 
                                                 <div className="flex items-center gap-3 mb-3">
-                                                    <img src={rival?.logo_url || '/placeholder.png'} className="w-10 h-10 object-contain bg-white rounded-full p-1" />
+                                                    <img src={rival?.shield_url || '/placeholder.png'} className="w-10 h-10 object-contain bg-white rounded-full p-1" />
                                                     <div>
                                                         <p className="text-xs text-zinc-400">vs Rival</p>
                                                         <p className="font-bold text-white leading-tight">{rival?.name || 'A definir'}</p>
@@ -263,7 +276,7 @@ export default function AgendaClub() {
                                                     <span className="block text-[10px] uppercase text-zinc-500">{new Date(next.date_time).toLocaleDateString('es', { month: 'short' })}</span>
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-white text-sm line-clamp-1">{next.title || (next.home_team_id === teamId ? `vs ${next.away_team?.name}` : `vs ${next.home_team?.name}`)}</p>
+                                                    <p className="font-bold text-white text-sm line-clamp-1">{next.title || (next.home_team_id === clubId ? `vs ${next.away_team?.name}` : `vs ${next.home_team?.name}`)}</p>
                                                     <p className="text-xs text-zinc-500">{new Date(next.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</p>
                                                 </div>
                                             </div>

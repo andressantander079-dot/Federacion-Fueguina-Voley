@@ -10,15 +10,17 @@ import {
    AlertCircle, CheckCircle, FileText,
    User, Shield
 } from 'lucide-react';
+import { useClubAuth } from '@/hooks/useClubAuth';
 
 export default function ClubMensajesPage() {
    const router = useRouter();
    const supabase = createClient();
 
    // Estados de carga y usuario
+   const { clubId, profile, loading: authLoading } = useClubAuth();
    const [loading, setLoading] = useState(true);
-   const [userId, setUserId] = useState<string | null>(null);
-   const [clubId, setClubId] = useState<string | null>(null);
+   // const [userId, setUserId] = useState<string | null>(null); // Use profile.id
+   // const [clubId, setClubId] = useState<string | null>(null); // Use hook clubId
 
    // Estados de UI
    const [activeTab, setActiveTab] = useState<'inbox' | 'sent' | 'compose'>('inbox');
@@ -38,21 +40,14 @@ export default function ClubMensajesPage() {
    const [sending, setSending] = useState(false);
 
    useEffect(() => {
-      init();
-   }, []);
-
-   async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.push('/login');
-      setUserId(user.id);
-
-      const { data: profile } = await supabase.from('profiles').select('club_id').eq('id', user.id).single();
-      if (profile?.club_id) {
-         setClubId(profile.club_id);
-         await fetchMessages(profile.club_id, user.id);
+      if (clubId && profile) {
+         fetchMessages(clubId, profile.id);
       }
-      setLoading(false);
-   }
+   }, [clubId, profile]);
+
+   //    async function init() {
+   //       // Replaced by useClubAuth
+   //    }
 
    async function fetchMessages(cId: string, uId: string) {
       // 1. INBOX: Mensajes donde el club es destinatario (tabla message_recipients)
@@ -86,6 +81,7 @@ export default function ClubMensajesPage() {
          .order('created_at', { ascending: false });
 
       setSentMessages(sentData || []);
+      setLoading(false);
    }
 
    async function handleSendMessage(e: React.FormEvent) {
@@ -95,7 +91,7 @@ export default function ClubMensajesPage() {
       setSending(true);
       try {
          const { error } = await supabase.from('messages').insert([{
-            sender_id: userId,
+            sender_id: profile?.id,
             subject: newMsg.subject,
             body: newMsg.body,
             priority: newMsg.priority,
@@ -108,7 +104,7 @@ export default function ClubMensajesPage() {
          alert("Mensaje enviado a la Federación.");
          setNewMsg({ subject: '', body: '', priority: 'normal' });
          setActiveTab('sent');
-         if (clubId && userId) fetchMessages(clubId, userId);
+         if (clubId && profile?.id) fetchMessages(clubId, profile.id);
 
       } catch (error: any) {
          alert("Error: " + error.message);
@@ -148,7 +144,7 @@ export default function ClubMensajesPage() {
       m.body.toLowerCase().includes(searchTerm.toLowerCase())
    );
 
-   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500">Cargando Mensajería...</div>;
+   if (loading || authLoading) return <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500">Cargando Mensajería...</div>;
 
    return (
       <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col md:flex-row overflow-hidden">

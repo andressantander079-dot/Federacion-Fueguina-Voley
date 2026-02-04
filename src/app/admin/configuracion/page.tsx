@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Settings, Image, DollarSign, MapPin, Users, Info, Save, Upload, Trash2, Plus, GripVertical } from 'lucide-react';
+import { Settings, Image, DollarSign, MapPin, Users, Info, Save, Upload, Trash2, Plus, GripVertical, X, ExternalLink } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 
 export default function AdminConfigPage() {
@@ -14,28 +14,24 @@ export default function AdminConfigPage() {
    // Fallback for null settings to prevent infinite loading
    const [errorLoading, setErrorLoading] = useState(false);
 
-   useEffect(() => {
-      if (initialSettings) {
-         setSettings(initialSettings);
-         if (initialSettings.tramites_fees) setTramites(initialSettings.tramites_fees);
-      } else if (!loadingSettings && !initialSettings) {
-         // No settings found in DB
-         setSettings({
-            id: undefined,
-            registration_open: true,
-            tramites_fees: []
-         });
-      }
-      if (!loadingSettings) fetchSubData();
-   }, [initialSettings, loadingSettings]);
+   // --- SPONSORS STATE ---
    const [sponsors, setSponsors] = useState<any[]>([]);
+   const [isEditingSponsor, setIsEditingSponsor] = useState(false);
+   const [sponsorForm, setSponsorForm] = useState({
+      id: '',
+      name: '',
+      website: '',
+      logo_url: '',
+      active: true,
+      display_order: 99
+   });
+   const [sponsorLogoFile, setSponsorLogoFile] = useState<File | null>(null);
+
    const [venues, setVenues] = useState<any[]>([]);
    const [tramites, setTramites] = useState<any[]>([{ title: '', price: '' }]);
    const [categories, setCategories] = useState<any[]>([]);
-   const [newCategory, setNewCategory] = useState({ name: '' });
-   const [newSponsor, setNewSponsor] = useState<{ name: string, link_url: string, display_order: number, logo_url: string, file: File | null }>({
-      name: '', link_url: '', display_order: 1, logo_url: '', file: null
-   });
+   const [newCategory, setNewCategory] = useState<{ name: string, min_year?: string, max_year?: string }>({ name: '' });
+
 
    // Uploads
    const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -46,10 +42,19 @@ export default function AdminConfigPage() {
    useEffect(() => {
       if (initialSettings) {
          setSettings(initialSettings);
-         if (initialSettings.tramites_fees) setTramites(initialSettings.tramites_fees);
+         // FIX: Use procedure_fees
+         if (initialSettings.procedure_fees) setTramites(initialSettings.procedure_fees);
+      } else if (!loadingSettings && !initialSettings) {
+         // No settings found in DB
+         setSettings({
+            id: undefined,
+            registration_open: true,
+            procedure_fees: [] // FIX
+         });
       }
-      fetchSubData();
-   }, [initialSettings]);
+      if (!loadingSettings) fetchSubData();
+   }, [initialSettings, loadingSettings]);
+
 
    async function fetchSubData() {
       const { data: s } = await supabase.from('sponsors').select('*').order('display_order');
@@ -80,16 +85,53 @@ export default function AdminConfigPage() {
             setUploadingLogo(false);
          }
 
-         // 2. Update Settings
-         const { error } = await supabase.from('settings').update({
-            ...settings,
-            logo_url: logoUrl,
-            tramites_fees: tramites,
-            updated_at: new Date().toISOString()
-         }).eq('id', settings.id);
+         // 2. Update Settings - STRICT WHITELIST
+         // We explicitly construct the payload to ensure NO invalid/protected columns are sent.
+         const payload = {
+            // Toggles & Text
+            registration_open: settings.registration_open,
+            registration_message: settings.registration_message,
+            warning_banner_active: settings.warning_banner_active,
+            warning_banner_text: settings.warning_banner_text,
 
-         if (error) throw error;
-         alert('✅ Configuraciones guardadas correctamente.');
+            // Contact
+            contact_phone: settings.contact_phone,
+            contact_email: settings.contact_email,
+            contact_address: settings.contact_address,
+            contact_instagram: settings.contact_instagram,
+            logo_url: logoUrl,
+
+            // Bank Details (New Columns)
+            bank_name: settings.bank_name,
+            bank_holder: settings.bank_holder,
+            bank_cbu: settings.bank_cbu,
+            bank_alias: settings.bank_alias,
+            bank_cuit: settings.bank_cuit,
+
+            // Fees
+            procedure_fees: tramites,
+
+            updated_at: new Date().toISOString()
+         };
+
+         console.log("Saving Settings Payload:", payload);
+
+         const { error, data } = await supabase.from('settings').update(payload)
+            .eq('singleton_key', true)
+            .select();
+
+         if (error) {
+            console.error("Supabase Update Error:", error);
+            throw error;
+         }
+
+         // Validation: Ensure row was actually updated
+         if (!data || data.length === 0) {
+            console.error("Update returned 0 rows. RLS or Match Failure.");
+            throw new Error("No se pudo confirmar el guardado (Fila no encontrada o Permisos insuficientes).");
+         }
+
+         alert('✅ Configuraciones guardadas correctamente (Persistido).');
       } catch (e: any) {
          console.error(e);
          alert('Error guardando: ' + e.message);
@@ -98,77 +140,99 @@ export default function AdminConfigPage() {
       }
    }
 
-   // --- SPONSORS LOGIC ---
-   async function addSponsor(e: React.FormEvent) {
+   // --- SPONSORS LOGIC (PREMIUM) ---
+   const resetSponsorForm = () => {
+      setSponsorForm({ id: '', name: '', website: '', logo_url: '', active: true, display_order: 99 });
+      setSponsorLogoFile(null);
+      setIsEditingSponsor(false);
+   }
+
+   const handleEditSponsor = (sponsor: any) => {
+      setSponsorForm(sponsor);
+      setIsEditingSponsor(true);
+   }
+
+   const handleDeleteSponsor = async (id: string) => {
+      if (!confirm('¿Seguro que deseas eliminar este sponsor?')) return;
+      await supabase.from('sponsors').delete().eq('id', id);
+      fetchSubData();
+   }
+
+   const handleSaveSponsor = async (e: React.FormEvent) => {
       e.preventDefault();
-
-      let finalLogoUrl = newSponsor.logo_url;
-
       try {
-         if (newSponsor.file) {
-            const fileExt = newSponsor.file.name.split('.').pop();
-            const fileName = `sponsor-${Date.now()}.${fileExt}`;
-            const { error: uploadError } = await supabase.storage
-               .from('config-assets')
-               .upload(fileName, newSponsor.file);
+         let logoUrl = sponsorForm.logo_url;
 
+         // Upload Logo if changed
+         if (sponsorLogoFile) {
+            const fileExt = sponsorLogoFile.name.split('.').pop();
+            const fileName = `sponsors/${Math.random()}.${fileExt}`;
+
+            // FIX: Use 'config-assets' instead of 'documents'
+            const { error: uploadError } = await supabase.storage.from('config-assets').upload(fileName, sponsorLogoFile);
             if (uploadError) throw uploadError;
 
-            const { data: publicUrl } = supabase.storage
-               .from('config-assets')
-               .getPublicUrl(fileName);
-
-            finalLogoUrl = publicUrl.publicUrl;
+            const { data: publicUrl } = supabase.storage.from('config-assets').getPublicUrl(fileName);
+            // Public URL object structure depends on SDK version, usually data: { publicUrl }
+            logoUrl = publicUrl.publicUrl;
          }
 
-         const { error } = await supabase.from('sponsors').insert([{
-            name: newSponsor.name,
-            link_url: newSponsor.link_url,
-            logo_url: finalLogoUrl,
-            display_order: newSponsor.display_order,
-            active: true
-         }]);
+         const payload = {
+            name: sponsorForm.name,
+            website: sponsorForm.website,
+            logo_url: logoUrl,
+            active: sponsorForm.active,
+            display_order: sponsorForm.display_order
+         };
 
-         if (error) throw error;
+         if (sponsorForm.id) {
+            await supabase.from('sponsors').update(payload).eq('id', sponsorForm.id);
+         } else {
+            await supabase.from('sponsors').insert([payload]);
+         }
 
-         setNewSponsor({ name: '', link_url: '', logo_url: '', display_order: newSponsor.display_order + 1, file: null });
-         // Reset file input manually if needed or just rely on state
+         resetSponsorForm();
          fetchSubData();
-         alert('Sponsor agregado correctamente');
-
-      } catch (err: any) {
-         console.error(err);
-         alert('Error al agregar sponsor: ' + err.message);
+      } catch (error: any) {
+         console.error('Error saving sponsor:', error);
+         alert('Error al guardar sponsor: ' + (error.message || error));
       }
-   }
-
-   async function deleteSponsor(id: string) {
-      if (confirm('¿Eliminar sponsor?')) {
-         await supabase.from('sponsors').delete().eq('id', id);
-         fetchSubData();
-      }
-   }
-
-   async function updateSponsorOrder(id: string, newOrder: number) {
-      await supabase.from('sponsors').update({ display_order: newOrder }).eq('id', id);
-      fetchSubData();
-   }
-
-   async function updateSponsorStatus(id: string, active: boolean) {
-      await supabase.from('sponsors').update({ active }).eq('id', id);
-      fetchSubData();
-   }
+   };
 
    // --- VENUES LOGIC ---
-   // (Similar logic, keeping it simple for now)
+   async function handleAddVenue(e: React.FormEvent) {
+      e.preventDefault();
+      try {
+         const form = e.target as HTMLFormElement;
+         const name = (form.elements.namedItem('name') as HTMLInputElement).value;
+         const address = (form.elements.namedItem('address') as HTMLInputElement).value;
+         const mapUrl = (form.elements.namedItem('mapUrl') as HTMLInputElement).value;
+         if (!name) return;
+
+         const { error } = await supabase.from('venues').insert([{ name, address, google_maps_url: mapUrl }]);
+         if (error) throw error;
+
+         form.reset();
+         fetchSubData();
+         alert("✅ Sede agregada correctamente");
+      } catch (error: any) {
+         console.error("Error adding venue:", error);
+         alert("Error al agregar sede: " + error.message);
+      }
+   }
 
    // --- CATEGORIES LOGIC ---
    async function addCategory(e: React.FormEvent) {
       e.preventDefault();
       if (!newCategory.name) return;
-      const { error } = await supabase.from('categories').insert([{ name: newCategory.name }]);
+
+      const payload: any = { name: newCategory.name };
+      if (newCategory.min_year) payload.min_year = parseInt(newCategory.min_year);
+      if (newCategory.max_year) payload.max_year = parseInt(newCategory.max_year);
+
+      const { error } = await supabase.from('categories').insert([payload]);
       if (!error) {
-         setNewCategory({ name: '' });
+         setNewCategory({ name: '', min_year: '', max_year: '' });
          fetchSubData();
       }
    }
@@ -310,63 +374,157 @@ export default function AdminConfigPage() {
                   {/* Guardar Flotante en Móvil o Botón Normal */}
                   <div className="lg:col-span-2">
                      <button onClick={handleSaveGeneral} disabled={saving} className="w-full py-4 bg-tdf-blue text-white font-black rounded-xl hover:bg-blue-800 transition shadow-lg flex items-center justify-center gap-2">
-                        {saving ? 'Guardando...' : <><Save size={20} /> Guardar Cambios Generales</>}
+                        {saving ? 'Guardando...' : <><Save size={20} /> Guardar Datos de Pago y Aranceles (Persistido)</>}
                      </button>
                   </div>
                </div>
             )}
 
-            {/* === SPONSORS === */}
+            {/* === SPONSORS (PREMIUM UI) === */}
             {activeTab === 'sponsors' && (
-               <div className="bg-zinc-900 p-6 rounded-2xl shadow-sm border border-zinc-800 animate-in fade-in zoom-in-95 duration-200">
-                  <h3 className="text-lg font-black text-white mb-4">Sponsors Oficiales</h3>
+               <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow border border-gray-100 dark:border-zinc-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <header className="p-6 flex justify-between items-center border-b border-gray-100 dark:border-zinc-800/50">
+                     <div>
+                        <h3 className="text-xl font-black text-slate-800 dark:text-white">Sponsors Oficiales</h3>
+                        <p className="text-sm text-slate-500 dark:text-zinc-500">Aparecerán en el banner principal del sitio.</p>
+                     </div>
+                     <button
+                        onClick={() => { resetSponsorForm(); setIsEditingSponsor(true) }}
+                        className="bg-tdf-orange hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition"
+                     >
+                        <Plus className="w-5 h-5" /> Nuevo Sponsor
+                     </button>
+                  </header>
 
+                  <table className="w-full text-left">
+                     <thead className="bg-gray-50 dark:bg-zinc-800/50 text-xs font-bold text-slate-500 uppercase">
+                        <tr>
+                           <th className="p-4">Orden</th>
+                           <th className="p-4">Logo</th>
+                           <th className="p-4">Nombre / Web</th>
+                           <th className="p-4">Estado</th>
+                           <th className="p-4 text-right">Acciones</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                        {sponsors.map((sp) => (
+                           <tr key={sp.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/30 transition">
+                              <td className="p-4 font-mono text-slate-400">#{sp.display_order}</td>
+                              <td className="p-4">
+                                 <div className="w-24 h-12 relative bg-gray-100 dark:bg-zinc-800 rounded flex items-center justify-center p-2">
+                                    {sp.logo_url ? (
+                                       <img src={sp.logo_url} className="max-w-full max-h-full object-contain" alt={sp.name} />
+                                    ) : <span className="text-xs text-slate-400">No img</span>}
+                                 </div>
+                              </td>
+                              <td className="p-4">
+                                 <div className="font-bold text-slate-700 dark:text-slate-200">{sp.name}</div>
+                                 {sp.website && (
+                                    <a href={sp.website} target="_blank" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                                       {sp.website} <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                 )}
+                              </td>
+                              <td className="p-4">
+                                 <span className={`px-2 py-1 rounded text-xs font-bold ${sp.active ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                                    {sp.active ? 'Activo' : 'Inactivo'}
+                                 </span>
+                              </td>
+                              <td className="p-4 text-right space-x-2">
+                                 <button onClick={() => handleEditSponsor(sp)} className="text-slate-400 hover:text-blue-500 p-2"><Upload className="w-4 h-4" /></button>
+                                 <button onClick={() => handleDeleteSponsor(sp.id)} className="text-slate-400 hover:text-red-500 p-2"><Trash2 className="w-4 h-4" /></button>
+                              </td>
+                           </tr>
+                        ))}
+                     </tbody>
+                  </table>
+                  {sponsors.length === 0 && (
+                     <div className="p-12 text-center text-slate-400">No hay sponsors registrados</div>
+                  )}
 
-                  <form onSubmit={addSponsor} className="flex flex-wrap gap-4 items-end mb-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                     <div className="w-20">
-                        <label className="text-xs font-bold text-zinc-500 uppercase">Orden</label>
-                        <input type="number" required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="#" value={newSponsor.display_order} onChange={e => setNewSponsor({ ...newSponsor, display_order: parseInt(e.target.value) })} />
-                     </div>
-                     <div className="flex-1 min-w-[200px]">
-                        <label className="text-xs font-bold text-zinc-500 uppercase">Nombre</label>
-                        <input required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Banco TDF" value={newSponsor.name} onChange={e => setNewSponsor({ ...newSponsor, name: e.target.value })} />
-                     </div>
-                     <div className="flex-1 min-w-[200px]">
-                        <label className="text-xs font-bold text-zinc-500 uppercase">Logo</label>
-                        <input type="file" accept="image/*" className="w-full text-xs text-zinc-400 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-zinc-800 file:text-white hover:file:bg-zinc-700" onChange={e => setNewSponsor({ ...newSponsor, file: e.target.files?.[0] || null })} />
-                     </div>
-                     <div className="flex-1 min-w-[200px]">
-                        <label className="text-xs font-bold text-zinc-500 uppercase">URL (Opcional)</label>
-                        <input className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="https://..." value={newSponsor.link_url} onChange={e => setNewSponsor({ ...newSponsor, link_url: e.target.value })} />
-                     </div>
-                     <button type="submit" className="bg-tdf-orange text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition flex items-center gap-2 h-[38px]"><Plus size={16} /> Agregar</button>
-                  </form>
-
-                  <div className="space-y-2">
-                     {sponsors.map((s) => (
-                        <div key={s.id} className="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-lg hover:border-tdf-blue transition">
-                           <div className="flex items-center gap-3">
-                              <input
-                                 type="number"
-                                 value={s.display_order}
-                                 onChange={(e) => updateSponsorOrder(s.id, parseInt(e.target.value))}
-                                 className="w-12 p-1 border border-zinc-800 bg-zinc-900 rounded text-center font-bold text-sm text-white"
-                              />
-                              <input
-                                 type="checkbox"
-                                 checked={s.active ?? true}
-                                 onChange={(e) => updateSponsorStatus(s.id, e.target.checked)}
-                                 className="w-5 h-5 accent-tdf-blue cursor-pointer bg-zinc-700"
-                                 title="Mostrar/Ocultar"
-                              />
-                              <span className={`font-bold text-zinc-300 ${!s.active ? 'opacity-50 line-through' : ''}`}>{s.name}</span>
-                              {s.link_url && <a href={s.link_url} target="_blank" className="text-xs text-blue-500 hover:underline">{s.link_url}</a>}
+                  {/* MODAL PARA SPONSORS */}
+                  {isEditingSponsor && (
+                     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-zinc-700 animate-in zoom-in-95">
+                           <div className="flex justify-between items-center mb-6">
+                              <h3 className="text-xl font-bold dark:text-white">{sponsorForm.id ? 'Editar Sponsor' : 'Nuevo Sponsor'}</h3>
+                              <button onClick={resetSponsorForm}><X className="w-6 h-6 text-slate-400 hover:text-white" /></button>
                            </div>
-                           <button onClick={() => deleteSponsor(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
+
+                           <form onSubmit={handleSaveSponsor} className="space-y-4">
+                              <div>
+                                 <label className="block text-xs font-bold text-slate-500 mb-1">Nombre</label>
+                                 <input
+                                    className="w-full p-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-bold text-slate-800 dark:text-white"
+                                    value={sponsorForm.name}
+                                    onChange={e => setSponsorForm({ ...sponsorForm, name: e.target.value })}
+                                    required
+                                 />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                 <div>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Orden</label>
+                                    <input
+                                       type="number"
+                                       className="w-full p-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-bold text-slate-800 dark:text-white"
+                                       value={sponsorForm.display_order}
+                                       onChange={e => setSponsorForm({ ...sponsorForm, display_order: parseInt(e.target.value) })}
+                                    />
+                                 </div>
+                                 <div className="flex items-center pt-6">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                       <input
+                                          type="checkbox"
+                                          checked={sponsorForm.active}
+                                          onChange={e => setSponsorForm({ ...sponsorForm, active: e.target.checked })}
+                                          className="w-5 h-5 rounded text-tdf-orange focus:ring-tdf-orange"
+                                       />
+                                       <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Visible</span>
+                                    </label>
+                                 </div>
+                              </div>
+
+                              <div>
+                                 <label className="block text-xs font-bold text-slate-500 mb-1">Website URL</label>
+                                 <input
+                                    className="w-full p-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-bold text-slate-800 dark:text-white"
+                                    value={sponsorForm.website}
+                                    onChange={e => setSponsorForm({ ...sponsorForm, website: e.target.value })}
+                                    placeholder="https://..."
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="block text-xs font-bold text-slate-500 mb-1">Logo</label>
+                                 <div className="border-2 border-dashed border-gray-200 dark:border-zinc-700 rounded-xl p-4 text-center hover:border-tdf-orange transition cursor-pointer relative group">
+                                    <input
+                                       type="file"
+                                       className="absolute inset-0 opacity-0 cursor-pointer"
+                                       onChange={e => setSponsorLogoFile(e.target.files?.[0] || null)}
+                                       accept="image/*"
+                                    />
+                                    {sponsorLogoFile || sponsorForm.logo_url ? (
+                                       <div className="flex items-center justify-center gap-2 text-emerald-500 font-bold text-xs">
+                                          <Upload className="w-4 h-4" />
+                                          {sponsorLogoFile ? sponsorLogoFile.name : 'Imagen cargada'}
+                                       </div>
+                                    ) : (
+                                       <div className="text-slate-400 text-xs">
+                                          <Upload className="w-6 h-6 mx-auto mb-1" />
+                                          Click para subir logo
+                                       </div>
+                                    )}
+                                 </div>
+                              </div>
+
+                              <button className="w-full py-3 bg-tdf-orange hover:bg-orange-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 mt-4 shadow-lg active:scale-95 transition">
+                                 <Save className="w-5 h-5" /> Guardar Sponsor
+                              </button>
+                           </form>
                         </div>
-                     ))}
-                     {sponsors.length === 0 && <p className="text-zinc-500 text-sm text-center italic">No hay sponsors cargados.</p>}
-                  </div>
+                     </div>
+                  )}
                </div>
             )}
 
@@ -375,18 +533,33 @@ export default function AdminConfigPage() {
                   <h3 className="text-lg font-black text-white mb-4">Categorías de Competencia</h3>
                   <p className="text-sm text-zinc-500 mb-4">Estas categorías definen qué divisiones están disponibles para crear planteles y torneos.</p>
 
-                  <form onSubmit={addCategory} className="flex gap-4 items-end mb-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                     <div className="flex-1">
+                  <form onSubmit={addCategory} className="flex flex-col md:flex-row gap-4 items-end mb-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                     <div className="flex-1 w-full">
                         <label className="text-xs font-bold text-zinc-500 uppercase">Nueva Categoría</label>
-                        <input required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Sub-14, Mayores, Maxi Voley" value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} />
+                        <input required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Sub-14, Mayores" value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} />
                      </div>
-                     <button className="bg-tdf-orange text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition flex items-center gap-2"><Plus size={16} /> Crear</button>
+                     <div className="w-full md:w-32">
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Año Min</label>
+                        <input type="number" className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="2000" value={newCategory.min_year || ''} onChange={e => setNewCategory({ ...newCategory, min_year: e.target.value })} />
+                     </div>
+                     <div className="w-full md:w-32">
+                        <label className="text-xs font-bold text-zinc-500 uppercase">Año Max</label>
+                        <input type="number" className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="2010" value={newCategory.max_year || ''} onChange={e => setNewCategory({ ...newCategory, max_year: e.target.value })} />
+                     </div>
+                     <button className="bg-tdf-orange text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition flex items-center gap-2 w-full md:w-auto justify-center"><Plus size={16} /> Crear</button>
                   </form>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                      {categories.map((c) => (
                         <div key={c.id} className="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-lg hover:border-tdf-blue transition shadow-sm">
-                           <span className="font-bold text-zinc-300">{c.name}</span>
+                           <div>
+                              <span className="font-bold text-zinc-300 block">{c.name}</span>
+                              {(c.min_year || c.max_year) && (
+                                 <span className="text-xs text-zinc-500 font-mono">
+                                    {c.min_year ? `Min: ${c.min_year}` : ''} {c.max_year ? `Max: ${c.max_year}` : ''}
+                                 </span>
+                              )}
+                           </div>
                            <button onClick={() => deleteCategory(c.id)} className="text-zinc-500 hover:text-red-600 transition"><Trash2 size={16} /></button>
                         </div>
                      ))}
@@ -400,16 +573,7 @@ export default function AdminConfigPage() {
                   <h3 className="text-lg font-black text-white mb-4">Sedes y Estadios</h3>
                   <p className="text-sm text-zinc-500 mb-6">Administra los lugares de juego. Agrega el link de Google Maps para facilitar la ubicación.</p>
 
-                  <form onSubmit={async (e) => {
-                     e.preventDefault();
-                     const form = e.target as HTMLFormElement;
-                     const name = (form.elements.namedItem('name') as HTMLInputElement).value;
-                     const address = (form.elements.namedItem('address') as HTMLInputElement).value;
-                     const mapUrl = (form.elements.namedItem('mapUrl') as HTMLInputElement).value;
-                     if (!name) return;
-                     const { error } = await supabase.from('venues').insert([{ name, address, google_maps_url: mapUrl }]);
-                     if (!error) { form.reset(); fetchSubData(); }
-                  }} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                  <form onSubmit={handleAddVenue} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                      <div>
                         <label className="text-xs font-bold text-zinc-500 uppercase">Nombre Sede</label>
                         <input name="name" required className="w-full p-2 rounded border border-zinc-800 bg-zinc-900 font-bold text-sm text-white" placeholder="Ej: Polideportivo Municipal" />
@@ -502,7 +666,7 @@ export default function AdminConfigPage() {
                      <button onClick={() => setTramites([...tramites, { title: '', price: '' }])} className="text-tdf-blue font-bold text-sm flex items-center gap-2 hover:bg-blue-500/10 px-4 py-2 rounded-lg w-fit transition"><Plus size={16} /> Agregar Item</button>
 
                      <button onClick={handleSaveGeneral} disabled={saving} className="mt-4 w-full py-4 bg-tdf-blue text-white font-black rounded-xl hover:bg-blue-800 transition shadow-lg flex items-center justify-center gap-2">
-                        {saving ? 'Guardando...' : <><Save size={20} /> Guardar Tarifario</>}
+                        {saving ? 'Guardando...' : <><Save size={20} /> Guardar Datos de Pago y Aranceles (Persistido)</>}
                      </button>
                   </div>
                </div>

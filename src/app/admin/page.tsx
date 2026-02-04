@@ -14,23 +14,17 @@ import {
     MessageSquare,
     UserPlus,
     FileSignature,
-    Loader2
+    Loader2,
+    Wallet,
+    Shield,
+    UserCog,
+    Calendar
 } from 'lucide-react'
 import RecentMatches from '@/components/admin/RecentMatches';
 import { createClient } from '@/lib/supabase/client';
 
 // Definición de las tarjetas del mosaico
 const getMosaicCards = (counts: any) => [
-    {
-        title: 'Solicitudes',
-        description: 'Nuevos clubes pendientes.',
-        href: '/admin/solicitudes',
-        icon: <UserPlus className="w-8 h-8" />,
-        color: '',
-        tdfColor: 'from-orange-500 to-red-600',
-        delay: 'delay-0',
-        badge: counts.solicitudes
-    },
     {
         title: 'Mesa de Entrada',
         description: 'Bandeja de mensajes.',
@@ -58,6 +52,16 @@ const getMosaicCards = (counts: any) => [
         icon: <Users className="w-8 h-8" />,
         color: '',
         tdfColor: 'from-emerald-400 to-teal-600',
+        delay: 'delay-300',
+        badge: 0
+    },
+    {
+        title: 'Agenda',
+        description: 'Calendario y reuniones.',
+        href: '/admin/agenda',
+        icon: <Calendar className="w-8 h-8" />,
+        color: '',
+        tdfColor: 'from-pink-500 to-rose-600',
         delay: 'delay-300',
         badge: 0
     },
@@ -90,15 +94,48 @@ const getMosaicCards = (counts: any) => [
         tdfColor: 'from-gray-700 to-black',
         delay: 'delay-500',
         badge: 0
+    },
+    {
+        title: 'Tesorería',
+        description: 'Gestión financiera y balance.',
+        href: '/admin/treasury',
+        icon: <Wallet className="w-8 h-8" />,
+        color: '',
+        tdfColor: 'from-emerald-600 to-teal-800',
+        delay: 'delay-500',
+        badge: 0
+    },
+    {
+        title: 'Colegio de Árbitros',
+        description: 'Padrón, designaciones y actas.',
+        href: '/admin/arbitros',
+        icon: <Shield className="w-8 h-8" />,
+        color: '',
+        tdfColor: 'from-blue-600 to-cyan-700',
+        delay: 'delay-500',
+        badge: 0
+    },
+    {
+        title: 'Designaciones',
+        description: 'Asignar árbitros a partidos.',
+        href: '/admin/designaciones',
+        icon: <UserCog className="w-8 h-8" />,
+        color: '',
+        tdfColor: 'from-orange-500 to-red-500',
+        delay: 'delay-500',
+        badge: 0
     }
 ]
 
 export default function AdminDashboardPage() {
     const supabase = createClient();
+
     const [counts, setCounts] = useState({
         mensajes: 0,
         tramites: 0,
-        solicitudes: 0
+        equipos: 0,
+        torneos: 0,
+        jugadores: 0
     });
     const [loading, setLoading] = useState(true);
 
@@ -120,16 +157,29 @@ export default function AdminDashboardPage() {
                 .select('*', { count: 'exact', head: true })
                 .eq('status', 'en_revision');
 
-            // 3. Solicitudes de Registro Pendientes
-            const { count: reqCount } = await supabase
-                .from('club_requests')
+            // 3. Equipos
+            const { count: teamCount } = await supabase
+                .from('teams')
+                .select('*', { count: 'exact', head: true });
+
+            // 4. Torneos Activos
+            const { count: tournamentCount } = await supabase
+                .from('tournaments')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'pending');
+                .eq('status', 'active');
+
+            // 5. Jugadores
+            const { count: playerCount } = await supabase
+                .from('players')
+                .select('*', { count: 'exact', head: true });
+
 
             setCounts({
                 mensajes: msgCount || 0,
                 tramites: procCount || 0,
-                solicitudes: reqCount || 0
+                equipos: teamCount || 0,
+                torneos: tournamentCount || 0,
+                jugadores: playerCount || 0
             });
         } catch (error) {
             console.error("Error fetching counts", error);
@@ -141,11 +191,11 @@ export default function AdminDashboardPage() {
     const cards = getMosaicCards(counts);
 
     return (
-        <div className="p-4 md:p-8 min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-zinc-950 dark:to-zinc-900 transition-colors duration-500">
+        <div className="p-4 md:p-8 min-h-screen transition-colors duration-500">
 
             {/* Header */}
             <header className="mb-10 animate-in fade-in slide-in-from-top-4 duration-700">
-                <h1 className="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight mb-2">
+                <h1 className="text-3xl md:text-4xl font-black text-orange-900 dark:text-white tracking-tight mb-2">
                     Panel de Control <span className="text-tdf-orange">FVU</span>
                 </h1>
                 <p className="text-slate-500 dark:text-slate-400 text-lg">
@@ -183,7 +233,7 @@ export default function AdminDashboardPage() {
                                 )}
                             </div>
 
-                            <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-1 group-hover:text-tdf-blue dark:group-hover:text-tdf-orange transition-colors">
+                            <h3 className="text-2xl font-bold text-orange-900 dark:text-white mb-1 group-hover:text-tdf-blue dark:group-hover:text-tdf-orange transition-colors">
                                 {card.title}
                             </h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
@@ -202,15 +252,21 @@ export default function AdminDashboardPage() {
             {/* Quick Stats Row (Debajo del Mosaico) */}
             <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-500">
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
-                    <div className="text-4xl font-black text-tdf-blue dark:text-white mb-1">24</div>
+                    <div className="text-4xl font-black text-tdf-blue dark:text-white mb-1">
+                        {loading ? <Loader2 className="animate-spin" /> : counts.equipos}
+                    </div>
                     <div className="text-xs font-bold text-slate-400 uppercase">Equipos</div>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
-                    <div className="text-4xl font-black text-tdf-orange mb-1">8</div>
+                    <div className="text-4xl font-black text-tdf-orange mb-1">
+                        {loading ? <Loader2 className="animate-spin" /> : counts.torneos}
+                    </div>
                     <div className="text-xs font-bold text-slate-400 uppercase">Torneos Activos</div>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
-                    <div className="text-4xl font-black text-slate-800 dark:text-white mb-1">156</div>
+                    <div className="text-4xl font-black text-orange-900 dark:text-white mb-1">
+                        {loading ? <Loader2 className="animate-spin" /> : counts.jugadores}
+                    </div>
                     <div className="text-xs font-bold text-slate-400 uppercase">Jugadores</div>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">

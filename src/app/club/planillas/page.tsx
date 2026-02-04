@@ -9,15 +9,20 @@ import {
     FileText, Download, Filter,
     ArrowLeft, Calendar, Trophy, XCircle, ChevronDown, Check
 } from 'lucide-react';
+import { useClubAuth } from '@/hooks/useClubAuth';
 
 export default function PlanillasClub() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
 
     // Datos Base
-    const [teamId, setTeamId] = useState<string | null>(null);
+    const { clubId, loading: authLoading } = useClubAuth();
+    // const [clubId, setTeamId] = useState<string | null>(null); // ClubId replaces clubId
+
+    // Datos Base (matches, categories...)
     const [matches, setMatches] = useState<any[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
+    const [dataLoading, setDataLoading] = useState(true);
 
     // Filtros Seleccionados
     const [selectedCategory, setSelectedCategory] = useState('Todas');
@@ -28,7 +33,7 @@ export default function PlanillasClub() {
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        inicializar();
+        if (clubId) loadData(clubId);
 
         // Cierra el dropdown si clickean afuera
         function handleClickOutside(event: any) {
@@ -38,19 +43,12 @@ export default function PlanillasClub() {
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+    }, [clubId]);
 
-    async function inicializar() {
+    async function loadData(effectiveClubId: string) {
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return router.push('/login');
-
-            const { data: perfil } = await supabase.from('profiles').select('team_id').eq('id', user.id).single();
-            if (!perfil?.team_id) return router.push('/club');
-            setTeamId(perfil.team_id);
-
             // Cargar Categorías
-            const { data: cats } = await supabase.from('team_categories').select('*').eq('team_id', perfil.team_id);
+            const { data: cats } = await supabase.from('team_categories').select('*').eq('team_id', effectiveClubId);
             setCategories(cats || []);
 
             // Cargar Partidos TERMINADOS
@@ -63,7 +61,7 @@ export default function PlanillasClub() {
           home_team:teams!home_team_id(id, name, logo_url),
           away_team:teams!away_team_id(id, name, logo_url)
         `)
-                .or(`home_team_id.eq.${perfil.team_id},away_team_id.eq.${perfil.team_id}`)
+                .or(`home_team_id.eq.${effectiveClubId},away_team_id.eq.${effectiveClubId}`)
                 .eq('status', 'finished')
                 .order('date_time', { ascending: false });
 
@@ -72,7 +70,7 @@ export default function PlanillasClub() {
         } catch (error) {
             console.error(error);
         } finally {
-            setLoading(false);
+            setDataLoading(false);
         }
     }
 
@@ -87,8 +85,8 @@ export default function PlanillasClub() {
     // Esto hace el "Efecto Embudo": Solo muestra rivales contra los que jugaste en ESA categoría
     const rivalMap = new Map();
     matchesPorCategoria.forEach(m => {
-        if (!teamId) return;
-        const rival = m.home_team_id === teamId ? m.away_team : m.home_team;
+        if (!clubId) return;
+        const rival = m.home_team_id === clubId ? m.away_team : m.home_team;
         if (!rivalMap.has(rival.id)) {
             rivalMap.set(rival.id, rival);
         }
@@ -99,7 +97,7 @@ export default function PlanillasClub() {
     const filteredMatches = selectedRivalId === 'Todos'
         ? matchesPorCategoria
         : matchesPorCategoria.filter(m => {
-            const rivalId = m.home_team_id === teamId ? m.away_team.id : m.home_team.id;
+            const rivalId = m.home_team_id === clubId ? m.away_team.id : m.home_team.id;
             return rivalId === selectedRivalId;
         });
 
@@ -108,7 +106,7 @@ export default function PlanillasClub() {
 
     // Helpers visuales
     const getResultStyle = (m: any) => {
-        const isHome = m.home_team_id === teamId;
+        const isHome = m.home_team_id === clubId;
         const myScore = isHome ? m.home_score : m.away_score;
         const rivalScore = isHome ? m.away_score : m.home_score;
 
@@ -116,7 +114,7 @@ export default function PlanillasClub() {
         return { label: 'DERROTA', color: 'text-red-700 bg-red-50 border-red-200' };
     };
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center">Cargando Historial...</div>;
+    if (authLoading || dataLoading) return <div className="min-h-screen flex items-center justify-center">Cargando Historial...</div>;
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans pb-20">
@@ -246,7 +244,7 @@ export default function PlanillasClub() {
                     ) : (
                         filteredMatches.map(m => {
                             const resultStyle = getResultStyle(m);
-                            const isHome = m.home_team_id === teamId;
+                            const isHome = m.home_team_id === clubId;
                             const rival = isHome ? m.away_team : m.home_team;
 
                             return (

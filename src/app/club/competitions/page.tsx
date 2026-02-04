@@ -9,31 +9,32 @@ import {
     ArrowLeft, Trophy, Calendar, ChevronRight, CheckCircle,
     Users, Shield, Medal, AlertCircle
 } from 'lucide-react';
+import { useClubAuth } from '@/hooks/useClubAuth';
 
 export default function ClubCompetitionsList() {
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
+    const { clubId, loading: authLoading } = useClubAuth();
+    const [dataLoading, setDataLoading] = useState(true);
     const [tournaments, setTournaments] = useState<any[]>([]);
-    const [teamId, setTeamId] = useState<string | null>(null);
 
     useEffect(() => {
-        fetchCompetitions();
-    }, []);
+        if (clubId) fetchCompetitions(clubId);
+    }, [clubId]);
 
-    async function fetchCompetitions() {
+    async function fetchCompetitions(effectiveClubId: string) {
         try {
             // 1. Get User & Team ID (Layout already validates session, but we need the ID)
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return; // Silent return, Layout handles redirect
+            // const { data: { user } } = await supabase.auth.getUser();
+            // if (!user) return; // Silent return, Layout handles redirect
 
-            const { data: profile } = await supabase.from('profiles').select('club_id').eq('id', user.id).single();
-            if (!profile?.club_id) {
+            // const { data: profile } = await supabase.from('profiles').select('club_id').eq('id', user.id).single();
+            if (!effectiveClubId) {
                 // If no club, just stop loading. Redirecting to /club might cause loop if we are mistakenly there.
-                setLoading(false);
+                setDataLoading(false);
                 return;
             }
 
-            setTeamId(profile.club_id);
+            // setTeamId(profile.club_id);
 
             // 2. Find tournaments where this team participates
             // We look at 'tournament_teams' pivot table
@@ -46,7 +47,7 @@ export default function ClubCompetitionsList() {
             category:categories(name)
           )
         `)
-                .eq('team_id', profile.club_id);
+                .eq('team_id', effectiveClubId);
 
             if (partError) throw partError;
 
@@ -65,11 +66,11 @@ export default function ClubCompetitionsList() {
         } catch (error) {
             console.error(error);
         } finally {
-            setLoading(false);
+            setDataLoading(false);
         }
     }
 
-    if (loading) return (
+    if (authLoading || dataLoading) return (
         <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">
             <div className="animate-pulse flex flex-col items-center">
                 <Trophy size={48} className="text-zinc-800 mb-4" />

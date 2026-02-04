@@ -7,22 +7,22 @@ import {
     ArrowRight
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
+import { useClubAuth } from '@/hooks/useClubAuth';
 
 export default function ClubDashboard() {
+    const supabase = createClient();
     const [clubName, setClubName] = useState('Mi Club');
 
+    const { profile, loading } = useClubAuth();
+
     useEffect(() => {
-        // Quick fetch for the welcome message
-        async function getName() {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
-                if (profile?.full_name) setClubName(profile.full_name);
-            }
+        if (profile?.full_name) {
+            setClubName(profile.full_name);
+        } else if (profile?.club?.name) { // Fallback if full_name is empty but club link exists
+            setClubName(profile.club.name);
         }
-        getName();
-    }, []);
+    }, [profile]);
 
     const cards = [
         {

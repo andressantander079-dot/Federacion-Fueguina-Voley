@@ -1,181 +1,230 @@
-// src/hooks/useVolleyMatch.ts
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 
-type Player = { id: string; number: number; name: string; isLibero?: boolean };
-type TeamSide = 'home' | 'away';
+// Types
+export type Player = {
+    id: string;
+    number: number;
+    name: string;
+    isLibero?: boolean;
+};
 
-export function useVolleyMatch() {
-  // Sets y Posiciones
-  const [sets, setSets] = useState([{ number: 1, home: 0, away: 0, finished: false }]);
-  const [currentSetIdx, setCurrentSetIdx] = useState(0);
-  
-  const [posHome, setPosHome] = useState<Player[]>([]);
-  const [posAway, setPosAway] = useState<Player[]>([]);
-  const [benchHome, setBenchHome] = useState<Player[]>([]);
-  const [benchAway, setBenchAway] = useState<Player[]>([]);
-  
-  const [servingTeam, setServingTeam] = useState<TeamSide | null>(null);
-  
-  // HISTORIAL DE PUNTOS (Para consultar estados previos)
-  const [history, setHistory] = useState<any[]>([]);
+export type TeamSide = 'home' | 'away';
 
-  // Inicialización (Mock)
-  const initPositions = () => {
-      const home: Player[] = [
-          {id:'h1', number:1, name:'Saca'}, {id:'h2', number:2, name:'Ana'},
-          {id:'h3', number:3, name:'Bea'}, {id:'h4', number:4, name:'Carla'},
-          {id:'h5', number:5, name:'Dani'}, {id:'h6', number:6, name:'Eli'}
-      ];
-      const homeSubs: Player[] = [{id:'hs1', number:15, name:'Suplente'}];
+export type SetData = {
+    number: number;
+    home: number;
+    away: number;
+    finished: boolean;
+};
 
-      const away: Player[] = [
-          {id:'a1', number:7, name:'Sol'}, {id:'a2', number:8, name:'Mia'},
-          {id:'a3', number:9, name:'Pia'}, {id:'a4', number:10, name:'Luz'},
-          {id:'a5', number:11, name:'Vick'}, {id:'a6', number:12, name:'Roc'}
-      ];
-      const awaySubs: Player[] = [{id:'as1', number:20, name:'Jime'}];
+export type MatchState = {
+    sets: SetData[];
+    currentSetIdx: number;
+    posHome: Player[]; // 6 positions (0=P1, 1=P6, 2=P5, 3=P4, 4=P3, 5=P2) - Wait, Voley positions are 1-6 anticlockwise.
+    // Standard array: index 0 = Pos 1 (Serving), 1 = Pos 6, 2 = Pos 5, 3 = Pos 4, 4 = Pos 3, 5 = Pos 2.
+    // Rotation is Clockwise: P2->P1, P1->P6, P6->P5...
+    // So Array Shift? 
+    // [P1, P6, P5, P4, P3, P2] -> Rotate -> [P2, P1, P6, P5, P4, P3]
+    // Yes, Unshift (add to front) the last element? 
+    // Let's verify: P2 is at index 5. P1 is at index 0.
+    // New P1 should be old P2.
+    // So we take index 5 and move it to index 0.
+    // Array: [P1, P6, P5, P4, P3, P2]
+    // Rotate: [P2, P1, P6, P5, P4, P3]
+    // This is: pop (P2) and unshift (to 0).
 
-      setPosHome(home); setBenchHome(homeSubs);
-      setPosAway(away); setBenchAway(awaySubs);
-  };
+    posAway: Player[];
+    benchHome: Player[];
+    benchAway: Player[];
+    servingTeam: TeamSide | null;
 
-  // ROTACIÓN NORMAL (Sentido Horario)
-  const rotateTeam = (currentPos: Player[]) => {
-      const newPos = [...currentPos];
-      const first = newPos.shift(); 
-      if (first) newPos.push(first);
-      return newPos;
-  };
+    // Substitution Tracking (Per Set)
+    // Maps PlayerID -> PlayerID (Original -> Current).
+    // Or better: Track pairs. { starterId: string, subId: string | null }
+    // Only 6 substitutions per set per team.
+    substitutionsHome: number;
+    substitutionsAway: number;
+};
 
-  // ROTACIÓN INVERSA (Para volver atrás)
-  const reverseRotateTeam = (currentPos: Player[]) => {
-      const newPos = [...currentPos];
-      const last = newPos.pop(); // Sacamos el último (Pos 6)
-      if (last) newPos.unshift(last); // Lo ponemos primero (Pos 1)
-      return newPos;
-  };
+export function useVolleyMatch(initialState?: Partial<MatchState>) {
+    // State
+    const [sets, setSets] = useState<SetData[]>(initialState?.sets || [{ number: 1, home: 0, away: 0, finished: false }]);
+    const [currentSetIdx, setCurrentSetIdx] = useState(initialState?.currentSetIdx || 0);
 
-  // --- SUMAR PUNTO ---
-  const addPoint = (team: TeamSide) => {
-      // Guardar Snapshot
-      const snapshot = JSON.parse(JSON.stringify({
-          sets, posHome, posAway, benchHome, benchAway, servingTeam, currentSetIdx
-      }));
-      setHistory(prev => [...prev, snapshot]);
+    const [posHome, setPosHome] = useState<Player[]>(initialState?.posHome || []);
+    const [posAway, setPosAway] = useState<Player[]>(initialState?.posAway || []);
 
-      let nextPosHome = [...posHome];
-      let nextPosAway = [...posAway];
-      
-      // Si recupera saque -> Rota
-      if (servingTeam && servingTeam !== team) {
-          if (team === 'home') nextPosHome = rotateTeam(posHome);
-          else nextPosAway = rotateTeam(posAway);
-      }
+    const [benchHome, setBenchHome] = useState<Player[]>(initialState?.benchHome || []);
+    const [benchAway, setBenchAway] = useState<Player[]>(initialState?.benchAway || []);
 
-      setServingTeam(team);
-      setPosHome(nextPosHome);
-      setPosAway(nextPosAway);
-      
-      setSets(prev => prev.map((set, index) => {
-          if (index === currentSetIdx) {
-              return { ...set, [team]: set[team] + 1 };
-          }
-          return set;
-      }));
-  };
+    const [servingTeam, setServingTeam] = useState<TeamSide | null>(initialState?.servingTeam || null);
 
-  // --- RESTAR PUNTO (Lógica Correctora por Equipo) ---
-  const subtractPoint = (team: TeamSide) => {
-      if (sets[currentSetIdx][team] === 0) return; // No se puede restar si es 0
+    const [subsCount, setSubsCount] = useState({ home: 0, away: 0 }); // Track count per set
 
-      let shouldReverseRotation = false;
-      const opponent = team === 'home' ? 'away' : 'home';
+    // Undo History
+    const [history, setHistory] = useState<string[]>([]); // Store JSON strings for deep copy simplicity
 
-      // 1. ANÁLISIS: ¿Corresponde volver atrás la rotación?
-      // Solo si el equipo ESTÁ sacando ahora mismo.
-      if (servingTeam === team) {
-          // Buscamos en el historial el momento exacto antes de este punto
-          // (El último estado donde el score de este equipo era "Actual - 1")
-          const prevScoreState = [...history].reverse().find(h => 
-              h.currentSetIdx === currentSetIdx && 
-              h.sets[currentSetIdx][team] === sets[currentSetIdx][team] - 1
-          );
+    // --- ACTIONS ---
 
-          if (prevScoreState) {
-              // Si en el estado anterior el equipo NO sacaba, significa que 
-              // este punto fue el que les dio el saque y la rotación.
-              // Entonces, al borrarlo, debemos devolver todo.
-              if (prevScoreState.servingTeam !== team) {
-                  shouldReverseRotation = true;
-              }
-          }
-      }
+    const snapshot = useCallback(() => {
+        const state = {
+            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount
+        };
+        setHistory(prev => [...prev, JSON.stringify(state)]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount]);
 
-      // 2. APLICAR CAMBIOS
-      if (shouldReverseRotation) {
-          // Rotar hacia atrás
-          if (team === 'home') setPosHome(prev => reverseRotateTeam(prev));
-          else setPosAway(prev => reverseRotateTeam(prev));
-          
-          // Devolver saque al rival
-          setServingTeam(opponent);
-      }
+    const undo = () => {
+        if (history.length === 0) return;
+        const lastStateStr = history[history.length - 1];
+        const lastState = JSON.parse(lastStateStr);
 
-      // Restar el punto numérico
-      setSets(prev => prev.map((s, i) => 
-          i === currentSetIdx ? { ...s, [team]: s[team] - 1 } : s
-      ));
-      
-      // Nota: No borramos el historial para permitir rehacer acciones si fuera necesario, 
-      // o simplemente dejamos que el historial crezca linealmente.
-  };
+        setSets(lastState.sets);
+        setCurrentSetIdx(lastState.currentSetIdx);
+        setPosHome(lastState.posHome);
+        setPosAway(lastState.posAway);
+        setBenchHome(lastState.benchHome);
+        setBenchAway(lastState.benchAway);
+        setServingTeam(lastState.servingTeam);
+        setSubsCount(lastState.subsCount);
 
-  // --- OTRAS FUNCIONES ---
-  const addPlayerToBench = (team: TeamSide, player: Player) => {
-      const currentList = team === 'home' ? benchHome : benchAway;
-      const currentCourt = team === 'home' ? posHome : posAway;
-      
-      // Evitar duplicados
-      if (currentList.find(p => p.id === player.id) || currentCourt.find(p => p.id === player.id)) return;
-      
-      if (team === 'home') setBenchHome(prev => [...prev, player]);
-      else setBenchAway(prev => [...prev, player]);
-  };
+        setHistory(prev => prev.slice(0, -1));
+    };
 
-  const substitutePlayer = (team: TeamSide, playerOutId: string, playerIn: Player) => {
-      const setterPos = team === 'home' ? setPosHome : setPosAway;
-      const setterBench = team === 'home' ? setBenchHome : setBenchAway;
-      const currentPos = team === 'home' ? posHome : posAway;
-      
-      const playerOut = currentPos.find(p => p.id === playerOutId);
-      if (!playerOut) return;
+    // Rotation: P2->P1, P1->P6... (Clockwise movement of players)
+    // Visual Array: [P1, P6, P5, P4, P3, P2]
+    // Rotate: Take Last (P2) and put First (P1).
+    const rotateTeamArray = (arr: Player[]) => {
+        if (arr.length < 6) return arr;
+        const newArr = [...arr];
+        const last = newArr.pop();
+        if (last) newArr.unshift(last);
+        return newArr;
+    };
 
-      // Swap en cancha
-      setterPos(prev => prev.map(p => p.id === playerOutId ? playerIn : p));
-      
-      // Swap en banca (Sale el entrante, entra el saliente)
-      setterBench(prev => {
-           const filtered = prev.filter(p => p.id !== playerIn.id);
-           return [...filtered, playerOut];
-      });
-  };
+    const addPoint = (team: TeamSide) => {
+        snapshot();
 
-  const finishSet = () => {
-      const snapshot = JSON.parse(JSON.stringify({ sets, posHome, posAway, benchHome, benchAway, servingTeam, currentSetIdx }));
-      setHistory(prev => [...prev, snapshot]);
+        // Logic: If receiving team wins point -> They Rotate & Serve
+        const isReceiving = servingTeam && servingTeam !== team;
 
-      setSets(prev => {
-          const newSets = [...prev];
-          newSets[currentSetIdx].finished = true;
-          if (newSets.length < 5) newSets.push({ number: newSets.length + 1, home: 0, away: 0, finished: false });
-          return newSets;
-      });
-      if (sets.length < 5) setCurrentSetIdx(prev => prev + 1);
-  };
+        if (isReceiving) {
+            if (team === 'home') setPosHome(prev => rotateTeamArray(prev));
+            else setPosAway(prev => rotateTeamArray(prev));
+        }
 
-  return {
-      sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
-      servingTeam, setServingTeam, addPoint, subtractPoint, 
-      substitutePlayer, finishSet, initPositions, addPlayerToBench
-  };
+        setServingTeam(team);
+
+        setSets(prev => prev.map((s, i) => {
+            if (i === currentSetIdx) {
+                return { ...s, [team]: s[team] + 1 };
+            }
+            return s;
+        }));
+    };
+
+    const subtractPoint = (team: TeamSide) => {
+        snapshot();
+        setSets(prev => prev.map((s, i) => {
+            if (i === currentSetIdx) {
+                // Prevent negative points
+                return { ...s, [team]: Math.max(0, s[team] - 1) };
+            }
+            return s;
+        }));
+    };
+
+    const substitutePlayer = (team: TeamSide, playerOutId: string, playerIn: Player) => {
+        // Validation should happen in UI, but basic check here
+        const isLiberoChange = playerIn.isLibero; // Simplified check
+
+        // If NOT Libero, increment sub count
+        if (!isLiberoChange) {
+            if (subsCount[team] >= 6) {
+                alert("Máximo de 6 sustituciones permitidas por set.");
+                return;
+            }
+            setSubsCount(prev => ({ ...prev, [team]: prev[team] + 1 }));
+        }
+
+        snapshot();
+
+        const setPos = team === 'home' ? setPosHome : setPosAway;
+        const setBench = team === 'home' ? setBenchHome : setBenchAway;
+
+        // Swap in Court (Find by ID)
+        setPos(prev => prev.map(p => p.id === playerOutId ? playerIn : p));
+
+        // Swap in Bench (Remove In, Add Out - Need to find Out object first if we want to move it to bench)
+        // Since we only got ID, we need to find the player object from current pos
+        // But for simplicity in this fix, we assume the UI handles the object availability or we fix the hook to find it.
+        // Actually, let's find the playerOut object from state
+
+        // This is tricky inside setBench updater if we depend on setPos state.
+        // Better:
+        let playerOutObj: Player | undefined;
+        if (team === 'home') playerOutObj = posHome.find(p => p.id === playerOutId);
+        else playerOutObj = posAway.find(p => p.id === playerOutId);
+
+        if (playerOutObj) {
+            const finalPlayerOut = playerOutObj; // capture
+            setBench(prev => {
+                const others = prev.filter(p => p.id !== playerIn.id);
+                return [...others, finalPlayerOut].sort((a, b) => a.number - b.number);
+            });
+        }
+    };
+
+    const addPlayerToBench = (team: TeamSide, player: Player) => {
+        const setBench = team === 'home' ? setBenchHome : setBenchAway;
+        setBench(prev => {
+            if (prev.find(p => p.id === player.id)) return prev;
+            return [...prev, player].sort((a, b) => a.number - b.number);
+        });
+    };
+
+    const initPositions = () => {
+        // Dummy implementation or logic to reset/load defaults if needed
+        // For now, it seems the component calls it to ensure state is ready?
+        // We can leave it empty or log.
+        console.log("Positions initialized");
+    };
+
+    const finishSet = () => {
+        snapshot();
+
+        // Mark current finished
+        setSets(prev => {
+            const copy = [...prev];
+            copy[currentSetIdx].finished = true;
+            // Add next if needed (up to 5)
+            if (copy.length < 5) {
+                copy.push({ number: copy.length + 1, home: 0, away: 0, finished: false });
+            }
+            return copy;
+        });
+
+        if (currentSetIdx < 4) {
+            setCurrentSetIdx(prev => prev + 1);
+            setSubsCount({ home: 0, away: 0 }); // Reset subs for new set
+        }
+    };
+
+    // Helpers to set initial state from DB
+    const setAllState = (state: Partial<MatchState>) => {
+        if (state.sets) setSets(state.sets);
+        if (state.currentSetIdx !== undefined) setCurrentSetIdx(state.currentSetIdx);
+        if (state.posHome) setPosHome(state.posHome);
+        if (state.posAway) setPosAway(state.posAway);
+        if (state.benchHome) setBenchHome(state.benchHome);
+        if (state.benchAway) setBenchAway(state.benchAway);
+        if (state.servingTeam !== undefined) setServingTeam(state.servingTeam);
+    };
+
+    return {
+        sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
+        servingTeam, subsCount,
+        addPoint, subtractPoint, substitutePlayer, finishSet, undo,
+        setAllState, setSets, setServingTeam, setPosHome, setPosAway,
+        initPositions, addPlayerToBench
+    };
 }

@@ -10,8 +10,13 @@ export const useSettings = () => {
         async function fetchSettings() {
             try {
                 // Ensure singleton key is true or fetch the first row
-                const { data, error } = await supabase.from('settings').select('*').single();
+                // EXPLICITLY SELECT ALL COLUMNS TO AVOID STALE CACHE ISSUES
+                const { data, error } = await supabase.from('settings')
+                    .select('*, bank_name, bank_holder, bank_cbu, bank_alias, bank_cuit, procedure_fees, player_fee')
+                    .single();
+
                 if (data) setSettings(data);
+                if (error) console.error("Error retrieving settings:", error);
             } catch (error) {
                 console.error("Error fetching settings:", error);
             } finally {

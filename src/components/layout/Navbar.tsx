@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { User } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { ThemeToggle } from '../ThemeToggle'
 
 import { useSettings } from '@/hooks/useSettings';
 
@@ -26,8 +27,8 @@ export default function Navbar({ onOpenLogin }: { onOpenLogin?: () => void }) {
     return (
         <nav
             className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 border-b ${scrolled
-                ? 'bg-tdf-blue/95 backdrop-blur-xl border-white/10 shadow-lg py-2'
-                : 'bg-gradient-to-b from-tdf-blue to-transparent border-transparent py-4'
+                ? 'bg-gradient-to-r from-tdf-orange/95 via-white/20 to-tdf-blue/95 backdrop-blur-xl border-white/20 shadow-lg py-3'
+                : 'bg-gradient-to-b from-tdf-blue/90 via-tdf-blue/40 to-transparent border-transparent py-5 backdrop-blur-[2px]'
                 }`}
         >
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -76,7 +77,8 @@ export default function Navbar({ onOpenLogin }: { onOpenLogin?: () => void }) {
                     </div>
 
                     {/* ACCESO OFICIAL */}
-                    <div>
+                    <div className="flex items-center gap-4">
+                        <ThemeToggle className="text-white hover:bg-white/10" />
                         <button
                             onClick={onOpenLogin}
                             className="group flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-full transition-all shadow-md hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 cursor-pointer border border-white/10"

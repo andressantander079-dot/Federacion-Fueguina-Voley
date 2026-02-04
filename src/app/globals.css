@@ -5,24 +5,11 @@
   --foreground: #171717;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 
-  /* Tierra del Fuego Theme */
-  --color-tdf-orange: #FA7126;
-  --color-tdf-orange-hover: #E05E15;
-  --color-tdf-blue: #2D4F82;
-  --color-tdf-blue-dark: #1a2f4d;
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {

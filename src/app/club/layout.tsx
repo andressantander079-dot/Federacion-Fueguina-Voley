@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import ClubSidebar from '@/components/Club/ClubSidebar';
+import GlobalBanner from '@/components/layout/GlobalBanner';
 import { Shield } from 'lucide-react';
 
 export default function ClubLayout({ children }: { children: React.ReactNode }) {
     const router = useRouter();
+    const supabase = createClient();
     const [loading, setLoading] = useState(true);
     const [accessDenied, setAccessDenied] = useState(false);
     const [clubData, setClubData] = useState<any>(null);
@@ -45,8 +47,8 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
             // Obtener logo del club si existe
             let logoUrl = null;
             if (profile?.club_id) {
-                const { data: team } = await supabase.from('teams').select('logo_url').eq('id', profile.club_id).single();
-                logoUrl = team?.logo_url;
+                const { data: team } = await supabase.from('teams').select('shield_url').eq('id', profile.club_id).single();
+                logoUrl = team?.shield_url;
             }
 
             setClubData({
@@ -106,6 +108,7 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
 
     return (
         <div className="flex bg-slate-50 dark:bg-zinc-950 min-h-screen">
+            <GlobalBanner />
             <ClubSidebar
                 clubName={clubData?.name}
                 logoUrl={clubData?.logoUrl}

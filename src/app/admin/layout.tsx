@@ -6,7 +6,7 @@ import { LayoutDashboard, Users, Trophy, ClipboardList, LogOut, Settings, Mail, 
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import WarningBanner from '@/components/admin/WarningBanner'
-import ThemeToggle from '@/components/ui/ThemeToggle'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function AdminLayout({
     children,
@@ -22,10 +22,10 @@ export default function AdminLayout({
     }
 
     return (
-        <div className="flex min-h-screen bg-gray-50 dark:bg-zinc-950">
+        <div className="flex min-h-screen bg-white text-orange-700 dark:bg-zinc-900 dark:text-gray-100 transition-colors duration-300">
             {/* Sidebar */}
-            <aside className="w-64 bg-tdf-blue-dark text-white hidden md:flex flex-col fixed inset-y-0 shadow-xl border-r border-white/5">
-                <div className="p-6 border-b border-white/10 bg-tdf-blue">
+            <aside className="w-64 bg-blue-600 text-white hidden md:flex flex-col fixed inset-y-0 shadow-xl border-r border-white/5">
+                <div className="p-6 border-b border-white/10 bg-blue-700">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                         <span className="w-8 h-8 bg-tdf-orange rounded-lg flex items-center justify-center text-xs shadow-lg">FVU</span>
                         <span className="tracking-tight">Panel Admin</span>
@@ -35,7 +35,7 @@ export default function AdminLayout({
                 <nav className="flex-1 p-4 space-y-1">
                     <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-4">Gestión</div>
                     <AdminNavLink href="/admin" icon={<LayoutDashboard size={20} />} label="Inicio" />
-                    <AdminNavLink href="/admin/solicitudes" icon={<UserPlus size={20} />} label="Solicitudes" />
+
                     <AdminNavLink href="/admin/mensajes" icon={<Mail size={20} />} label="Mensajes" />
                     <AdminNavLink href="/admin/noticias" icon={<Megaphone size={20} />} label="Noticias" />
 
@@ -50,7 +50,6 @@ export default function AdminLayout({
                 </nav>
 
                 <div className="p-4 border-t border-white/10 bg-black/20 flex flex-col gap-2">
-                    <ThemeToggle className="w-full flex justify-center bg-white/5 hover:bg-white/10 text-slate-300 hover:text-yellow-400 border border-transparent hover:border-white/10" />
                     <button
                         onClick={handleLogout}
                         className="flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg w-full transition-all group"
@@ -63,6 +62,18 @@ export default function AdminLayout({
 
             {/* Main Content */}
             <main className="flex-1 md:ml-64 transition-all duration-300 relative">
+                {/* Top Bar for Theme Toggle */}
+                <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+                    <button
+                        onClick={handleLogout}
+                        className="md:hidden w-10 h-10 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-full flex items-center justify-center text-red-500 shadow-lg hover:bg-red-50 transition-colors"
+                        title="Salir al Inicio"
+                    >
+                        <LogOut size={18} />
+                    </button>
+                    <ThemeToggle className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-lg" />
+                </div>
+
                 <WarningBanner />
                 {children}
             </main>

@@ -25,16 +25,24 @@ export default function TeamsListPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [newClubName, setNewClubName] = useState('')
   const [creating, setCreating] = useState(false)
+
+  // Form State
+  const [formData, setFormData] = useState({
+    name: '',
+    city: 'Ushuaia',
+    email: '',
+    password: '',
+  })
+  const [staff, setStaff] = useState<{ name: string, role: string, phone: string }[]>([])
+  const [newStaff, setNewStaff] = useState({ name: '', role: '', phone: '' })
 
   const supabase = createClient()
 
   useEffect(() => {
+    // ... existing fetch logic ...
     const fetchTeams = async () => {
       try {
-        // Fetch real teams
-        // Force rebuild
         const { data, error } = await supabase
           .from('teams')
           .select('id, name, city, shield_url')
@@ -42,10 +50,6 @@ export default function TeamsListPage() {
 
         if (data && data.length > 0) {
           setTeams(data)
-        } else {
-          // Fallback to mock if no data for demo
-          // In production remove this 'else'
-          // setTeams(MOCK_TEAMS) 
         }
       } catch (err) {
         console.error('Error fetching teams:', err)
@@ -56,26 +60,54 @@ export default function TeamsListPage() {
     fetchTeams()
   }, [])
 
+  const handleAddStaff = () => {
+    if (!newStaff.name || !newStaff.role) return;
+    setStaff([...staff, newStaff]);
+    setNewStaff({ name: '', role: '', phone: '' })
+  }
+
+  const handleRemoveStaff = (index: number) => {
+    setStaff(staff.filter((_, i) => i !== index));
+  }
+
   const handleCreateClub = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClubName.trim()) return;
+    if (!formData.name.trim() || !formData.email || !formData.password) return alert("Completa los campos obligatorios");
 
     setCreating(true);
     try {
-      const { data, error } = await supabase.from('teams').insert([
-        { name: newClubName, city: 'Ushuaia' } // Default city, customizable later
-      ]).select().single();
+      const response = await fetch('/api/admin/create-club', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clubName: formData.name,
+          city: formData.city,
+          email: formData.email,
+          password: formData.password,
+          staff: staff
+        })
+      });
 
-      if (error) throw error;
-
-      if (data) {
-        setTeams([...teams, data]);
-        setNewClubName('');
-        setShowCreateModal(false);
+      const text = await response.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (e) {
+        console.error("Error parsing JSON:", text);
+        throw new Error("Respuesta inválida del servidor: " + text.substring(0, 100));
       }
-    } catch (error) {
+
+      if (!response.ok) throw new Error(result.error || 'Error creando club');
+
+      setTeams([...teams, result.team]);
+      setFormData({ name: '', city: 'Ushuaia', email: '', password: '' });
+      setStaff([]);
+      setShowCreateModal(false);
+      alert(`¡Club Creado! Usuario: ${result.user.email}`);
+
+    } catch (error: any) {
       console.error("Error creating club:", error);
-      alert("Error al crear el club.");
+      alert("Error: " + error.message);
     } finally {
       setCreating(false);
     }
@@ -87,7 +119,7 @@ export default function TeamsListPage() {
 
   return (
     <div className="p-8 min-h-screen">
-      {/* Header */}
+      {/* ... Header and Search code remains similar ... */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -105,7 +137,6 @@ export default function TeamsListPage() {
         </button>
       </div>
 
-      {/* Search */}
       <div className="relative mb-8 max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
         <input
@@ -120,16 +151,13 @@ export default function TeamsListPage() {
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {loading ? (
-          // Skeletons
-          [1, 2, 3, 4].map(i => (
-            <div key={i} className="h-48 bg-gray-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />
-          ))
+          [1, 2, 3, 4].map(i => <div key={i} className="h-48 bg-gray-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />)
         ) : filteredTeams.length > 0 ? (
           filteredTeams.map((team) => (
             <div key={team.id} className="relative group bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-gray-100 dark:border-white/5 shadow-sm hover:shadow-xl hover:border-tdf-blue/30 transition-all duration-300 flex flex-col items-center text-center overflow-hidden">
+              {/* Same Card Content as before */}
               <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-50 dark:to-black/20 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-              {/* Delete Button */}
               <button
                 onClick={async (e) => {
                   e.preventDefault();
@@ -179,31 +207,106 @@ export default function TeamsListPage() {
           </div>
         )}
       </div>
-      {/* CREATE MODAL */}
+
+      {/* CREATE MODAL - EXPANDED */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 max-w-md w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 uppercase-headings">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 max-w-2xl w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 uppercase-headings max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-black text-slate-800 dark:text-white">Nuevo Club</h2>
+              <h2 className="text-2xl font-black text-slate-800 dark:text-white">Alta de Club</h2>
               <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors">
                 <X size={24} className="text-slate-500" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateClub}>
-              <div className="mb-6">
-                <label className="block text-sm font-bold text-slate-500 mb-2 uppercase tracking-wider">Nombre del Club</label>
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Ej: Club Galicia"
-                  className="w-full text-lg font-bold p-4 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-tdf-orange outline-none"
-                  value={newClubName}
-                  onChange={(e) => setNewClubName(e.target.value)}
-                />
+            <form onSubmit={handleCreateClub} className="space-y-6">
+
+              {/* Sección 1: Datos del Club */}
+              <div className="space-y-4 p-4 bg-slate-50 dark:bg-black/20 rounded-xl">
+                <h3 className="text-sm font-bold text-tdf-blue uppercase tracking-wider mb-2">Datos Institucionales</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Nombre Oficial</label>
+                    <input
+                      type="text"
+                      required
+                      className="w-full p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-white/10 rounded-lg outline-none focus:border-tdf-orange"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Ciudad</label>
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-white/10 rounded-lg outline-none focus:border-tdf-orange"
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="flex gap-3">
+              {/* Sección 2: Acceso */}
+              <div className="space-y-4 p-4 bg-slate-50 dark:bg-black/20 rounded-xl">
+                <h3 className="text-sm font-bold text-tdf-blue uppercase tracking-wider mb-2">Credenciales de Acceso</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Email (Usuario)</label>
+                    <input
+                      type="email"
+                      required
+                      className="w-full p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-white/10 rounded-lg outline-none focus:border-tdf-orange"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="col-span-2 md:col-span-1">
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Contraseña</label>
+                    <input
+                      type="password"
+                      required
+                      className="w-full p-3 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-white/10 rounded-lg outline-none focus:border-tdf-orange"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 3: Staff */}
+              <div className="space-y-4 p-4 bg-slate-50 dark:bg-black/20 rounded-xl">
+                <h3 className="text-sm font-bold text-tdf-blue uppercase tracking-wider mb-2">Autoridades / Staff</h3>
+
+                <div className="flex gap-2 items-end mb-4">
+                  <div className="flex-1">
+                    <input placeholder="Nombre" className="w-full p-2 text-sm rounded border bg-white dark:bg-zinc-950 border-slate-200 dark:border-white/10" value={newStaff.name} onChange={e => setNewStaff({ ...newStaff, name: e.target.value })} />
+                  </div>
+                  <div className="flex-1">
+                    <input placeholder="Cargo (Ej: Presidente)" className="w-full p-2 text-sm rounded border bg-white dark:bg-zinc-950 border-slate-200 dark:border-white/10" value={newStaff.role} onChange={e => setNewStaff({ ...newStaff, role: e.target.value })} />
+                  </div>
+                  <div className="flex-1">
+                    <input placeholder="Teléfono" className="w-full p-2 text-sm rounded border bg-white dark:bg-zinc-950 border-slate-200 dark:border-white/10" value={newStaff.phone} onChange={e => setNewStaff({ ...newStaff, phone: e.target.value })} />
+                  </div>
+                  <button type="button" onClick={handleAddStaff} className="p-2 bg-slate-200 dark:bg-white/10 rounded hover:bg-slate-300 transition text-slate-700 dark:text-white">
+                    <Plus size={16} />
+                  </button>
+                </div>
+
+                {staff.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {staff.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/5 text-sm">
+                        <span className="font-bold">{s.name}</span>
+                        <span className="text-slate-500">({s.role})</span>
+                        <button type="button" onClick={() => handleRemoveStaff(i)} className="text-red-400 hover:text-red-600"><X size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-white/10">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
@@ -213,10 +316,10 @@ export default function TeamsListPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={!newClubName.trim() || creating}
+                  disabled={creating}
                   className="flex-1 py-3 bg-tdf-orange hover:bg-orange-600 text-white font-bold rounded-xl shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition"
                 >
-                  {creating ? <Loader2 className="animate-spin" /> : 'Crear Club'}
+                  {creating ? <Loader2 className="animate-spin" /> : 'Confirmar Alta'}
                 </button>
               </div>
             </form>

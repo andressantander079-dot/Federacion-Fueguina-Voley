@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
     Send, Eye, Users, AlertCircle, CheckCircle,
-    X, Type, Shield, UserCheck
+    X, Type, Shield, UserCheck, Plus, FileText,
+    Image as ImageIcon // Alias to avoid conflict if next/image used, though not used here yet.
 } from 'lucide-react'
 
 // Prioridades y Colores
@@ -21,6 +22,7 @@ export default function ComposeMessagePage() {
 
     // Data
     const [clubs, setClubs] = useState<any[]>([])
+    const [referees, setReferees] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
 
     // Form State
@@ -28,20 +30,25 @@ export default function ComposeMessagePage() {
     const [body, setBody] = useState('')
     const [priority, setPriority] = useState('normal')
     const [selectedClubs, setSelectedClubs] = useState<string[]>([])
+    const [selectedReferees, setSelectedReferees] = useState<string[]>([])
     const [selectedCategory, setSelectedCategory] = useState<string>('all')
 
     // UI State
     const [loading, setLoading] = useState(false)
     const [showPreview, setShowPreview] = useState(false)
+    const [attachments, setAttachments] = useState<File[]>([])
+    const [uploading, setUploading] = useState(false)
 
     useEffect(() => {
         const fetchData = async () => {
-            const [{ data: teams }, { data: cats }] = await Promise.all([
-                supabase.from('teams').select('id, name, logo_url').order('name'),
-                supabase.from('categories').select('*').order('name')
+            const [{ data: teams }, { data: cats }, { data: refs }] = await Promise.all([
+                supabase.from('teams').select('id, name, shield_url').order('name'),
+                supabase.from('categories').select('*').order('name'),
+                supabase.from('profiles').select('id, full_name, role, email').eq('role', 'referee')
             ])
             setClubs(teams || [])
             setCategories(cats || [])
+            setReferees(refs || [])
         }
         fetchData()
     }, [supabase])
@@ -59,45 +66,100 @@ export default function ComposeMessagePage() {
         }
     }
 
-    const toggleClub = (id: string) => {
-        if (selectedClubs.includes(id)) {
-            setSelectedClubs(prev => prev.filter(c => c !== id))
+    const toggleClub = (id: string, type: 'club' | 'referee') => {
+        if (type === 'club') {
+            if (selectedClubs.includes(id)) setSelectedClubs(prev => prev.filter(c => c !== id))
+            else setSelectedClubs(prev => [...prev, id])
         } else {
-            setSelectedClubs(prev => [...prev, id])
+            if (selectedReferees.includes(id)) setSelectedReferees(prev => prev.filter(c => c !== id))
+            else setSelectedReferees(prev => [...prev, id])
         }
     }
 
     const handleSelectAll = () => {
-        if (selectedClubs.length === clubs.length) setSelectedClubs([])
-        else setSelectedClubs(clubs.map(c => c.id))
+        const allSelected = selectedClubs.length === clubs.length && selectedReferees.length === referees.length
+
+        if (allSelected) {
+            setSelectedClubs([])
+            setSelectedReferees([])
+        } else {
+            setSelectedClubs(clubs.map(c => c.id))
+            setSelectedReferees(referees.map(r => r.id))
+        }
+    }
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const files = Array.from(e.target.files);
+            const validFiles = files.filter(f => f.size <= 10 * 1024 * 1024); // 10MB limit
+            if (files.length !== validFiles.length) alert("Algunos archivos superan el límite de 10MB y fueron ignorados.");
+            setAttachments(prev => [...prev, ...validFiles]);
+        }
+    }
+
+    const removeAttachment = (index: number) => {
+        setAttachments(prev => prev.filter((_, i) => i !== index));
     }
 
     const handleSubmit = async () => {
-        if (!subject || !body || selectedClubs.length === 0) return alert("Faltan datos (Asunto, Mensaje o Destinatarios)")
+        const totalRecipients = selectedClubs.length + selectedReferees.length
+        if (!subject || !body || totalRecipients === 0) return alert("Faltan datos (Asunto, Mensaje o Destinatarios)")
 
         setLoading(true)
         try {
             const user = (await supabase.auth.getUser()).data.user
             if (!user) throw new Error("No autenticado")
 
-            // 1. Crear Mensaje
+            // 1. Upload Attachments if any
+            let uploadedAttachments = [];
+            if (attachments.length > 0) {
+                setUploading(true);
+                for (const file of attachments) {
+                    const fileExt = file.name.split('.').pop();
+                    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+                    const { error: uploadError } = await supabase.storage.from('message-attachments').upload(fileName, file);
+                    if (uploadError) throw uploadError;
+
+                    const { data: { publicUrl } } = supabase.storage.from('message-attachments').getPublicUrl(fileName);
+                    uploadedAttachments.push({
+                        name: file.name,
+                        type: file.type,
+                        url: publicUrl,
+                        size: file.size
+                    });
+                }
+                setUploading(false);
+            }
+
+            // 2. Crear Mensaje
             const { data: msg, error: msgError } = await supabase.from('messages').insert({
                 sender_id: user.id, // Assumes profile exists
                 subject,
                 body,
                 priority,
-                type: 'comunicado'
+                type: 'comunicado',
+                attachments: uploadedAttachments
             }).select().single()
 
             if (msgError) throw msgError
 
-            // 2. Crear Destinatarios
-            const recipients = selectedClubs.map(clubId => ({
+            // 2. Crear Destinatarios (Clubes + Arbitros)
+            const clubRecipients = selectedClubs.map(clubId => ({
                 message_id: msg.id,
-                recipient_club_id: clubId
+                recipient_club_id: clubId,
+                recipient_user_id: null
             }))
 
-            const { error: recError } = await supabase.from('message_recipients').insert(recipients)
+            const refereeRecipients = selectedReferees.map(userId => ({
+                message_id: msg.id,
+                recipient_club_id: null,
+                recipient_user_id: userId
+            }))
+
+            const allRecipients = [...clubRecipients, ...refereeRecipients]
+
+            const { error: recError } = await supabase.from('message_recipients').insert(allRecipients)
             if (recError) throw recError
 
             alert("Mensaje enviado con éxito")
@@ -155,6 +217,41 @@ export default function ComposeMessagePage() {
                         </div>
                     </div>
 
+                    {/* Attachments Section */}
+                    <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                            <label className="text-sm font-bold text-slate-500">Adjuntos (PDF, JPG, PNG, SVG - Max 10MB)</label>
+                            <label className="cursor-pointer text-blue-600 dark:text-blue-400 font-bold text-xs hover:underline flex items-center gap-1">
+                                <Plus size={14} /> Agregar Archivo
+                                <input
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.jpg,.jpeg,.png,.svg"
+                                    className="hidden"
+                                    onChange={handleFileSelect}
+                                />
+                            </label>
+                        </div>
+
+                        {attachments.length > 0 && (
+                            <div className="grid grid-cols-1 gap-2">
+                                {attachments.map((file, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-zinc-800 rounded-lg border border-slate-100 dark:border-zinc-700">
+                                        <div className="flex items-center gap-2 overflow-hidden">
+                                            <div className="p-1 bg-white dark:bg-zinc-700 rounded border border-slate-200 dark:border-zinc-600">
+                                                {file.type.startsWith('image/') ? <ImageIcon size={16} /> : <FileText size={16} />}
+                                            </div>
+                                            <span className="text-sm truncate font-medium dark:text-slate-200">{file.name}</span>
+                                            <span className="text-xs text-slate-400">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                                        </div>
+                                        <button onClick={() => removeAttachment(idx)} className="text-slate-400 hover:text-red-500"><X size={16} /></button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {uploading && <div className="text-xs text-blue-500 font-bold animate-pulse">Subiendo archivos...</div>}
+                    </div>
+
                     {/* Actions */}
                     <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-zinc-800">
                         <button
@@ -165,7 +262,7 @@ export default function ComposeMessagePage() {
                         </button>
                         <button
                             onClick={handleSubmit}
-                            disabled={loading || selectedClubs.length === 0}
+                            disabled={loading || selectedClubs.length === 0 || uploading}
                             className="px-6 py-2 bg-tdf-blue hover:bg-tdf-blue-dark text-white font-bold rounded-lg shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <Send size={18} /> {loading ? 'Enviando...' : 'Enviar Comunicado'}
@@ -190,19 +287,21 @@ export default function ComposeMessagePage() {
                         onClick={handleSelectAll}
                         className="w-full py-1.5 text-xs font-bold text-blue-600 bg-blue-50 rounded hover:bg-blue-100 transition mb-4"
                     >
-                        {selectedClubs.length === clubs.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
+                        {selectedClubs.length + selectedReferees.length === clubs.length + referees.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
                     </button>
 
                     <div className="text-xs text-slate-400 font-medium">
-                        {selectedClubs.length} clubes seleccionados
+                        {selectedClubs.length + selectedReferees.length} seleccionados
                     </div>
                 </div>
 
                 <div className="p-2 space-y-1">
+                    {/* Clubes */}
+                    <div className="px-2 py-1 text-xs font-bold text-slate-400 uppercase">Clubes</div>
                     {clubs.map(club => (
                         <div
                             key={club.id}
-                            onClick={() => toggleClub(club.id)}
+                            onClick={() => toggleClub(club.id, 'club')}
                             className={`
                                 flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border
                                 ${selectedClubs.includes(club.id)
@@ -218,13 +317,52 @@ export default function ComposeMessagePage() {
                                 {selectedClubs.includes(club.id) && <CheckCircle size={14} />}
                             </div>
 
-                            <img src={club.logo_url || '/placeholder.png'} className="w-8 h-8 rounded-full bg-slate-100 object-contain" />
+                            {club.shield_url ? (
+                                <img src={club.shield_url} className="w-8 h-8 rounded-full bg-slate-100 object-contain" />
+                            ) : (
+                                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs uppercase">
+                                    {club.name.charAt(0)}
+                                </div>
+                            )}
 
                             <span className={`text-sm font-bold ${selectedClubs.includes(club.id) ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'}`}>
                                 {club.name}
                             </span>
                         </div>
                     ))}
+
+                    {/* Arbitros */}
+                    {referees.length > 0 && (
+                        <>
+                            <div className="px-2 py-1 text-xs font-bold text-slate-400 uppercase mt-4">Árbitros</div>
+                            {referees.map(ref => (
+                                <div
+                                    key={ref.id}
+                                    onClick={() => toggleClub(ref.id, 'referee')}
+                                    className={`
+                                        flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border
+                                        ${selectedReferees.includes(ref.id)
+                                            ? 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800'
+                                            : 'bg-white border-transparent hover:bg-slate-50 dark:bg-transparent dark:hover:bg-white/5'
+                                        }
+                                    `}
+                                >
+                                    <div className={`
+                                        w-5 h-5 rounded border flex items-center justify-center
+                                        ${selectedReferees.includes(ref.id) ? 'bg-purple-500 border-purple-500 text-white' : 'border-slate-300 bg-white'}
+                                    `}>
+                                        {selectedReferees.includes(ref.id) && <CheckCircle size={14} />}
+                                    </div>
+                                    <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold">
+                                        {ref.full_name.charAt(0)}
+                                    </div>
+                                    <span className={`text-sm font-bold ${selectedReferees.includes(ref.id) ? 'text-purple-700 dark:text-purple-300' : 'text-slate-700 dark:text-slate-300'}`}>
+                                        {ref.full_name}
+                                    </span>
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </div>
             </div>
 

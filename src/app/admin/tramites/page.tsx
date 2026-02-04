@@ -1,24 +1,27 @@
-// src/app/admin/tramites/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
    FileText, CheckCircle, XCircle, Clock,
    Search, ArrowLeft, Download, AlertTriangle,
-   Copy, Info, AlertOctagon, TrendingUp, Keyboard
+   Info, AlertOctagon, TrendingUp, Keyboard, Users, Shield, UserCheck, Loader2
 } from 'lucide-react';
 
-// Motivos rápidos de rechazo (Rec #2)
-const REJECTION_REASONS = [
-   "Comprobante ilegible o borroso",
-   "Monto no coincide con el arancel",
-   "Falta firma de autoridad",
-   "Documento vencido",
-   "N° de Operación incorrecto"
-];
+// Unified Type
+type DashboardItem = {
+   id: string;
+   type: 'procedure' | 'player';
+   title: string;
+   subtitle: string;
+   status: string; // Keep generic string to match DB values exactly
+   date: string;
+   team_name: string;
+   team_logo?: string;
+   originalData: any;
+};
 
 export default function AdminTramitesPage() {
    const router = useRouter();
@@ -26,163 +29,182 @@ export default function AdminTramitesPage() {
    const [loading, setLoading] = useState(true);
 
    // Datos Principales
-   const [procedures, setProcedures] = useState<any[]>([]);
-   const [selectedProcId, setSelectedProcId] = useState<string | null>(null);
+   const [items, setItems] = useState<DashboardItem[]>([]);
+   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
    // Filtros y UI
-   const [filterStatus, setFilterStatus] = useState<'en_revision' | 'aprobado' | 'rechazado'>('en_revision');
+   const [filterStatus, setFilterStatus] = useState<'pendientes' | 'aprobados' | 'rechazados'>('pendientes');
    const [searchTerm, setSearchTerm] = useState('');
 
    // Acciones
-   const [rejectMode, setRejectMode] = useState(false);
-   const [rejectReason, setRejectReason] = useState('');
+   const [processingAction, setProcessingAction] = useState(false);
 
    // Estados Calculados (Helpers)
-   const filteredProcs = procedures.filter(p => {
-      const matchStatus = p.status === filterStatus;
-      const matchSearch = p.teams?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         p.code?.toLowerCase().includes(searchTerm.toLowerCase());
+   const filteredItems = items.filter(p => {
+      // Normalize Status for Filter
+      // Pendiente: 'en_revision' (tramites), 'pending' (players)
+      // Aprobado: 'aprobado' (tramites), 'active' (players)
+      // Rechazado: 'rechazado' (tramites), 'rejected' (players)
+
+      const s = p.status.toLowerCase();
+      const isPending = s === 'en_revision' || s === 'pending';
+      const isApproved = s === 'aprobado' || s === 'active';
+      const isRejected = s === 'rechazado' || s === 'rejected';
+
+      let matchStatus = false;
+      if (filterStatus === 'pendientes') matchStatus = isPending;
+      if (filterStatus === 'aprobados') matchStatus = isApproved;
+      if (filterStatus === 'rechazados') matchStatus = isRejected;
+
+      const matchSearch = p.team_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+         p.title.toLowerCase().includes(searchTerm.toLowerCase());
       return matchStatus && matchSearch;
    });
 
-   const selectedProc = procedures.find(p => p.id === selectedProcId);
-
-   // REC #11: DETECTOR DE DUPLICADOS
-   // Busca otros trámites del mismo club, mismo monto/título en los últimos 2 días
-   const potentialDuplicates = selectedProc ? procedures.filter(p =>
-      p.id !== selectedProc.id &&
-      p.team_id === selectedProc.team_id &&
-      (p.amount === selectedProc.amount || p.title === selectedProc.title) &&
-      p.status === 'en_revision'
-   ) : [];
+   const selectedItem = items.find(p => p.id === selectedItemId);
 
    useEffect(() => {
-      fetchProcedures();
+      fetchAll();
    }, []);
 
-   // REC #10: NAVEGACIÓN POR TECLADO
-   useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-         // Solo si no estamos escribiendo en un input
-         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-         if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            navigateList(1);
-         } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            navigateList(-1);
-         } else if ((e.key === 'a' || e.key === 'A') && selectedProc && !rejectMode && filterStatus === 'en_revision') {
-            e.preventDefault();
-            handleApprove();
-         } else if ((e.key === 'r' || e.key === 'R') && selectedProc && !rejectMode && filterStatus === 'en_revision') {
-            e.preventDefault();
-            setRejectMode(true);
-         } else if (e.key === 'Escape') {
-            setRejectMode(false);
-         }
-      };
-
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-   }, [selectedProcId, filteredProcs, rejectMode, filterStatus]);
-
-   function navigateList(direction: number) {
-      if (filteredProcs.length === 0) return;
-      const currentIndex = filteredProcs.findIndex(p => p.id === selectedProcId);
-      let newIndex = currentIndex + direction;
-
-      // Límites
-      if (newIndex < 0) newIndex = 0;
-      if (newIndex >= filteredProcs.length) newIndex = filteredProcs.length - 1;
-
-      setSelectedProcId(filteredProcs[newIndex].id);
-      setRejectMode(false);
-   }
-
-   async function fetchProcedures() {
+   async function fetchAll() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) router.push('/login');
 
-      const { data, error } = await supabase
+      // 1. Procedures
+      const { data: proceduresData } = await supabase
          .from('procedures')
-         .select(`*, teams (name, logo_url)`) // Traemos datos del club
+         .select(`*, teams (name, logo_url)`)
          .order('created_at', { ascending: false });
 
-      if (error) console.error(error);
-      setProcedures(data || []);
+      // 2. Players (Validations)
+      const { data: playersData } = await supabase
+         .from('players')
+         .select(`*, team:teams(name)`)
+         .order('created_at', { ascending: false });
+
+      const mappedProcedures: DashboardItem[] = (proceduresData || []).map((p: any) => ({
+         id: p.id,
+         type: 'procedure',
+         title: p.title,
+         subtitle: p.category,
+         status: p.status,
+         date: p.created_at,
+         team_name: p.teams?.name || 'Club',
+         originalData: p
+      }));
+
+      const mappedPlayers: DashboardItem[] = (playersData || []).map((p: any) => ({
+         id: p.id,
+         type: 'player',
+         title: `Validación: ${p.name}`,
+         subtitle: `DNI: ${p.dni}`,
+         status: p.status,
+         date: p.created_at,
+         team_name: p.team?.name || 'Club',
+         originalData: p
+      }));
+
+      // Merge and sort
+      const allItems = [...mappedProcedures, ...mappedPlayers].sort((a, b) =>
+         new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      setItems(allItems);
       setLoading(false);
    }
 
-   // --- ACCIONES ---
+   // --- ACCIONES GENÉRICAS ---
 
    const handleApprove = async () => {
-      if (!selectedProc) return;
-      if (!confirm("¿Confirmar APROBACIÓN de este trámite?")) return;
+      if (!selectedItem) return;
+      if (!confirm("¿Confirmar APROBACIÓN de este trámite/jugador?")) return;
+      setProcessingAction(true);
 
       try {
-         await supabase.from('procedures').update({ status: 'aprobado', updated_at: new Date() }).eq('id', selectedProc.id);
-         await supabase.from('procedure_history').insert([{ procedure_id: selectedProc.id, status: 'aprobado', comment: 'Aprobado por Administración' }]);
+         // 1. Obtener Cuenta de Tesorería y Configuración (Fee)
+         const { data: accounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'ACTIVO').limit(1);
+         const { data: settings } = await supabase.from('settings').select('player_fee').single();
 
-         refreshUI();
-      } catch (error) { alert("Error al aprobar"); }
+         const accountId = accounts && accounts.length > 0 ? accounts[0].id : null;
+         const playerFee = settings?.player_fee || 0; // Default to 0 if not set
+
+         if (selectedItem.type === 'procedure') {
+            // == TRÁMITE ==
+            if (accountId) {
+               const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
+                  type: 'INGRESO',
+                  amount: Number(selectedItem.originalData.amount) || 0,
+                  description: `Trámite: ${selectedItem.title} - Op: ${selectedItem.originalData.code || 'S/N'}`,
+                  entity_name: selectedItem.team_name,
+                  date: new Date(),
+                  account_id: accountId
+               }]);
+               if (treasuryError) console.error("Error creating treasury movement for procedure:", treasuryError);
+            }
+            await supabase.from('procedures').update({ status: 'aprobado', updated_at: new Date() }).eq('id', selectedItem.id);
+            alert("Trámite aprobado y registrado en Tesorería.");
+         } else {
+            // == JUGADOR ==
+            if (accountId && playerFee > 0) {
+               const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
+                  type: 'INGRESO',
+                  amount: playerFee,
+                  description: `Inscripción Jugador: ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
+                  entity_name: selectedItem.team_name,
+                  date: new Date(),
+                  account_id: accountId
+               }]);
+               if (treasuryError) console.error("Error creating treasury movement for player:", treasuryError);
+            }
+            // Update Player Status
+            await supabase.from('players').update({ status: 'active', rejection_reason: null }).eq('id', selectedItem.id);
+            alert(playerFee > 0 ? `Jugador validado. Se generó un ingreso de $${playerFee} en Tesorería.` : "Jugador validado correctamente.");
+         }
+
+         await fetchAll();
+      } catch (error: any) {
+         console.error(error);
+         alert("Error al aprobar: " + error.message);
+      }
+      finally { setProcessingAction(false); }
    };
 
    const handleReject = async () => {
-      if (!selectedProc || !rejectReason) return;
+      if (!selectedItem) return;
+
+      const reason = prompt("Ingrese el motivo del rechazo (Visible para el Club):");
+      if (reason === null) return; // Cancelled
+      if (!reason.trim()) return alert("Debe ingresar un motivo para rechazar.");
+
+      setProcessingAction(true);
       try {
-         await supabase.from('procedures').update({ status: 'rechazado', rejection_reason: rejectReason, updated_at: new Date() }).eq('id', selectedProc.id);
-         await supabase.from('procedure_history').insert([{ procedure_id: selectedProc.id, status: 'rechazado', comment: `Rechazado: ${rejectReason}` }]);
+         if (selectedItem.type === 'procedure') {
+            await supabase.from('procedures').update({ status: 'rechazado', rejection_reason: reason, updated_at: new Date() }).eq('id', selectedItem.id);
+         } else {
+            // Players use 'rejected' status
+            await supabase.from('players').update({ status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
+         }
 
-         refreshUI();
+         alert("Rechazado correctamente.");
+         await fetchAll();
       } catch (error) { alert("Error al rechazar"); }
+      finally { setProcessingAction(false); }
    };
 
-   const refreshUI = async () => {
-      await fetchProcedures();
-      setRejectMode(false);
-      setRejectReason('');
-      // Avanzar al siguiente automáticamente (Productividad)
-      navigateList(1);
-   };
-
-   // REC #12: EXPORTAR A CSV
-   const exportToCSV = () => {
-      if (filteredProcs.length === 0) return alert("No hay datos para exportar.");
-
-      const headers = ["ID", "Fecha", "Club", "Categoria", "Titulo", "Monto", "Banco", "Operacion", "Estado"];
-      const rows = filteredProcs.map(p => [
-         p.code,
-         new Date(p.created_at).toLocaleDateString(),
-         p.teams?.name,
-         p.category,
-         p.title,
-         p.amount || 0,
-         p.bank_name || '-',
-         p.operation_number || '-',
-         p.status
-      ]);
-
-      const csvContent = "data:text/csv;charset=utf-8,"
-         + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `reporte_tramites_${filterStatus}_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-   };
 
    // Helpers Visuales
    const getSLAColor = (dateStr: string) => {
-      if (filterStatus !== 'en_revision') return 'border-slate-200';
+      if (filterStatus !== 'pendientes') return 'border-slate-200';
       const hours = (new Date().getTime() - new Date(dateStr).getTime()) / (1000 * 60 * 60);
-      if (hours < 24) return 'border-green-500';
-      if (hours < 48) return 'border-yellow-500';
-      return 'border-red-500'; // Urgente
+      return hours < 24 ? 'border-green-500' : 'border-red-500';
    };
+
+   // Determine if we should show Actions Footer
+   const showActions = selectedItem && (
+      selectedItem.status === 'en_revision' ||
+      selectedItem.status === 'pending'
+   );
 
    if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50">Cargando Sistema...</div>;
 
@@ -194,47 +216,37 @@ export default function AdminTramitesPage() {
             <div className="flex items-center gap-4">
                <Link href="/admin" className="p-2 hover:bg-zinc-800 rounded-full text-zinc-400"><ArrowLeft size={20} /></Link>
                <h1 className="text-lg font-black text-white flex items-center gap-2">
-                  Gestión de Trámites
-                  <div className="hidden md:flex items-center gap-1 bg-zinc-800 px-2 py-0.5 rounded text-[10px] font-normal text-zinc-500 border border-zinc-700">
-                     <Keyboard size={12} /> <span>Usa flechas, A y R</span>
-                  </div>
+                  Mesa de Entrada
                </h1>
             </div>
 
             <div className="flex items-center gap-3">
-               {/* FILTROS (Rec #4) */}
+               {/* FILTROS */}
                <div className="flex bg-zinc-800 p-1 rounded-lg">
-                  <button onClick={() => { setFilterStatus('en_revision'); setSelectedProcId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'en_revision' ? 'bg-zinc-700 text-blue-400 shadow-sm' : 'text-zinc-500'}`}>
+                  <button onClick={() => { setFilterStatus('pendientes'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'pendientes' ? 'bg-zinc-700 text-blue-400 shadow-sm' : 'text-zinc-500'}`}>
                      <Clock size={14} /> Pendientes
                   </button>
-                  <button onClick={() => { setFilterStatus('aprobado'); setSelectedProcId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'aprobado' ? 'bg-zinc-700 text-emerald-400 shadow-sm' : 'text-zinc-500'}`}>
+                  <button onClick={() => { setFilterStatus('aprobados'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'aprobados' ? 'bg-zinc-700 text-emerald-400 shadow-sm' : 'text-zinc-500'}`}>
                      <CheckCircle size={14} /> Aprobados
                   </button>
-                  <button onClick={() => { setFilterStatus('rechazado'); setSelectedProcId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'rechazado' ? 'bg-zinc-700 text-red-400 shadow-sm' : 'text-zinc-500'}`}>
+                  <button onClick={() => { setFilterStatus('rechazados'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'rechazados' ? 'bg-zinc-700 text-red-400 shadow-sm' : 'text-zinc-500'}`}>
                      <XCircle size={14} /> Rechazados
                   </button>
                </div>
-
-               {/* BOTÓN EXPORTAR CSV (Rec #12) */}
-               {filterStatus === 'aprobado' && (
-                  <button onClick={exportToCSV} className="bg-white text-black px-3 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2 text-xs font-bold transition" title="Descargar reporte contable">
-                     <Download size={14} /> CSV
-                  </button>
-               )}
             </div>
          </header>
 
-         {/* SPLIT VIEW (Rec #1) */}
+         {/* SPLIT VIEW */}
          <div className="flex flex-1 overflow-hidden">
 
             {/* --- IZQUIERDA: LISTA --- */}
-            <div className="w-full md:w-1/3 min-w-[320px] bg-zinc-900 border-r border-zinc-800 flex flex-col z-10">
+            <div className="w-full md:w-1/3 min-w-[320px] bg-zinc-900 border-r border-zinc-800 flex flex-col z-10 transition-all">
                <div className="p-3 border-b border-zinc-800 bg-zinc-900">
                   <div className="relative">
                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                      <input
                         className="w-full pl-9 pr-4 py-2 text-sm bg-zinc-950 border border-zinc-800 text-white rounded-lg outline-none focus:border-blue-500 placeholder-zinc-600"
-                        placeholder="Buscar trámite..."
+                        placeholder="Buscar trámite o jugador..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                      />
@@ -242,36 +254,32 @@ export default function AdminTramitesPage() {
                </div>
 
                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                  {filteredProcs.length === 0 ? (
+                  {filteredItems.length === 0 ? (
                      <div className="text-center py-10 text-zinc-600">
-                        <p className="text-sm">No hay trámites en esta vista.</p>
+                        <p className="text-sm">No hay ítems en esta vista.</p>
                      </div>
                   ) : (
-                     filteredProcs.map(proc => (
+                     filteredItems.map(item => (
                         <div
-                           key={proc.id}
-                           onClick={() => { setSelectedProcId(proc.id); setRejectMode(false); }}
+                           key={item.id}
+                           onClick={() => setSelectedItemId(item.id)}
                            className={`
                         p-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition relative border-l-4
-                        ${selectedProcId === proc.id ? 'bg-zinc-800 border-l-blue-500' : 'border-l-transparent'}
-                        ${getSLAColor(proc.created_at)}
+                        ${selectedItemId === item.id ? 'bg-zinc-800 border-l-blue-500' : 'border-l-transparent'}
+                        ${getSLAColor(item.date)}
                       `}
                         >
                            <div className="flex justify-between items-start mb-1">
-                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{proc.category}</span>
-                              <span className="text-[10px] text-zinc-500">{new Date(proc.created_at).toLocaleDateString()}</span>
+                              <span className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 ${item.type === 'player' ? 'text-orange-500' : 'text-zinc-500'}`}>
+                                 {item.type === 'player' ? <Users size={10} /> : <FileText size={10} />}
+                                 {item.type === 'player' ? 'Lista de Buena Fe' : item.subtitle}
+                              </span>
+                              <span className="text-[10px] text-zinc-500">{new Date(item.date).toLocaleDateString()}</span>
                            </div>
                            <div className="flex items-center gap-2 mb-1">
-                              <img src={proc.teams?.logo_url || '/placeholder.png'} className="w-6 h-6 rounded-full bg-zinc-800 object-contain border border-zinc-700" />
-                              <h4 className="font-bold text-zinc-200 text-sm truncate">{proc.teams?.name}</h4>
+                              <h4 className="font-bold text-zinc-200 text-sm truncate">{item.team_name}</h4>
                            </div>
-                           <p className="text-sm text-zinc-400 truncate font-medium">{proc.title}</p>
-
-                           {proc.category === 'Sanciones' && (
-                              <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-500/10 w-fit px-2 py-0.5 rounded border border-red-500/20">
-                                 <AlertTriangle size={10} /> TRIBUNAL
-                              </div>
-                           )}
+                           <p className="text-sm text-zinc-400 truncate font-medium">{item.title}</p>
                         </div>
                      ))
                   )}
@@ -280,145 +288,143 @@ export default function AdminTramitesPage() {
 
             {/* --- DERECHA: DETALLE --- */}
             <div className="flex-1 bg-black flex flex-col h-full overflow-hidden relative">
-               {selectedProc ? (
+               {selectedItem ? (
                   <>
-                     {/* 1. HEADER DEL TRÁMITE */}
-                     <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 shadow-sm z-10 flex flex-col gap-4">
-                        <div className="flex justify-between items-start">
-                           <div>
-                              <h2 className="text-xl font-black text-white">{selectedProc.title}</h2>
-                              <div className="flex items-center gap-4 text-sm text-zinc-400 mt-1">
-                                 <span className="flex items-center gap-1"><FileText size={14} /> ID: {selectedProc.code}</span>
-
-                                 {/* REC #9: CLUB PROFILE CONTEXT */}
-                                 <div className="group relative">
-                                    <span className="flex items-center gap-1 font-bold text-blue-400 cursor-help hover:underline">
-                                       {selectedProc.teams?.name} <Info size={14} />
-                                    </span>
-                                    {/* Tooltip Flotante */}
-                                    <div className="absolute left-0 top-full mt-2 w-64 bg-zinc-800 text-white text-xs rounded-xl p-4 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 border border-zinc-700">
-                                       <h4 className="font-bold border-b border-zinc-600 pb-2 mb-2">Perfil Institucional</h4>
-                                       <div className="space-y-2">
-                                          <div className="flex justify-between"><span>Estado:</span> <span className="text-emerald-400 font-bold">Activo ✅</span></div>
-                                          <div className="flex justify-between"><span>Deuda:</span> <span className="text-white font-bold">$0.00</span></div>
-                                          <div className="flex justify-between"><span>Categoría:</span> <span className="text-yellow-400 font-bold">A</span></div>
-                                       </div>
-                                    </div>
-                                 </div>
-
-                              </div>
+                     {/* Render different content based on TYPE */}
+                     {selectedItem.type === 'procedure' ? (
+                        // --- VISTA TRAMITE NORMAL ---
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                           <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4">
+                              <h2 className="text-xl font-black text-white">{selectedItem.title}</h2>
+                              <p className="text-zinc-400 text-sm">Trámite Administrativo - {selectedItem.team_name}</p>
                            </div>
-
-                           {/* DATOS FINANCIEROS (Rec #5) */}
-                           {selectedProc.category === 'Pagos' && selectedProc.amount && (
-                              <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-lg flex gap-6 text-sm">
-                                 <div><span className="block text-[10px] font-bold text-emerald-500 uppercase">Monto</span><span className="block text-lg font-black text-emerald-400">${selectedProc.amount}</span></div>
-                                 <div>
-                                    <span className="block text-[10px] font-bold text-emerald-500 uppercase">Operación</span>
-                                    <div className="flex items-center gap-1 font-mono font-bold text-emerald-300">
-                                       {selectedProc.operation_number}
-                                       <button onClick={() => navigator.clipboard.writeText(selectedProc.operation_number)} className="hover:text-emerald-500"><Copy size={12} /></button>
-                                    </div>
+                           <div className="flex-1 overflow-y-auto p-6 flex justify-center bg-zinc-950">
+                              {selectedItem.originalData.attachment_url ? (
+                                 <div className="w-full max-w-4xl bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden min-h-[500px]">
+                                    <iframe src={selectedItem.originalData.attachment_url} className="w-full h-full" />
                                  </div>
-                                 <div className="hidden xl:block"><span className="block text-[10px] font-bold text-emerald-500 uppercase">Banco</span><span className="font-bold text-emerald-300">{selectedProc.bank_name}</span></div>
-                              </div>
-                           )}
+                              ) : <div className="text-zinc-500 mt-20">Sin adjunto</div>}
+                           </div>
                         </div>
-
-                        {/* REC #11: ALERTA DUPLICADOS */}
-                        {potentialDuplicates.length > 0 && (
-                           <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg flex items-center gap-3 text-orange-400 animate-in slide-in-from-top-2">
-                              <AlertOctagon size={20} className="flex-shrink-0" />
-                              <div className="text-xs">
-                                 <span className="font-bold block">POSIBLE DUPLICADO DETECTADO</span>
-                                 Hay otros {potentialDuplicates.length} trámite(s) similar(es) de este club en revisión. Verifica antes de aprobar.
+                     ) : (
+                        // --- VISTA JUGADOR (VALIDATION) ---
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                           <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex gap-6 items-center flex-shrink-0">
+                              <div className="w-16 h-16 rounded-full bg-zinc-800 overflow-hidden border-2 border-zinc-700">
+                                 {selectedItem.originalData.photo_url ? (
+                                    <img src={selectedItem.originalData.photo_url} className="w-full h-full object-cover" />
+                                 ) : <Users className="w-full h-full p-4 text-zinc-600" />}
+                              </div>
+                              <div>
+                                 <h2 className="text-2xl font-black text-white">{selectedItem.originalData.name}</h2>
+                                 <div className="flex gap-4 text-sm text-zinc-400 font-bold mt-1">
+                                    <span className="bg-zinc-800 px-2 py-0.5 rounded text-white">DNI: {selectedItem.originalData.dni}</span>
+                                    <span>{selectedItem.originalData.gender}</span>
+                                    <span>F. Nac: {selectedItem.originalData.birth_date}</span>
+                                 </div>
                               </div>
                            </div>
-                        )}
-                     </div>
 
-                     {/* 2. VISOR DE DOCUMENTO */}
-                     <div className="flex-1 overflow-y-auto p-6 flex justify-center bg-zinc-950">
-                        {selectedProc.attachment_url ? (
-                           <div className="w-full max-w-4xl bg-zinc-900 shadow-xl rounded-xl overflow-hidden flex flex-col min-h-[500px] border border-zinc-800">
-                              <div className="p-2 bg-zinc-800 text-white text-xs flex justify-between items-center px-4">
-                                 <span className="font-bold opacity-80">Vista Previa</span>
-                                 <a href={selectedProc.attachment_url} target="_blank" className="hover:text-blue-300 flex items-center gap-1 font-bold"><Download size={14} /> Descargar Original</a>
+                           {/* 3-COLUMN DOCUMENT GRID */}
+                           <div className="flex-1 p-8 overflow-y-auto bg-black pb-32">
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto h-full items-center">
+
+                                 {/* 1. FOTO */}
+                                 <DocumentCard
+                                    title="Foto de Perfil"
+                                    url={selectedItem.originalData.photo_url}
+                                    type="image"
+                                    missingText="Falta Foto"
+                                 />
+
+                                 {/* 2. FICHA MEDICA */}
+                                 <DocumentCard
+                                    title="Ficha Médica"
+                                    url={selectedItem.originalData.medical_url}
+                                    type="document"
+                                    missingText="Falta Ficha Médica"
+                                 />
+
+                                 {/* 3. COMPROBANTE DE PAGO */}
+                                 <DocumentCard
+                                    title="Comprobante Pago"
+                                    url={selectedItem.originalData.payment_url}
+                                    type="document"
+                                    missingText="Falta Comprobante"
+                                 />
+
                               </div>
-                              {selectedProc.attachment_url.toLowerCase().endsWith('.pdf') ? (
-                                 <iframe src={selectedProc.attachment_url} className="w-full flex-1" title="PDF Viewer"></iframe>
-                              ) : (
-                                 <div className="flex-1 flex items-center justify-center bg-zinc-800/10">
-                                    <img src={selectedProc.attachment_url} className="max-w-full max-h-full object-contain shadow-lg" alt="Comprobante" />
-                                 </div>
-                              )}
+                              <p className="text-center text-zinc-500 mt-8 text-sm">
+                                 Verifica que la documentación coincida con los datos del jugador.
+                              </p>
                            </div>
-                        ) : (
-                           <div className="flex flex-col items-center justify-center text-zinc-700 mt-20">
-                              <AlertTriangle size={64} className="mb-4 opacity-30" />
-                              <p className="font-medium">Sin archivo adjunto</p>
-                           </div>
-                        )}
-                     </div>
-
-                     {/* 3. BARRA DE ACCIONES (Footer) */}
-                     {filterStatus === 'en_revision' && (
-                        <div className="bg-zinc-900 border-t border-zinc-800 p-4 flex justify-end items-center gap-4 z-20 shadow-[0_-5px_20px_rgba(0,0,0,0.2)]">
-
-                           {rejectMode ? (
-                              <div className="flex-1 flex items-center gap-3 animate-in slide-in-from-bottom-2 bg-red-500/10 p-2 rounded-xl border border-red-500/20">
-                                 <div className="flex-1">
-                                    <input
-                                       className="w-full p-2 border border-red-500/30 rounded-lg text-sm outline-none focus:ring-2 ring-red-500/50 bg-zinc-950 text-white placeholder-red-300/50"
-                                       placeholder="Motivo del rechazo (Obligatorio)..."
-                                       value={rejectReason}
-                                       onChange={e => setRejectReason(e.target.value)}
-                                       autoFocus
-                                    />
-                                    <div className="flex gap-2 mt-2 overflow-x-auto pb-1 no-scrollbar">
-                                       {REJECTION_REASONS.map(r => (
-                                          <button key={r} onClick={() => setRejectReason(r)} className="text-[10px] bg-zinc-900 border border-zinc-700 hover:border-red-400 px-3 py-1 rounded-full whitespace-nowrap text-zinc-400 transition">
-                                             {r}
-                                          </button>
-                                       ))}
-                                    </div>
-                                 </div>
-                                 <div className="flex flex-col gap-2">
-                                    <button onClick={() => setRejectMode(false)} className="px-4 py-1.5 text-zinc-400 font-bold hover:bg-zinc-800 rounded-lg text-xs">Cancelar (Esc)</button>
-                                    <button onClick={handleReject} disabled={!rejectReason} className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 shadow-md disabled:opacity-50 text-xs">
-                                       Confirmar
-                                    </button>
-                                 </div>
-                              </div>
-                           ) : (
-                              <>
-                                 <div className="mr-auto hidden lg:flex items-center gap-4 text-xs text-zinc-500 font-medium">
-                                    <span className="flex items-center gap-1"><span className="border border-zinc-700 px-1.5 rounded bg-zinc-800">A</span> Aprobar</span>
-                                    <span className="flex items-center gap-1"><span className="border border-zinc-700 px-1.5 rounded bg-zinc-800">R</span> Rechazar</span>
-                                    <span className="flex items-center gap-1"><span className="border border-zinc-700 px-1.5 rounded bg-zinc-800">⬇</span> Mover</span>
-                                 </div>
-
-                                 <button onClick={() => setRejectMode(true)} className="px-6 py-3 border-2 border-zinc-700 text-red-500 font-bold rounded-xl hover:bg-red-500/10 hover:border-red-500/50 transition flex items-center gap-2">
-                                    <XCircle size={20} /> Rechazar
-                                 </button>
-                                 <button onClick={handleApprove} className="px-8 py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition shadow-lg flex items-center gap-2 transform hover:scale-105 active:scale-95">
-                                    <CheckCircle size={20} /> Aprobar & Notificar
-                                 </button>
-                              </>
-                           )}
                         </div>
                      )}
 
+                     {/* BARRA DE ACCIONES COMPARTIDA */}
+                     {showActions && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 p-6 flex justify-end items-center gap-4 z-50 shadow-[0_-5px_30px_rgba(0,0,0,0.8)]">
+                           <button
+                              onClick={handleReject}
+                              disabled={processingAction}
+                              className="px-6 py-4 border-2 border-red-600 text-red-500 font-bold rounded-xl hover:bg-red-600 hover:text-white transition flex items-center gap-2 uppercase tracking-wide text-sm"
+                           >
+                              <XCircle size={18} /> Rechazar
+                           </button>
+                           <button
+                              onClick={handleApprove}
+                              disabled={processingAction}
+                              className="px-8 py-4 bg-white text-black font-black rounded-xl hover:bg-zinc-200 transition shadow-xl shadow-white/10 flex items-center gap-2 uppercase tracking-wide text-sm transform hover:-translate-y-1 active:translate-y-0"
+                           >
+                              {processingAction ? <Loader2 className="animate-spin" /> : <><CheckCircle size={20} className="text-green-600" /> Aprobar</>}
+                           </button>
+                        </div>
+                     )}
                   </>
                ) : (
                   <div className="flex flex-col items-center justify-center h-full text-zinc-700 bg-black">
                      <TrendingUp size={64} className="mb-6 opacity-10" />
-                     <h3 className="text-xl font-bold text-zinc-500">Panel de Gestión</h3>
-                     <p className="max-w-xs text-center text-sm mt-2 opacity-60">Selecciona un trámite de la izquierda o usa las flechas del teclado para comenzar.</p>
+                     <h3 className="text-xl font-bold text-zinc-500">Mesa de Entrada Unificada</h3>
+                     <p className="max-w-xs text-center text-sm mt-2 opacity-60">Selecciona un ítem.</p>
                   </div>
                )}
             </div>
+         </div>
+      </div>
+   );
+}
 
+function DocumentCard({ title, url, type, missingText }: { title: string, url: string | null, type: 'image' | 'document', missingText: string }) {
+   return (
+      <div className="bg-zinc-900 border-2 border-zinc-800 rounded-2xl overflow-hidden flex flex-col h-[400px] group hover:border-zinc-700 transition relative">
+         <div className="bg-zinc-950/50 p-3 border-b border-zinc-800 flex justify-between items-center">
+            <h4 className="font-bold text-zinc-300 text-sm">{title}</h4>
+            {url && (
+               <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                  <Download size={12} /> Abrir
+               </a>
+            )}
+         </div>
+
+         <div className="flex-1 relative flex items-center justify-center bg-zinc-950 p-4">
+            {url ? (
+               type === 'image' ? (
+                  <img src={url} className="max-w-full max-h-full object-contain rounded-lg shadow-lg" />
+               ) : (
+                  <div className="text-center">
+                     <FileText size={48} className="text-zinc-600 mb-2 mx-auto" />
+                     <p className="text-sm font-bold text-zinc-400">Documento PDF/IMG</p>
+                     <a href={url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-block px-4 py-2 bg-zinc-800 rounded-lg text-white hover:bg-zinc-700 text-sm font-bold">
+                        Vista Previa
+                     </a>
+                  </div>
+               )
+            ) : (
+               <div className="text-center opacity-40">
+                  <AlertOctagon size={48} className="mx-auto mb-2" />
+                  <p className="font-bold">{missingText}</p>
+               </div>
+            )}
          </div>
       </div>
    );

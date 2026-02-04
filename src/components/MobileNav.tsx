@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, CalendarDays, Trophy, Newspaper, Menu, X, BookOpen, Download, ChevronRight } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 
 export default function MobileNav() {
   const pathname = usePathname();
@@ -23,6 +24,10 @@ export default function MobileNav() {
             <div className="flex flex-col p-2">
               <MenuLink href="/reglamento" icon={BookOpen} label="Reglamento" onClick={() => setIsMenuOpen(false)} />
               <MenuLink href="/descargas" icon={Download} label="Descargas" onClick={() => setIsMenuOpen(false)} />
+              <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-800/50 mt-2">
+                <span className="text-sm font-bold text-zinc-400">Tema</span>
+                <ThemeToggle />
+              </div>
             </div>
           </div>
         </div>

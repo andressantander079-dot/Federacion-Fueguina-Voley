@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { Trophy, Plus, Users, Calendar, Filter, CheckCircle, XCircle } from 'lucide-react';
+import { Trophy, Plus, Users, Calendar, Filter, CheckCircle, XCircle, Trash2, Archive, RefreshCcw } from 'lucide-react';
 
 export default function AdminCompetenciasList() {
     const [torneos, setTorneos] = useState<any[]>([]);
@@ -179,6 +179,27 @@ export default function AdminCompetenciasList() {
         fetchTorneos();
     };
 
+    async function handleDelete(id: string) {
+        if (!confirm("⚠️ ¿Estás seguro de ELIMINAR este torneo?\nEsto borrará todos los partidos, tablas y estadísticas asociadas.\nNo se puede deshacer.")) return;
+
+        const { error } = await supabase.from('tournaments').delete().eq('id', id);
+        if (error) {
+            alert("Error al eliminar: " + error.message);
+        } else {
+            setTorneos(prev => prev.filter(t => t.id !== id));
+        }
+    }
+
+    async function handleArchive(id: string, currentStatus: string) {
+        const newStatus = currentStatus === 'archivado' ? 'borrador' : 'archivado'; // Restore to 'borrador' safer than 'activo'
+        const { error } = await supabase.from('tournaments').update({ status: newStatus }).eq('id', id);
+        if (error) {
+            alert("Error al actualizar estado: " + error.message);
+        } else {
+            fetchTorneos();
+        }
+    }
+
     const toggleTeamSelection = (teamId: string) => {
         setNewTourney(prev => {
             if (prev.selected_teams.includes(teamId)) {
@@ -217,44 +238,64 @@ export default function AdminCompetenciasList() {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {torneos.map((t: any) => (
-                        <Link key={t.id} href={`/admin/competencias/${t.id}`}>
-                            <div className="bg-zinc-900 p-0 rounded-xl shadow-sm border border-zinc-800 hover:shadow-md hover:border-tdf-blue transition cursor-pointer group relative overflow-hidden flex flex-col h-full">
-                                <div className="absolute top-0 right-0 w-24 h-24 bg-zinc-800/50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                        <div key={t.id} className="relative group">
+                            <Link href={`/admin/competencias/${t.id}`}>
+                                <div className={`bg-zinc-900 p-0 rounded-xl shadow-sm border border-zinc-800 hover:shadow-md hover:border-tdf-blue transition cursor-pointer relative overflow-hidden flex flex-col h-full ${t.status === 'archivado' ? 'opacity-50 grayscale' : ''}`}>
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-zinc-800/50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
 
-                                {/* Header Colorido según estado */}
-                                <div className={`h-1.5 w-full ${t.status === 'activo' ? 'bg-green-500' : 'bg-zinc-700'}`}></div>
+                                    {/* Header Colorido según estado */}
+                                    <div className={`h-1.5 w-full ${t.status === 'activo' ? 'bg-green-500' : t.status === 'archivado' ? 'bg-zinc-500' : 'bg-yellow-500'}`}></div>
 
-                                <div className="p-6 relative z-10 flex-1 flex flex-col">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">
-                                                Temp. {t.season}
-                                            </span>
-                                            <h3 className="text-xl font-black text-white leading-tight group-hover:text-tdf-blue transition">
-                                                {t.name}
-                                            </h3>
+                                    <div className="p-6 relative z-10 flex-1 flex flex-col">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">
+                                                    Temp. {t.season}
+                                                </span>
+                                                <h3 className="text-xl font-black text-white leading-tight group-hover:text-tdf-blue transition">
+                                                    {t.name}
+                                                </h3>
+                                            </div>
+                                            <div className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider ${t.status === 'activo' ? 'bg-green-500/10 text-green-500' : t.status === 'archivado' ? 'bg-zinc-800 text-zinc-400' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                                                {t.status}
+                                            </div>
                                         </div>
-                                        <div className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider ${t.status === 'activo' ? 'bg-green-500/10 text-green-500' : 'bg-zinc-800 text-zinc-500'}`}>
-                                            {t.status}
-                                        </div>
-                                    </div>
 
-                                    <div className="mt-auto space-y-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className="px-3 py-1 bg-zinc-950 text-zinc-400 text-xs font-bold rounded-lg border border-zinc-800 uppercase w-full text-center">
-                                                {t.category?.name || 'General'}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-3 py-1 text-xs font-bold rounded-lg border uppercase w-full text-center ${t.gender === 'Femenino' ? 'bg-pink-500/10 text-pink-500 border-pink-500/20' : t.gender === 'Masculino' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-purple-500/10 text-purple-500 border-purple-500/20'
-                                                }`}>
-                                                {t.gender || 'Mixto'}
-                                            </span>
+                                        <div className="mt-auto space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="px-3 py-1 bg-zinc-950 text-zinc-400 text-xs font-bold rounded-lg border border-zinc-800 uppercase w-full text-center">
+                                                    {t.category?.name || 'General'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-3 py-1 text-xs font-bold rounded-lg border uppercase w-full text-center ${t.gender === 'Femenino' ? 'bg-pink-500/10 text-pink-500 border-pink-500/20' : t.gender === 'Masculino' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+                                                    }`}>
+                                                    {t.gender || 'Mixto'}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+                            </Link>
+
+                            {/* Acciones Rápidas (Floating fuera del Link) */}
+                            <div className="absolute top-4 right-4 z-20 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                    onClick={(e) => { e.preventDefault(); handleArchive(t.id, t.status); }}
+                                    className="p-2 bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-full border border-zinc-700 shadow-lg"
+                                    title={t.status === 'archivado' ? "Restaurar" : "Archivar"}
+                                >
+                                    {t.status === 'archivado' ? <RefreshCcw size={14} /> : <Archive size={14} />}
+                                </button>
+                                <button
+                                    onClick={(e) => { e.preventDefault(); handleDelete(t.id); }}
+                                    className="p-2 bg-zinc-900 text-red-400 hover:text-red-500 hover:bg-red-900/30 rounded-full border border-zinc-700 shadow-lg"
+                                    title="Eliminar Torneo"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
                             </div>
-                        </Link>
+                        </div>
                     ))}
                 </div>
             )}
