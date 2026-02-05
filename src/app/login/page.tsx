@@ -14,7 +14,8 @@ export default function LoginPage() {
     const [error, setError] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const router = useRouter()
-    const supabase = createClient()
+    // Stable instance to prevent useEffect re-firing
+    const [supabase] = useState(() => createClient())
 
     // Redirect if already logged in
     useEffect(() => {
@@ -30,6 +31,8 @@ export default function LoginPage() {
 
                 if (profile?.role === 'admin') router.push('/admin')
                 else if (profile?.role === 'club' && profile.club_id) router.push('/club')
+                else if (profile?.role === 'referee') router.push('/referee')
+                else if (profile?.role === 'planillero') router.push('/planillero')
                 else router.push('/')
             }
         }
@@ -81,6 +84,9 @@ export default function LoginPage() {
                             break
                         case 'planillero':
                             router.push('/planillero')
+                            break
+                        case 'referee':
+                            router.push('/referee')
                             break
                         default:
                             router.push('/')

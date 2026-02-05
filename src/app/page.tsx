@@ -9,6 +9,8 @@ import Footer from '@/components/layout/Footer'
 import { Calendar, Trophy } from 'lucide-react'
 import Link from 'next/link'
 
+import LiveMatchesBanner from '@/components/home/LiveMatchesBanner'
+
 export default function HomePage() {
     const [isLoginOpen, setIsLoginOpen] = useState(false)
 
@@ -17,6 +19,9 @@ export default function HomePage() {
 
             {/* Navbar con acceso a callback */}
             <Navbar onOpenLogin={() => setIsLoginOpen(true)} />
+
+            {/* LIVE MATCHES BANNER */}
+            <LiveMatchesBanner />
 
             {/* HERO SECTION */}
             <header className="relative w-full min-h-[90vh] flex items-center justify-center overflow-hidden bg-tdf-blue">

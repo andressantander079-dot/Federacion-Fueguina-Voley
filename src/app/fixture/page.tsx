@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { calculateStandings } from '@/lib/tournamentUtils';
 import { Trophy, Calendar, Filter, MapPin, Clock } from 'lucide-react';
+import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -104,6 +105,7 @@ export default function FixturePage() {
         .select('*, home_team:teams!home_team_id(name), away_team:teams!away_team_id(name)')
         .eq('tournament_id', tournamentId)
         .neq('status', 'borrador') // Don't show drafts
+        .neq('status', 'cancelado') // Don't show canceled matches
         .order('scheduled_time', { ascending: true });
 
       // Fetch Teams for Standings
@@ -325,10 +327,10 @@ export default function FixturePage() {
                             <div key={m.id} className="bg-white dark:bg-zinc-900 p-5 hover:bg-slate-50 dark:hover:bg-white/5 transition flex flex-col md:flex-row items-center gap-6 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
                               {/* DATE & TIME */}
                               <div className="flex md:flex-col items-center gap-2 md:gap-1 min-w-[80px] text-slate-500 dark:text-slate-400">
-                                <span className="text-xs font-bold uppercase">{new Date(m.scheduled_time).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}</span>
+                                <span className="text-xs font-bold uppercase">{formatArgentinaDateLiteral(m.scheduled_time).split(',')[1]}</span>
                                 <span className="text-xs bg-slate-100 dark:bg-black text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded flex items-center gap-1">
                                   <Clock size={10} />
-                                  {new Date(m.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {formatArgentinaTimeLiteral(m.scheduled_time)}
                                 </span>
                               </div>
 
@@ -339,8 +341,12 @@ export default function FixturePage() {
                                 </div>
 
                                 <div className="flex justify-center">
-                                  <div className={`px-4 py-1.5 rounded-lg font-mono font-bold text-sm shadow-inner min-w-[80px] text-center ${m.status === 'finalizado' ? 'bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white' : 'bg-blue-50 dark:bg-blue-900/20 text-tdf-blue dark:text-blue-400'}`}>
-                                    {m.status === 'finalizado' ? `${m.home_score} - ${m.away_score}` : 'VS'}
+                                  <div className={`px-4 py-1.5 rounded-lg font-mono font-bold text-sm shadow-inner min-w-[80px] text-center ${m.status === 'finalizado' ? 'bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white' : (m.status === 'live' || m.status === 'en_curso') ? 'bg-red-500 text-white animate-pulse cursor-pointer hover:bg-red-600' : 'bg-blue-50 dark:bg-blue-900/20 text-tdf-blue dark:text-blue-400'}`}>
+                                    {(m.status === 'live' || m.status === 'en_curso') ? (
+                                      <a href={`/vivo/${m.id}`} className="flex items-center justify-center gap-1">LIVE</a>
+                                    ) : (
+                                      m.status === 'finalizado' ? `${m.home_score} - ${m.away_score}` : 'VS'
+                                    )}
                                   </div>
                                 </div>
 

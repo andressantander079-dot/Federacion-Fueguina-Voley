@@ -4,35 +4,56 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useClubAuth } from '@/hooks/useClubAuth';
+import MatchSheetModal from '@/components/Club/MatchSheetModal';
 import { calculateStandings, StandingRow } from '@/lib/tournamentUtils';
-import { ArrowLeft, Trophy, Calendar, FileText, Download, MapPin, Clock, AlertTriangle, ChevronDown, Check } from 'lucide-react';
+import { ArrowLeft, Trophy, Calendar, FileText, Download, MapPin, Clock, AlertTriangle, ChevronDown, Check, Users } from 'lucide-react';
+
+// Helper for logos
+function TeamLogo({ url, name, className = "w-10 h-10" }: { url?: string, name: string, className?: string }) {
+    const [error, setError] = useState(false);
+
+    if (error || !url || url.includes('placeholder')) {
+        return (
+            <div className={`${className} bg-slate-100 rounded-full flex items-center justify-center border border-slate-200 text-slate-500 font-bold text-xs shrink-0 overflow-hidden`}>
+                {name.substring(0, 2).toUpperCase()}
+            </div>
+        );
+    }
+    return (
+        <img
+            src={url}
+            alt={name}
+            className={`${className} object-contain`}
+            onError={() => setError(true)}
+        />
+    );
+}
 
 export default function CompetitionDetail() {
     const router = useRouter();
     const params = useParams();
     const tournamentId = params.id as string;
 
+    const { clubId, loading: authLoading } = useClubAuth();
+
     const [loading, setLoading] = useState(true);
     const [tournament, setTournament] = useState<any>(null);
     const [matches, setMatches] = useState<any[]>([]);
+    const [categories, setCategories] = useState<any[]>([]); // For modal logic
     const [standings, setStandings] = useState<StandingRow[]>([]);
     const [activeTab, setActiveTab] = useState<'standings' | 'fixture' | 'sheets'>('standings');
-    const [myTeamId, setMyTeamId] = useState<string | null>(null);
+
+    // Modal State
+    const [isSheetModalOpen, setIsSheetModalOpen] = useState(false);
+    const [selectedMatchForSheet, setSelectedMatchForSheet] = useState<any>(null);
 
     useEffect(() => {
-        fetchData();
-    }, [tournamentId]);
+        if (clubId) fetchData(clubId);
+    }, [tournamentId, clubId]);
 
-    async function fetchData() {
+    async function fetchData(currentTeamId: string) {
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return router.push('/login');
-
-            // 1. Get My Team ID
-            const { data: profile } = await supabase.from('profiles').select('club_id').eq('id', user.id).single();
-            const currentTeamId = profile?.club_id;
-            setMyTeamId(currentTeamId);
-
             // 2. Tournament Details
             const { data: t, error: tError } = await supabase.from('tournaments')
                 .select('*, category:categories(name)')
@@ -47,17 +68,20 @@ export default function CompetitionDetail() {
                 .from('matches')
                 .select(`
           *,
-          venue:venues(name),
-          home_team:teams!home_team_id(id, name, logo_url),
-          away_team:teams!away_team_id(id, name, logo_url)
+          home_team:teams!home_team_id(id, name, shield_url),
+          away_team:teams!away_team_id(id, name, shield_url)
         `)
                 .eq('tournament_id', tournamentId)
-                .order('date_time', { ascending: true }); // Chronological for Fixture
+                .order('scheduled_time', { ascending: true }); // Chronological for Fixture
 
             if (mError) throw mError;
             setMatches(m || []);
 
-            // 4. Calculate Standings
+            // 4. Fetch All Categories (for Modal Logic)
+            const { data: cats } = await supabase.from('categories').select('*');
+            setCategories(cats || []);
+
+            // 5. Calculate Standings
             // We need unique participants first
             const uniqueTeamsMap = new Map();
             m?.forEach((match: any) => {
@@ -67,14 +91,15 @@ export default function CompetitionDetail() {
             const participants = Array.from(uniqueTeamsMap.values()).map((t: any) => ({ id: t.id, name: t.name }));
 
             const calculatedStandings = calculateStandings(
-                m || [],
+                m.map((x: any) => ({ ...x, date_time: x.scheduled_time })) || [],
                 t.point_system || 'fivb',
                 participants
             );
             setStandings(calculatedStandings);
 
-        } catch (error) {
-            console.error(error);
+        } catch (error: any) {
+            console.error("Fetch Data Error:", JSON.stringify(error, null, 2));
+            if (error?.message) console.error("Error Message:", error.message);
         } finally {
             setLoading(false);
         }
@@ -92,11 +117,11 @@ export default function CompetitionDetail() {
     };
 
     const isMyMatch = (m: any) => {
-        return m.home_team_id === myTeamId || m.away_team_id === myTeamId;
+        return m.home_team_id === clubId || m.away_team_id === clubId;
     };
 
-    if (loading) return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+    if (authLoading || loading) return (
+        <div className="min-h-screen flex items-center justify-center bg-zinc-950">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
     );
@@ -156,10 +181,10 @@ export default function CompetitionDetail() {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {standings.map((row, index) => (
-                                        <tr key={row.id} className={`hover:bg-slate-50 transition ${row.id === myTeamId ? 'bg-blue-50/50' : ''}`}>
+                                        <tr key={row.id} className={`hover:bg-slate-50 transition ${row.id === clubId ? 'bg-blue-50/50' : ''}`}>
                                             <td className="px-4 py-3 text-center font-bold text-slate-400">{index + 1}</td>
                                             <td className="px-4 py-3 font-bold text-slate-700 flex items-center gap-2">
-                                                {row.id === myTeamId && <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
+                                                {row.id === clubId && <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
                                                 {row.name}
                                             </td>
                                             <td className="px-4 py-3 text-center font-black text-slate-800">{row.pts}</td>
@@ -196,8 +221,8 @@ export default function CompetitionDetail() {
 
                                     <div className="flex items-center justify-between gap-4">
                                         {/* Local */}
-                                        <div className={`flex-1 flex flex-col items-center gap-2 ${m.home_team_id === myTeamId ? 'font-black text-slate-900' : 'font-medium text-slate-600'}`}>
-                                            <img src={m.home_team?.logo_url || '/placeholder.png'} className="w-10 h-10 object-contain" />
+                                        <div className={`flex-1 flex flex-col items-center gap-2 ${m.home_team_id === clubId ? 'font-black text-slate-900' : 'font-medium text-slate-600'}`}>
+                                            <TeamLogo url={m.home_team?.shield_url} name={m.home_team?.name} />
                                             <span className="text-center text-sm leading-tight">{m.home_team?.name}</span>
                                         </div>
 
@@ -214,30 +239,45 @@ export default function CompetitionDetail() {
                                         </div>
 
                                         {/* Visita */}
-                                        <div className={`flex-1 flex flex-col items-center gap-2 ${m.away_team_id === myTeamId ? 'font-black text-slate-900' : 'font-medium text-slate-600'}`}>
-                                            <img src={m.away_team?.logo_url || '/placeholder.png'} className="w-10 h-10 object-contain" />
+                                        <div className={`flex-1 flex flex-col items-center gap-2 ${m.away_team_id === clubId ? 'font-black text-slate-900' : 'font-medium text-slate-600'}`}>
+                                            <TeamLogo url={m.away_team?.shield_url} name={m.away_team?.name} />
                                             <span className="text-center text-sm leading-tight">{m.away_team?.name}</span>
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-center gap-6 text-xs text-slate-400 font-medium">
-                                        {m.date_time && (
-                                            <div className="flex items-center gap-1.5">
-                                                <Calendar size={14} className="text-slate-300" />
-                                                {new Date(m.date_time).toLocaleDateString()}
-                                            </div>
-                                        )}
-                                        {m.date_time && (
-                                            <div className="flex items-center gap-1.5">
-                                                <Clock size={14} className="text-slate-300" />
-                                                {new Date(m.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </div>
-                                        )}
-                                        {m.venue && (
-                                            <div className="flex items-center gap-1.5">
-                                                <MapPin size={14} className="text-slate-300" />
-                                                {m.venue.name}
-                                            </div>
+                                    <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between gap-6 text-xs text-slate-400 font-medium">
+                                        <div className="flex items-center gap-4">
+                                            {m.date_time && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <Calendar size={14} className="text-slate-300" />
+                                                    {new Date(m.date_time).toLocaleDateString()}
+                                                </div>
+                                            )}
+                                            {m.date_time && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <Clock size={14} className="text-slate-300" />
+                                                    {new Date(m.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </div>
+                                            )}
+                                            {m.venue && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <MapPin size={14} className="text-slate-300" />
+                                                    {m.venue.name}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Manage Sheet Button */}
+                                        {isMyMatch(m) && m.status === 'programado' && (
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedMatchForSheet(m);
+                                                    setIsSheetModalOpen(true);
+                                                }}
+                                                className="px-3 py-1.5 bg-zinc-900 text-white rounded-lg flex items-center gap-2 hover:bg-zinc-800 transition shadow-lg shadow-zinc-200"
+                                            >
+                                                <Users size={12} /> Gestionar Plantel
+                                            </button>
                                         )}
                                     </div>
                                 </div>
@@ -263,7 +303,7 @@ export default function CompetitionDetail() {
                                                 {m.home_team?.name} vs {m.away_team?.name}
                                             </p>
                                             <p className="text-xs text-slate-400 mt-0.5">
-                                                {new Date(m.date_time).toLocaleDateString()} • {m.home_score}-{m.away_score}
+                                                {new Date(m.scheduled_time).toLocaleDateString()} • {m.home_score}-{m.away_score}
                                             </p>
                                         </div>
                                     </div>
@@ -288,6 +328,15 @@ export default function CompetitionDetail() {
                 )}
 
             </div>
+
+            {/* Match Sheet Modal */}
+            <MatchSheetModal
+                isOpen={isSheetModalOpen}
+                onClose={() => setIsSheetModalOpen(false)}
+                match={{ ...selectedMatchForSheet, category: tournament?.category }} // Pass category rich obj mostly
+                clubId={clubId || ''}
+                categories={categories}
+            />
         </div>
     );
 }

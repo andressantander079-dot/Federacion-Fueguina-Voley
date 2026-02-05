@@ -37,9 +37,10 @@ export async function middleware(request: NextRequest) {
   // Definimos qué rutas proteger
   const isAdminRoute = path.startsWith('/admin')
   const isClubRoute = path.startsWith('/club')
+  const isRefereeRoute = path.startsWith('/referee')
 
   // CASO A: Si quiere entrar a zona protegida y NO tiene sesión -> Login
-  if (!session && (isAdminRoute || isClubRoute)) {
+  if (!session && (isAdminRoute || isClubRoute || isRefereeRoute)) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
@@ -51,5 +52,5 @@ export async function middleware(request: NextRequest) {
 
 // Configuración: Solo se ejecuta en estas rutas
 export const config = {
-  matcher: ['/admin/:path*', '/club/:path*'],
+  matcher: ['/admin/:path*', '/club/:path*', '/referee/:path*'],
 }

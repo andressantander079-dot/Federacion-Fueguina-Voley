@@ -36,11 +36,26 @@ export default function DesignationsPage() {
                 away_team:teams!away_team_id(id, name),
                 category:categories(name),
                 match_officials(
-                    id, role, status,
+                    id, role, status, user_id,
                     profile:profiles(full_name)
                 )
             `)
-            .gte('scheduled_time', new Date().toISOString())
+            //.gte('scheduled_time', new Date().toISOString()) // Removed to allow viewing past/today's matches
+            .order('scheduled_time', { ascending: false }) // Show newest/upcoming first? Actually descending shows latest created usually, but for schedule ascending is better for "Unknown->Future". 
+            // If we show past, maybe Descending is better so we see recent past?
+            // User wants to see "assigned referees". If match passed, they still want to see it? Correct.
+            // Let's keep Ascending but remove filter? Or Descending?
+            // "Partidos programados" usually implies future.
+            // But if they are "missing", maybe they are from "today" earlier?
+            // Let's remove the filter.
+            .order('scheduled_time', { ascending: false }) // Past -> Future? No, Future -> Past?
+            // If I sort Ascending: Oldest (Past) ... Newest (Future).
+            // If I sort Descending: Newest (Future) ... Oldest (Past).
+            // Let's use Descending to show latest matches at top? Or Ascending to see "Next match"?
+            // Admin usually wants to see "What's coming next".
+            // Let's stick to Ascending but remove filter? No, if I have 100 past matches, I don't want to scroll.
+            // Let's filter matches from "Last 24 hours" + Future?
+            .gte('scheduled_time', new Date(Date.now() - 86400000).toISOString()) // Show matches from last 24h onwards
             .order('scheduled_time', { ascending: true })
 
         if (data) setMatches(data)
@@ -205,6 +220,12 @@ export default function DesignationsPage() {
                     </div>
                 ))}
             </div>
+            {matches.length === 0 && !loading && (
+                <div className="text-center py-20 bg-white dark:bg-zinc-900 rounded-xl border border-dashed border-gray-300 dark:border-zinc-800">
+                    <p className="text-slate-500 font-bold">No hay partidos programados (próximos o últimas 24hs).</p>
+                    <button onClick={() => fetchMatches()} className="mt-4 text-blue-600 font-bold text-sm hover:underline">Recargar</button>
+                </div>
+            )}
 
             {/* Modal */}
             {selectedMatch && (

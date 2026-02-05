@@ -12,6 +12,7 @@ import Link from 'next/link';
 // Componente para ver planillas (si existe)
 import MatchSheetsTable from '@/components/admin/MatchSheetsTable';
 import { calculateStandings } from '@/lib/tournamentUtils';
+import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 export default function DetalleTorneoPage() {
    const params = useParams();
@@ -301,7 +302,7 @@ export default function DetalleTorneoPage() {
                                     <span>{p.away_team?.name}</span>
                                  </div>
                                  <div className="text-xs text-zinc-500 flex items-center gap-1">
-                                    <Clock size={12} /> {new Date(p.scheduled_time).toLocaleString()}
+                                    <Clock size={12} /> {formatArgentinaDateLiteral(p.scheduled_time)} {formatArgentinaTimeLiteral(p.scheduled_time)}
                                  </div>
                                  <Link href={`/admin/partido/${p.id}`} className="mt-1 w-full text-center bg-tdf-blue text-white py-1.5 rounded-lg text-xs font-bold hover:bg-blue-600 transition flex items-center justify-center gap-1">
                                     <Edit3 size={14} /> Gestionar
@@ -338,8 +339,8 @@ export default function DetalleTorneoPage() {
                                        {/* Info Fecha/Hora */}
                                        <div className="flex items-center gap-4 w-full md:w-auto">
                                           <div className="flex flex-col items-center min-w-[60px] text-zinc-500">
-                                             <span className="text-xs font-bold uppercase">{new Date(p.scheduled_time).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}</span>
-                                             <span className="text-[10px] bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">{new Date(p.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                             <span className="text-xs font-bold uppercase">{formatArgentinaDateLiteral(p.scheduled_time).split(',')[1]}</span>
+                                             <span className="text-[10px] bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">{formatArgentinaTimeLiteral(p.scheduled_time)}</span>
                                           </div>
                                           <div className="h-8 w-px bg-zinc-800 hidden md:block"></div>
                                           <div className="text-xs font-medium text-zinc-500 flex items-center gap-1">

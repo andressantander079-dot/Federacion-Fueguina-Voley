@@ -1,0 +1,13 @@
+Fetching recent matches...
+
+--- RAW DATA & PARSING TEST ---
+
+Match: River Plate vs Instituto
+Raw DB String:  2026-02-05T20:00:00+00:00
+Parsed Time:    20:00
+Formatted Date: jue, 5 feb, 08:00 p. m.
+
+Match: Estudiantes vs Independiente
+Raw DB String:  2026-02-05T21:00:00+00:00
+Parsed Time:    21:00
+Formatted Date: jue, 5 feb, 09:00 p. m.

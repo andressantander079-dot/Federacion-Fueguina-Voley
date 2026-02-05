@@ -12,7 +12,8 @@ export type ClubAuthResult = {
 
 export function useClubAuth(redirectOnFail: boolean = true): ClubAuthResult {
     const router = useRouter();
-    const supabase = createClient();
+    // Stable client instance
+    const [supabase] = useState(() => createClient());
 
     const [loading, setLoading] = useState(true);
     const [clubId, setClubId] = useState<string | null>(null);

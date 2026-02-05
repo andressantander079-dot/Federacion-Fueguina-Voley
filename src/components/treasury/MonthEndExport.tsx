@@ -4,9 +4,8 @@ import React, { useState } from 'react'
 import { Download, Loader2, FileArchive } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import JSZip from 'jszip'
-import * as XLSX from 'xlsx'
-import { saveAs } from 'file-saver' // Need to check if file-saver is installed, if not use native DOM
-// If file-saver not available, simple anchor approach works.
+import ExcelJS from 'exceljs'
+// Removed 'file-saver' dependency from imports as we use native Blob download
 
 export default function MonthEndExport() {
     const supabase = createClient()
@@ -20,7 +19,7 @@ export default function MonthEndExport() {
 
             // 1. Fetch Data
             const startDate = `${month}-01`
-            const endDate = `${month}-31` // Loose end date, postgres handles it or we can be precise
+            const endDate = `${month}-31`
 
             const { data: movements, error } = await supabase
                 .from('treasury_movements')
@@ -50,14 +49,14 @@ export default function MonthEndExport() {
 
             movements.forEach(m => {
                 const total = m.amount
-                const neto = m.type === 'EGRESO' ? (total / 1.21).toFixed(2) : total // Simplificación IVA 21%
+                const neto = m.type === 'EGRESO' ? (total / 1.21).toFixed(2) : total
                 const iva = m.type === 'EGRESO' ? (total - (total / 1.21)).toFixed(2) : 0
 
                 csvRows.push([
                     m.date.split('T')[0],
                     m.type,
                     m.tax_id || '-',
-                    `"${m.entity_name}"`, // Quote to avoid CSV break
+                    `"${m.entity_name}"`,
                     `"${m.description || ''}"`,
                     m.treasury_accounts?.code || 'S/C',
                     m.treasury_cost_centers?.name || 'General',
@@ -70,37 +69,71 @@ export default function MonthEndExport() {
             const csvContent = csvRows.map(e => e.join(',')).join('\n')
             folder?.file('Libro_IVA_Compras_Ventas.csv', csvContent)
 
-            // 3. Generate Excel (Reporte de Caja)
-            const ws = XLSX.utils.json_to_sheet(movements.map(m => ({
-                Fecha: m.date.split('T')[0],
-                Tipo: m.type,
-                Monto: m.amount,
-                Entidad: m.entity_name,
-                CUIT: m.tax_id,
-                Cuenta: `${m.treasury_accounts?.code} - ${m.treasury_accounts?.name}`,
-                Centro_Costos: m.treasury_cost_centers?.name,
-                Comprobante_URL: m.proof_url ? `VER LINK` : '' // In real XL, use hyperlinks
-            })))
-            const wb = XLSX.utils.book_new()
-            XLSX.utils.book_append_sheet(wb, ws, "Movimientos")
-            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-            folder?.file('Reporte_Caja.xlsx', excelBuffer)
+            // 3. Generate Excel (Reporte de Caja) using ExcelJS
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Movimientos');
+
+            // Define Columns
+            worksheet.columns = [
+                { header: 'Fecha', key: 'fecha', width: 12 },
+                { header: 'Tipo', key: 'tipo', width: 10 },
+                { header: 'Monto', key: 'monto', width: 15 },
+                { header: 'Entidad', key: 'entidad', width: 25 },
+                { header: 'CUIT', key: 'cuit', width: 15 },
+                { header: 'Cuenta', key: 'cuenta', width: 25 },
+                { header: 'Centro Costos', key: 'centro', width: 20 },
+                { header: 'Comprobante', key: 'comprobante', width: 30 }
+            ];
+
+            // Style Header
+            worksheet.getRow(1).font = { bold: true };
+            worksheet.getRow(1).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0E0E0' }
+            };
+
+            // Add Rows
+            movements.forEach(m => {
+                const row = worksheet.addRow({
+                    fecha: m.date.split('T')[0],
+                    tipo: m.type,
+                    monto: m.amount,
+                    entidad: m.entity_name,
+                    cuit: m.tax_id,
+                    cuenta: `${m.treasury_accounts?.code || ''} - ${m.treasury_accounts?.name || ''}`,
+                    centro: m.treasury_cost_centers?.name,
+                    comprobante: m.proof_url || ''
+                });
+
+                // Conditional Formatting for Amount
+                if (m.type === 'INGRESO') {
+                    row.getCell('monto').font = { color: { argb: 'FF006400' } }; // Green
+                } else {
+                    row.getCell('monto').font = { color: { argb: 'FF8B0000' } }; // Red
+                }
+
+                if (m.proof_url) {
+                    row.getCell('comprobante').value = { text: 'Ver Comprobante', hyperlink: m.proof_url };
+                    row.getCell('comprobante').font = { color: { argb: 'FF0000FF' }, underline: true };
+                }
+            });
+
+            const excelBuffer = await workbook.xlsx.writeBuffer();
+            folder?.file('Reporte_Caja.xlsx', excelBuffer);
 
             // 4. Generate TXT (Fiscal Export Flat File)
-            // Estructura ficticia para aplicativo: CUIT(11) + FECHA(8) + MONTO(15)
             let txtContent = ''
             movements.filter(m => m.type === 'EGRESO').forEach(m => {
                 const cuit = (m.tax_id || '00000000000').replace(/-/g, '').padEnd(11, '0').slice(0, 11)
-                const fecha = m.date.slice(0, 10).replace(/-/g, '') // YYYYMMDD
+                const fecha = m.date.slice(0, 10).replace(/-/g, '')
                 const monto = m.amount.toFixed(2).replace('.', '').padStart(15, '0')
                 txtContent += `${cuit}${fecha}${monto}\n`
             })
             folder?.file('Exportacion_Impositiva.txt', txtContent)
 
-            // 5. Generate PDF Placeholder (Reporte Comprobantes)
-            // Para el PDF consolidado real se necesitaría procesar imágenes.
-            // Aquí creamos un índice de comprobantes en texto como placeholder de "Merging"
-            let readmeContent = `REPORTE DE COMPROBANTES - PERIOD ${month}\n\n`
+            // 5. Generate PDF Placeholder
+            let readmeContent = `REPORTE DE COMPROBANTES - PERIODO ${month}\n\n`
             movements.forEach(m => {
                 if (m.proof_url) {
                     readmeContent += `[${m.date.slice(0, 10)}] $${m.amount} - ${m.entity_name}: ${m.proof_url}\n`
@@ -111,7 +144,7 @@ export default function MonthEndExport() {
             // Zip Generation
             const content = await zip.generateAsync({ type: 'blob' })
 
-            // Download (Simple Native approach to avoid 'file-saver' dependency check)
+            // Download
             const url = window.URL.createObjectURL(content)
             const a = document.createElement('a')
             a.href = url

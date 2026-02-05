@@ -66,11 +66,12 @@ export default function AdminCompetenciasList() {
         setIsSearchingTeams(true);
 
         try {
-            // STEP 1: Fetch Squads (Planteles) for this Category
+            // STEP 1: Fetch Squads (Planteles) for this Category AND Gender
             const { data: squadsData, error: squadsError } = await supabase
                 .from('squads')
                 .select('id, name, team_id') // No join here to avoid errors
-                .eq('category_id', newTourney.category_id);
+                .eq('category_id', newTourney.category_id)
+                .eq('gender', newTourney.gender);
 
             if (squadsError) {
                 console.error("Error fetching squads:", squadsError);

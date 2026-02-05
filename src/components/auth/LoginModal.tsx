@@ -69,6 +69,9 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     case 'planillero':
                         router.push('/planillero')
                         break
+                    case 'referee':
+                        router.push('/referee')
+                        break
                     default:
                         // Si es usuario normal, revisamos si tiene solicitud pendiente
                         const { data: req } = await supabase.from('club_requests').select('status').eq('user_id', data.user.id).single()

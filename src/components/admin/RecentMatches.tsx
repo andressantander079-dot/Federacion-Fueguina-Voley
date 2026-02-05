@@ -5,8 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Match } from '@/types/match'; // Ensure Types match
 import { AlertTriangle, Calendar, Clock, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 export default function RecentMatches() {
     const [matches, setMatches] = useState<any[]>([]); // Using any for join flexibility or update Match type
@@ -114,7 +113,7 @@ export default function RecentMatches() {
                                 {isLive ? (
                                     <span className="text-green-600 flex items-center gap-1"><span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> En Vivo</span>
                                 ) : (
-                                    <span className="flex items-center gap-1"><Clock size={12} /> {format(new Date(match.scheduled_time), 'HH:mm', { locale: es })} hs</span>
+                                    <span className="flex items-center gap-1"><Clock size={12} /> {formatArgentinaTimeLiteral(match.scheduled_time)} hs</span>
                                 )}
                                 <span>•</span>
                                 <span className="text-tdf-blue">{match.category?.name || 'Torneo'}</span>
