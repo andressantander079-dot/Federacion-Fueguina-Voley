@@ -20,6 +20,7 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
 
     // For "Playing Up" logic
     const [validCategories, setValidCategories] = useState<any[]>([]);
+    const [filterCategory, setFilterCategory] = useState("ALL");
 
     useEffect(() => {
         if (isOpen && match && clubId) {
@@ -79,32 +80,19 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
             setSelectedPlayers(currentSelection);
 
             // 2. Fetch Squads & Players
-            // We need squads that match Club + Gender + Valid Categories
+            // We need ALL squads for the club to show blocked players too
             console.log("Debug Sheet:", { clubId, validCategories, matchGender: match.gender });
 
-            const validCatIds = validCategories.map(c => (c && typeof c === 'object' && c.id) ? c.id : c).filter(Boolean);
-            console.log("Valid Cat IDs:", validCatIds);
-
-
-            // Fetch squads
+            // Fetch squads (No category filter to include older ones)
             const { data: squads } = await supabase
                 .from('squads')
-                .select('id, category_id, name, gender') // Removed relation causing error
-                .eq('team_id', clubId)
-                //.eq('gender', match.gender) // Strict gender match
-                // Note: Some leagues might allow mixed? Assuming strict for now.
-                // Actually, let's filter in memory to be safe if gender format differs (M, F vs Masculino)
-                .in('category_id', validCatIds);
+                .select('id, category_id, name, gender')
+                .eq('team_id', clubId);
 
             if (!squads) throw new Error("No squads found");
 
-            // Filter by gender roughly (if match.gender is 'Masculino' and squad is 'Masculino')
+            // Filter by gender roughly
             const genderFilteredSquads = squads.filter((s: any) => !match.gender || s.gender === match.gender || !s.gender);
-
-            // Note: If squad doesn't have gender column (it might), rely on category name?
-            // Actually 'squads' usually has gender. Let's assume it does or we check 'teams'.
-            // Inspect showed 'match_lineups' but not 'squads'. Assuming 'squads' has gender.
-
             const squadIds = genderFilteredSquads.map(s => s.id);
 
             if (squadIds.length === 0) {
@@ -114,17 +102,14 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
             }
 
             // Fetch Players in these squads
-            // Schema Change: 'players' table contains direct info, no profile join needed.
             const { data: squadPlayers } = await supabase
                 .from('players')
-                .select(`
-                    id, 
-                    name, 
-                    dni, 
-                    number,
-                    squad_id
-                `)
+                .select(`id, name, dni, number, squad_id`)
                 .in('squad_id', squadIds);
+
+            // Match Category Min Year for Blocking Logic
+            const matchCatObj = categories.find(c => c.id === match.category_id);
+            const matchMinYear = matchCatObj?.min_year || 0;
 
             // Combine info
             const formattedPlayers = squadPlayers?.map((sp: any) => {
@@ -132,14 +117,17 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                 const catObj = categories.find(c => c.id === squad?.category_id);
                 const categoryName = catObj?.name;
 
-                // Name handling: DB has "Caballero Tiziana" (Last First usually? or Full).
-                // Let's assume Full Name.
-                // We split for display if needed, or just store as full.
-                // The Modal expects first_name, last_name, full_name.
+                // Blocking Logic: Block if Squad is OLDER (min_year < match_min_year)
+                // Example: Match Sub-14 (2012). Squad Sub-16 (2010). 2010 < 2012 -> Blocked.
+                // Example: Match Sub-14 (2012). Squad Sub-12 (2014). 2014 >= 2012 -> Allowed.
+                let isBlocked = false;
+                if (catObj?.min_year && matchMinYear) {
+                    isBlocked = catObj.min_year < matchMinYear;
+                }
+
                 const nameParts = (sp.name || '').split(' ');
                 const lastName = nameParts.length > 1 ? nameParts[0] : sp.name;
                 const firstName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-
 
                 return {
                     id: sp.id,
@@ -149,16 +137,21 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                     dni: sp.dni,
                     default_number: sp.number,
                     squad_name: categoryName || 'General',
-                    squad_id: sp.squad_id
+                    squad_id: sp.squad_id,
+                    isBlocked: isBlocked,
+                    categoryYear: catObj?.min_year
                 };
             }) || [];
 
-            // Dedup? A player shouldn't be in multiple squads usually, but if so, allow?
-            // Unify by ID.
+            // Dedup by ID
             const uniquePlayers = Array.from(new Map(formattedPlayers.map(p => [p.id, p])).values());
 
-            // Sort by Squad Name (Age) then Name
-            uniquePlayers.sort((a: any, b: any) => a.squad_name.localeCompare(b.squad_name));
+            // Sort by Blocked status (Allowed first), then Squad Name, then Name
+            uniquePlayers.sort((a: any, b: any) => {
+                if (a.isBlocked !== b.isBlocked) return a.isBlocked ? 1 : -1;
+                if (a.squad_name !== b.squad_name) return a.squad_name.localeCompare(b.squad_name);
+                return a.last_name.localeCompare(b.last_name);
+            });
 
             setPlayers(uniquePlayers);
 
@@ -201,17 +194,16 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
 
     const handleSave = async () => {
         setSaving(true);
+        console.log("Saving Match Sheet via API...", { matchId: match?.id, clubId, selectedCount: selectedPlayers.size });
+
+        if (!match?.id || !clubId) {
+            console.error("Missing matchId or clubId", { match, clubId });
+            alert("Error: Faltan datos del partido o club.");
+            setSaving(false);
+            return;
+        }
+
         try {
-            // 1. Delete all current for this match/team (easiest way to sync, or upsert?)
-            // Upsert is better but removing unselected is hard.
-            // Strategy: Delete not in selection, Upsert selection.
-
-            // Get current DB IDs to know what to delete?
-            // Easier: Delete ALL for this team/match, Insert ALL new.
-            // Transactional if possible. Supabase doesn't support transactions via client easily without RPC.
-            // We'll do: Delete .in() IDs? No.
-            // Delete where match_id and team_id.
-
             const selectedList = Array.from(selectedPlayers.entries()).map(([pid, data]) => ({
                 match_id: match.id,
                 team_id: clubId,
@@ -221,28 +213,31 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                 is_libero: data.is_libero
             }));
 
-            // Step A: DELETE
-            const { error: delError } = await supabase
-                .from('match_lineups')
-                .delete()
-                .eq('match_id', match.id)
-                .eq('team_id', clubId);
+            console.log("Payload to send to API:", selectedList);
 
-            if (delError) throw delError;
+            const response = await fetch('/api/matches/lineups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    matchId: match.id,
+                    clubId: clubId,
+                    lineups: selectedList
+                })
+            });
 
-            // Step B: INSERT
-            if (selectedList.length > 0) {
-                const { error: insError } = await supabase
-                    .from('match_lineups')
-                    .insert(selectedList);
-                if (insError) throw insError;
+            const result = await response.json();
+
+            if (!response.ok) {
+                console.error("API Error Response:", result);
+                throw new Error(result.error || "Error desconocido al guardar en servidor");
             }
 
+            console.log("API Success:", result);
             onClose();
-            alert('✅ Planilla guardada correctamente');
+            alert('✅ Planilla guardada correctamente (Vía Servidor)');
 
         } catch (error: any) {
-            console.error("Error Saving:", error);
+            console.error("Error Saving Full:", error);
             alert('Error al guardar: ' + error.message);
         } finally {
             setSaving(false);
@@ -273,9 +268,24 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
 
                     {/* LEFT: Selection */}
                     <div className="flex-1 border-r border-zinc-800 overflow-y-auto p-4 bg-zinc-900/50">
-                        <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-                            <Users size={14} /> Jugadores Disponibles
-                        </h3>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                                <Users size={14} /> Jugadores
+                            </h3>
+
+                            {!loading && players.length > 0 && (
+                                <select
+                                    className="bg-zinc-950 text-xs text-white border border-zinc-700 rounded-lg px-2 py-1 outline-none focus:border-blue-500"
+                                    onChange={(e) => setFilterCategory(e.target.value)}
+                                    value={filterCategory}
+                                >
+                                    <option value="ALL">Todas</option>
+                                    {Array.from(new Set(players.map(p => p.squad_name))).sort().map((cat: any) => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
 
                         {loading ? (
                             <div className="space-y-3 animate-pulse">
@@ -287,37 +297,61 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                                 {Object.entries(players.reduce((acc, p) => {
                                     (acc[p.squad_name] = acc[p.squad_name] || []).push(p);
                                     return acc;
-                                }, {} as any)).map(([squadName, pGroup]: any) => (
-                                    <div key={squadName}>
-                                        <div className="bg-zinc-800/50 px-3 py-1.5 rounded-lg mb-2 text-xs font-bold text-zinc-400 uppercase inline-block border border-zinc-700/50">
-                                            {squadName}
-                                        </div>
-                                        <div className="space-y-1">
-                                            {pGroup.map((p: any) => {
-                                                const isSelected = selectedPlayers.has(p.id);
-                                                return (
-                                                    <div
-                                                        key={p.id}
-                                                        onClick={() => togglePlayer(p)}
-                                                        className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition border ${isSelected
-                                                            ? 'bg-blue-600/10 border-blue-600/50'
-                                                            : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800'}`}
-                                                    >
-                                                        <div className={`w-5 h-5 rounded flex items-center justify-center border transition ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'border-zinc-600'}`}>
-                                                            {isSelected && <Shield size={10} fill="currentColor" />}
+                                }, {} as any))
+                                    .filter(([squadName]: any) => filterCategory === 'ALL' || squadName === filterCategory)
+                                    .map(([squadName, pGroup]: any) => (
+                                        <div key={squadName}>
+                                            <div className="bg-zinc-800/50 px-3 py-1.5 rounded-lg mb-2 text-xs font-bold text-zinc-400 uppercase inline-block border border-zinc-700/50">
+                                                {squadName}
+                                            </div>
+                                            <div className="space-y-1">
+                                                {pGroup.map((p: any) => {
+                                                    const isSelected = selectedPlayers.has(p.id);
+                                                    return (
+                                                        <div
+                                                            key={p.id}
+                                                            onClick={() => {
+                                                                if (p.isBlocked) {
+                                                                    alert(`⚠️ JUGADORA BLOQUEADA DE CATEGORÍA MAYOR\n\nNom: ${p.full_name}\nCat: ${p.squad_name}\n\nNo puede jugar en una categoría menor.`);
+                                                                    return;
+                                                                }
+                                                                togglePlayer(p);
+                                                            }}
+                                                            className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition border ${p.isBlocked
+                                                                ? 'bg-red-500/10 border-red-500/50 opacity-80 hover:bg-red-500/20'
+                                                                : isSelected
+                                                                    ? 'bg-blue-600/10 border-blue-600/50'
+                                                                    : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800'
+                                                                }`}
+                                                        >
+                                                            <div className={`w-5 h-5 rounded flex items-center justify-center border transition ${p.isBlocked
+                                                                ? 'border-red-500 text-red-500'
+                                                                : isSelected
+                                                                    ? 'bg-blue-500 border-blue-500 text-white'
+                                                                    : 'border-zinc-600'
+                                                                }`}>
+                                                                {p.isBlocked ? <X size={12} /> : (isSelected && <Shield size={10} fill="currentColor" />)}
+                                                            </div>
+                                                            <div>
+                                                                <p className={`font-bold text-sm ${p.isBlocked
+                                                                    ? 'text-red-400'
+                                                                    : isSelected
+                                                                        ? 'text-blue-200'
+                                                                        : 'text-zinc-300'
+                                                                    }`}>
+                                                                    {p.last_name}, {p.first_name}
+                                                                </p>
+                                                                <div className="flex items-center gap-2">
+                                                                    <p className="text-[10px] text-zinc-500">DNI: {p.dni || '-'}</p>
+                                                                    {p.isBlocked && <span className="text-[9px] font-black text-red-500 uppercase tracking-wider">Bloqueada</span>}
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className={`font-bold text-sm ${isSelected ? 'text-blue-200' : 'text-zinc-300'}`}>
-                                                                {p.last_name}, {p.first_name}
-                                                            </p>
-                                                            <p className="text-[10px] text-zinc-500">DNI: {p.dni || '-'}</p>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
                                 {players.length === 0 && (
                                     <div className="text-center py-10 text-zinc-500 text-xs">
                                         No se encontraron jugadores habilitados para esta categoría.

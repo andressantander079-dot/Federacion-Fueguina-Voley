@@ -20,7 +20,8 @@ export type SetData = {
 export type MatchState = {
     sets: SetData[];
     currentSetIdx: number;
-    posHome: Player[]; // 6 positions (0=P1, 1=P6, 2=P5, 3=P4, 4=P3, 5=P2) - Wait, Voley positions are 1-6 anticlockwise.
+    posHome: (Player | null)[]; // 6 positions (0=P1, 1=P6, 2=P5, 3=P4, 4=P3, 5=P2)
+    posAway: (Player | null)[];
     // Standard array: index 0 = Pos 1 (Serving), 1 = Pos 6, 2 = Pos 5, 3 = Pos 4, 4 = Pos 3, 5 = Pos 2.
     // Rotation is Clockwise: P2->P1, P1->P6, P6->P5...
     // So Array Shift? 
@@ -33,7 +34,10 @@ export type MatchState = {
     // Rotate: [P2, P1, P6, P5, P4, P3]
     // This is: pop (P2) and unshift (to 0).
 
-    posAway: Player[];
+    // So Array Shift? 
+    // [P1, P6, P5, P4, P3, P2] -> Rotate -> [P2, P1, P6, P5, P4, P3]
+    // Yes, Unshift (add to front) the last element? 
+
     benchHome: Player[];
     benchAway: Player[];
     servingTeam: TeamSide | null;
@@ -51,8 +55,8 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     const [sets, setSets] = useState<SetData[]>(initialState?.sets || [{ number: 1, home: 0, away: 0, finished: false }]);
     const [currentSetIdx, setCurrentSetIdx] = useState(initialState?.currentSetIdx || 0);
 
-    const [posHome, setPosHome] = useState<Player[]>(initialState?.posHome || []);
-    const [posAway, setPosAway] = useState<Player[]>(initialState?.posAway || []);
+    const [posHome, setPosHome] = useState<(Player | null)[]>(initialState?.posHome || Array(6).fill(null));
+    const [posAway, setPosAway] = useState<(Player | null)[]>(initialState?.posAway || Array(6).fill(null));
 
     const [benchHome, setBenchHome] = useState<Player[]>(initialState?.benchHome || []);
     const [benchAway, setBenchAway] = useState<Player[]>(initialState?.benchAway || []);
@@ -93,11 +97,15 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     // Rotation: P2->P1, P1->P6... (Clockwise movement of players)
     // Visual Array: [P1, P6, P5, P4, P3, P2]
     // Rotate: Take Last (P2) and put First (P1).
-    const rotateTeamArray = (arr: Player[]) => {
+    // Rotation: P2->P1, P1->P6... (Clockwise movement of players)
+    // Visual Array: [P1, P6, P5, P4, P3, P2]
+    // Rotate: Take Last (P2) and put First (P1).
+    const rotateTeamArray = (arr: (Player | null)[]) => {
         if (arr.length < 6) return arr;
         const newArr = [...arr];
         const last = newArr.pop();
-        if (last) newArr.unshift(last);
+        // @ts-ignore
+        newArr.unshift(last);
         return newArr;
     };
 
@@ -152,7 +160,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         const setBench = team === 'home' ? setBenchHome : setBenchAway;
 
         // Swap in Court (Find by ID)
-        setPos(prev => prev.map(p => p.id === playerOutId ? playerIn : p));
+        setPos(prev => prev.map(p => p?.id === playerOutId ? playerIn : p));
 
         // Swap in Bench (Remove In, Add Out - Need to find Out object first if we want to move it to bench)
         // Since we only got ID, we need to find the player object from current pos
@@ -162,8 +170,10 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         // This is tricky inside setBench updater if we depend on setPos state.
         // Better:
         let playerOutObj: Player | undefined;
-        if (team === 'home') playerOutObj = posHome.find(p => p.id === playerOutId);
-        else playerOutObj = posAway.find(p => p.id === playerOutId);
+        // @ts-ignore
+        if (team === 'home') playerOutObj = posHome.find(p => p?.id === playerOutId);
+        // @ts-ignore
+        else playerOutObj = posAway.find(p => p?.id === playerOutId);
 
         if (playerOutObj) {
             const finalPlayerOut = playerOutObj; // capture
@@ -180,6 +190,49 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
             if (prev.find(p => p.id === player.id)) return prev;
             return [...prev, player].sort((a, b) => a.number - b.number);
         });
+    };
+
+    // --- NEW: STARTER SELECTION ---
+    // Fills positions in standard order: I, II, III, IV, V, VI
+    // Indices: 0, 5, 4, 3, 2, 1
+    const moveToCourt = (team: TeamSide, player: Player) => {
+        const setPos = team === 'home' ? setPosHome : setPosAway;
+        const setBench = team === 'home' ? setBenchHome : setBenchAway;
+        const currentPos = team === 'home' ? posHome : posAway;
+
+        // Find first empty slot in order
+        const fillOrder = [0, 5, 4, 3, 2, 1];
+        const targetIndex = fillOrder.find(idx => currentPos[idx] === null);
+
+        if (targetIndex === undefined) {
+            alert("La cancha está llena (6 jugadores).");
+            return;
+        }
+
+        snapshot();
+
+        // 1. Add to Pos
+        setPos(prev => {
+            const copy = [...prev];
+            copy[targetIndex] = player;
+            return copy;
+        });
+
+        // 2. Remove from Bench
+        setBench(prev => prev.filter(p => p.id !== player.id));
+    };
+
+    const removeFromCourt = (team: TeamSide, player: Player) => {
+        const setPos = team === 'home' ? setPosHome : setPosAway;
+        const setBench = team === 'home' ? setBenchHome : setBenchAway;
+
+        snapshot();
+
+        // 1. Remove from Pos (set to null)
+        setPos(prev => prev.map(p => p?.id === player.id ? null : p));
+
+        // 2. Return to Bench
+        setBench(prev => [...prev, player].sort((a, b) => a.number - b.number));
     };
 
     const initPositions = () => {
@@ -213,8 +266,8 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     const setAllState = (state: Partial<MatchState>) => {
         if (state.sets) setSets(state.sets);
         if (state.currentSetIdx !== undefined) setCurrentSetIdx(state.currentSetIdx);
-        if (state.posHome) setPosHome(state.posHome);
-        if (state.posAway) setPosAway(state.posAway);
+        if (state.posHome) setPosHome(state.posHome.length === 6 ? state.posHome : [...state.posHome, ...Array(6 - state.posHome.length).fill(null)] as (Player | null)[]);
+        if (state.posAway) setPosAway(state.posAway.length === 6 ? state.posAway : [...state.posAway, ...Array(6 - state.posAway.length).fill(null)] as (Player | null)[]);
         if (state.benchHome) setBenchHome(state.benchHome);
         if (state.benchAway) setBenchAway(state.benchAway);
         if (state.servingTeam !== undefined) setServingTeam(state.servingTeam);
@@ -224,7 +277,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
         servingTeam, subsCount,
         addPoint, subtractPoint, substitutePlayer, finishSet, undo,
-        setAllState, setSets, setServingTeam, setPosHome, setPosAway,
-        initPositions, addPlayerToBench
+        setAllState, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
+        initPositions, addPlayerToBench, moveToCourt, removeFromCourt
     };
 }

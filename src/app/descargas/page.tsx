@@ -41,7 +41,7 @@ export default function DescargasPage() {
                 </header>
 
                 {loading ? (
-                    <div className="text-center py-12 text-gray-500">Cargando descargas...</div>
+                    <div className="text-center py-12 text-gray-500 animate-pulse">Cargando descargas...</div>
                 ) : docs.length === 0 ? (
                     <div className="text-center py-12 bg-white dark:bg-zinc-900 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
                         <FileText size={48} className="mx-auto mb-4 text-gray-300" />

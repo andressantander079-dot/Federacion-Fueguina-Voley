@@ -78,7 +78,7 @@ const getMosaicCards = (counts: any) => [
     {
         title: 'Reglamentos',
         description: 'Documentación oficial.',
-        href: '/admin/reglamento-upload',
+        href: '/admin/reglamentos',
         icon: <ClipboardList className="w-8 h-8" />,
         color: '',
         tdfColor: 'from-slate-400 to-slate-600',

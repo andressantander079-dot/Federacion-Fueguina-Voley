@@ -468,7 +468,7 @@ export default function AdminConfigPage() {
                                     <input
                                        type="number"
                                        className="w-full p-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-bold text-slate-800 dark:text-white"
-                                       value={sponsorForm.display_order}
+                                       value={Number.isNaN(sponsorForm.display_order) ? '' : sponsorForm.display_order}
                                        onChange={e => setSponsorForm({ ...sponsorForm, display_order: parseInt(e.target.value) })}
                                     />
                                  </div>

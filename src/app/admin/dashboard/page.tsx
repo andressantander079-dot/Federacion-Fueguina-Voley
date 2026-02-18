@@ -122,7 +122,7 @@ export default function DashboardPage() {
       title: "Reglamento",
       desc: "Subir archivos PDF",
       icon: <FileText size={24} />,
-      href: "/admin/reglamento-upload",
+      href: "/admin/reglamentos",
       bgClass: "bg-rose-600",
       textHover: "group-hover:text-rose-600",
       borderHover: "hover:border-rose-200",

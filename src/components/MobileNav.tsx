@@ -1,101 +1,197 @@
-// src/components/MobileNav.tsx
 'use client';
-import { useState } from 'react';
+
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, CalendarDays, Trophy, Newspaper, Menu, X, BookOpen, Download, ChevronRight } from 'lucide-react';
+import {
+  Home, CalendarDays, Trophy, Newspaper, Menu, X,
+  BookOpen, Download, Users, FileText,
+  LayoutDashboard, Settings, CircleDollarSign,
+  Activity, LogOut, ChevronUp
+} from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 import { ThemeToggle } from './ThemeToggle';
+
+type NavItemProp = {
+  href: string;
+  label: string;
+  action?: boolean; // For special buttons like Menu
+  icon?: any; // Icon is secondary in this view, mostly text based like Camera app
+};
 
 export default function MobileNav() {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [role, setRole] = useState<'public' | 'club' | 'referee' | 'admin'>('public');
+  const [loading, setLoading] = useState(true);
+  const [supabase] = useState(() => createClient());
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const isActive = (path: string) => pathname === path;
+  useEffect(() => {
+    const checkRole = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .single();
+
+        if (profile?.role) {
+          // @ts-ignore
+          setRole(profile.role);
+        }
+      }
+      setLoading(false);
+    };
+    checkRole();
+  }, [supabase]);
+
+  // CONFIGURATION PER ROLE (Corrected Routes)
+  const NAV_ITEMS: Record<string, NavItemProp[]> = {
+    public: [
+      { href: '/posiciones', label: 'TABLA', icon: Trophy },
+      { href: '/fixture', label: 'FIXTURE', icon: CalendarDays },
+      { href: '/', label: 'INICIO', icon: Home },
+      { href: '/noticias', label: 'NOTICIAS', icon: Newspaper },
+      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+    ],
+    club: [
+      { href: '/club/plantel', label: 'PLANTEL', icon: Users },
+      { href: '/club/agenda', label: 'PARTIDOS', icon: Activity }, // Fixed Route
+      { href: '/club/dashboard', label: 'CLUB', icon: Home },
+      { href: '/club/tramites', label: 'TRÁMITES', icon: FileText },
+      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+    ],
+    referee: [
+      { href: '/referee/agenda', label: 'AGENDA', icon: CalendarDays },
+      { href: '/referee', label: 'PARTIDOS', icon: Activity },
+      { href: '/', label: 'INICIO', icon: Home },
+      { href: '/reglamento', label: 'REGLAS', icon: BookOpen },
+      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+    ],
+    admin: [
+      { href: '/admin/configuracion', label: 'CONFIG', icon: Settings },
+      { href: '/admin/treasury', label: 'TESORERÍA', icon: CircleDollarSign }, // Fixed Route
+      { href: '/admin', label: 'PANEL', icon: LayoutDashboard },
+      { href: '/admin/matches', label: 'TORNEOS', icon: Trophy }, // Fixed Route
+      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+    ]
+  };
+
+  const currentItems = NAV_ITEMS[role] || NAV_ITEMS.public;
+
+  // Determine active index
+  const activeIdx = useMemo(() => {
+    const found = currentItems.findIndex(item => item.href === pathname);
+    if (found !== -1) return found;
+    // Fallback to center item if exact match not found
+    return currentItems.findIndex(item => item.label === 'INICIO' || item.label === 'CLUB' || item.label === 'PANEL');
+  }, [pathname, currentItems]);
+
+  // Scroll to active item on mount/change
+  useEffect(() => {
+    if (scrollRef.current) {
+      const container = scrollRef.current;
+      const items = container.children;
+      if (items[activeIdx]) {
+        const item = items[activeIdx] as HTMLElement;
+        const containerWidth = container.offsetWidth;
+        const itemWidth = item.offsetWidth;
+        const itemLeft = item.offsetLeft;
+
+        // Calculate center position
+        const scrollLeft = itemLeft - (containerWidth / 2) + (itemWidth / 2);
+
+        container.scrollTo({
+          left: scrollLeft,
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [activeIdx, role]);
+
+  const handleMenuClick = () => setIsMenuOpen(!isMenuOpen);
+
+  if (loading) return null;
 
   return (
     <>
-      {/* MENU OVERLAY (Popup) */}
+      {/* MENU OVERLAY */}
       {isMenuOpen && (
-        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsMenuOpen(false)}>
-          <div className="absolute bottom-[80px] right-4 w-60 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-5 duration-300" onClick={e => e.stopPropagation()}>
-            <div className="p-3 font-bold text-xs text-zinc-500 uppercase tracking-wider bg-zinc-950/50 border-b border-zinc-800">
-              Opciones
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsMenuOpen(false)}>
+          <div className="absolute bottom-28 left-0 right-0 mx-auto w-64 bg-zinc-900 border border-zinc-800 rounded-3xl p-2 shadow-2xl animate-in slide-in-from-bottom-5" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-white/5 mb-2 text-center">
+              <span className="text-xs font-black text-yellow-500 uppercase tracking-widest">Opciones {role === 'public' ? 'FVU' : role}</span>
             </div>
-            <div className="flex flex-col p-2">
-              <MenuLink href="/reglamento" icon={BookOpen} label="Reglamento" onClick={() => setIsMenuOpen(false)} />
-              <MenuLink href="/descargas" icon={Download} label="Descargas" onClick={() => setIsMenuOpen(false)} />
-              <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-800/50 mt-2">
-                <span className="text-sm font-bold text-zinc-400">Tema</span>
+            <div className="flex flex-col gap-1">
+              <Link href="/reglamento" className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
+                <BookOpen size={18} /> Reglamento
+              </Link>
+              <Link href="/descargas" className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
+                <Download size={18} /> Descargas
+              </Link>
+              <div className="h-px bg-white/5 my-2"></div>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-black/20">
+                <span className="text-sm font-bold text-zinc-500">Tema</span>
                 <ThemeToggle />
               </div>
+              {role !== 'public' && (
+                <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }} className="flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-500/10 transition font-bold text-sm mt-2">
+                  <LogOut size={18} /> Cerrar Sesión
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* BOTTOM BAR */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50">
-        <div className="absolute bottom-full left-0 right-0 h-12 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
+      {/* CAMERA DIAL NAVBAR */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-black pb-safe text-white h-24 flex flex-col justify-end overflow-hidden">
 
-        <div className="bg-zinc-900/95 backdrop-blur-md border-t border-zinc-800 pb-safe pt-1 px-4 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.5)]">
-          <div className="flex justify-between items-center h-[60px]">
-
-            {/* 1. TABLA (Posiciones) */}
-            <NavItem href="/posiciones" icon={Trophy} label="Tabla" active={isActive('/posiciones')} />
-
-            {/* 2. FIXTURE */}
-            <NavItem href="/fixture" icon={CalendarDays} label="Fixture" active={isActive('/fixture')} />
-
-            {/* 3. INICIO (Central) */}
-            <div className="relative -top-6">
-              <Link href="/" className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-orange-600/40 border-4 border-zinc-900 transition-transform active:scale-95 ${isActive('/') ? 'bg-white text-orange-600' : 'bg-gradient-to-br from-orange-500 to-orange-600 text-white'}`}>
-                <Home className="w-6 h-6" fill="currentColor" strokeWidth={0} />
-              </Link>
-              <span className="absolute -bottom-5 w-full text-center text-[10px] font-bold text-zinc-400">Inicio</span>
-            </div>
-
-            {/* 4. NOTICIAS */}
-            <NavItem href="/noticias" icon={Newspaper} label="Noticias" active={isActive('/noticias')} />
-
-            {/* 5. MENU HAMBURGUESA (Popup) */}
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="flex-1 flex flex-col items-center justify-center gap-1 h-full active:scale-90 transition-transform focus:outline-none"
-            >
-              {isMenuOpen ? (
-                <X className="w-6 h-6 text-white" />
-              ) : (
-                <Menu className={`w-6 h-6 transition-colors ${isMenuOpen ? 'text-white' : 'text-zinc-500'}`} />
-              )}
-              <span className={`text-[10px] font-bold transition-colors ${isMenuOpen ? 'text-white' : 'text-zinc-600'}`}>
-                Menú
-              </span>
-            </button>
-
-          </div>
+        {/* Pointer/Indicator */}
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 text-yellow-500 animate-bounce-slow">
+          <ChevronUp size={20} fill="currentColor" />
         </div>
+
+        {/* Dial Container */}
+        <div
+          ref={scrollRef}
+          className="flex items-center overflow-x-auto no-scrollbar snap-x snap-mandatory py-6 px-[50vw]" // Large padding to allow centering first/last
+          style={{ scrollBehavior: 'smooth' }}
+        >
+          {currentItems.map((item, i) => {
+            const isActive = i === activeIdx;
+            return (
+              <div key={i} className="snap-center shrink-0 px-6 transition-all duration-300 transform origin-center flex flex-col items-center justify-center cursor-pointer">
+                {item.action ? (
+                  <button
+                    onClick={handleMenuClick}
+                    className={`font-black text-sm uppercase tracking-widest whitespace-nowrap transition-all duration-300 ${isActive ? 'text-yellow-400 scale-110' : 'text-zinc-600 scale-90 hover:text-zinc-400'}`}
+                  >
+                    {item.label}
+                  </button>
+                ) : (
+                  <Link
+                    href={item.href}
+                    className={`font-black text-sm uppercase tracking-widest whitespace-nowrap transition-all duration-300 flex items-center gap-2 ${isActive ? 'text-yellow-400 scale-110 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' : 'text-zinc-600 scale-90 hover:text-zinc-400'}`}
+                  >
+                    {item.label}
+                  </Link>
+                )}
+
+                {/* Tick Mark below (Camera Style) */}
+                <div className={`mt-3 w-0.5 h-2 rounded-full transition-all duration-300 ${isActive ? 'bg-yellow-500 h-4' : 'bg-zinc-800'}`}></div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Side Fade Gradient */}
+        <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-black to-transparent pointer-events-none z-10"></div>
+        <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-black to-transparent pointer-events-none z-10"></div>
+
       </div>
     </>
   );
-}
-
-function NavItem({ href, icon: Icon, label, active }: { href: string, icon: any, label: string, active: boolean }) {
-  return (
-    <Link href={href} className="flex-1 flex flex-col items-center justify-center gap-1 h-full active:scale-90 transition-transform">
-      <Icon className={`w-6 h-6 transition-colors ${active ? 'text-white' : 'text-zinc-500'}`} strokeWidth={active ? 2.5 : 2} />
-      <span className={`text-[10px] font-bold transition-colors ${active ? 'text-white' : 'text-zinc-600'}`}>
-        {label}
-      </span>
-    </Link>
-  );
-}
-
-function MenuLink({ href, icon: Icon, label, onClick }: any) {
-  return (
-    <Link href={href} onClick={onClick} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition">
-      <Icon size={18} />
-      <span className="text-sm font-bold flex-1">{label}</span>
-      <ChevronRight size={14} className="text-zinc-700" />
-    </Link>
-  )
 }

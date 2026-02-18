@@ -142,11 +142,15 @@ export default function FixturePage() {
   });
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="animate-pulse flex flex-col items-center gap-4">
-        <div className="h-12 w-12 rounded-full bg-tdf-orange"></div>
-        <div className="h-4 w-48 bg-gray-200 rounded"></div>
+    <div className="min-h-screen bg-slate-50 dark:bg-black font-sans text-slate-800 dark:text-slate-100 flex flex-col">
+      <Navbar />
+      <div className="flex-grow flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <div className="h-12 w-12 rounded-full bg-tdf-orange"></div>
+          <div className="h-4 w-48 bg-gray-200 dark:bg-zinc-800 rounded"></div>
+        </div>
       </div>
+      <Footer />
     </div>
   );
 
@@ -393,3 +397,4 @@ export default function FixturePage() {
     </div>
   );
 }
+

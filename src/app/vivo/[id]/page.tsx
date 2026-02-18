@@ -1,7 +1,7 @@
 'use client';
 
-import OfficialMatchSheet from '@/components/match/OfficialMatchSheet';
+import PublicMatchView from '@/components/match/PublicMatchView';
 
 export default function PublicLiveMatchPage() {
-    return <OfficialMatchSheet redirectAfterSubmit="/" readOnly={true} />;
+    return <PublicMatchView />;
 }
