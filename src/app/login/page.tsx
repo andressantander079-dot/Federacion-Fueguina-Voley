@@ -32,7 +32,6 @@ export default function LoginPage() {
                 if (profile?.role === 'admin') router.push('/admin')
                 else if (profile?.role === 'club' && profile.club_id) router.push('/club')
                 else if (profile?.role === 'referee') router.push('/referee')
-                else if (profile?.role === 'planillero') router.push('/planillero')
                 else router.push('/')
             }
         }
@@ -81,9 +80,6 @@ export default function LoginPage() {
                             } else {
                                 router.push('/')
                             }
-                            break
-                        case 'planillero':
-                            router.push('/planillero')
                             break
                         case 'referee':
                             router.push('/referee')

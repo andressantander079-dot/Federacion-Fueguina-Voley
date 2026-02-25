@@ -4,7 +4,6 @@ import { useState } from 'react'
 import Navbar from '@/components/layout/Navbar'
 import SponsorsBanner from '@/components/home/SponsorsBanner'
 import NewsFeed from '@/components/home/NewsFeed'
-import LoginModal from '@/components/auth/LoginModal'
 import Footer from '@/components/layout/Footer'
 import { Calendar, Trophy } from 'lucide-react'
 import Link from 'next/link'
@@ -18,7 +17,7 @@ export default function HomePage() {
         <div className="min-h-screen bg-white dark:bg-black font-sans text-slate-800 dark:text-slate-100 pb-20">
 
             {/* Navbar con acceso a callback */}
-            <Navbar onOpenLogin={() => setIsLoginOpen(true)} />
+            <Navbar />
 
             {/* LIVE MATCHES BANNER */}
             <LiveMatchFloater />
@@ -89,8 +88,7 @@ export default function HomePage() {
             {/* FOOTER */}
             <Footer />
 
-            {/* LOGIN MODAL - RENDERED HERE AT ROOT LEVEL */}
-            <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
+            <Footer />
         </div>
     )
 }

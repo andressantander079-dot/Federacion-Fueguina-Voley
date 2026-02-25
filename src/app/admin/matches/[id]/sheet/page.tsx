@@ -65,7 +65,7 @@ export default function MatchSheetPage({ params }: { params: Promise<{ id: strin
                     </div>
 
                     <Link
-                        href="/admin/partidos"
+                        href="/admin"
                         className="block w-full py-4 bg-white text-slate-900 hover:bg-slate-200 font-black rounded-xl text-lg transition"
                     >
                         VOLVER AL MENU
@@ -89,7 +89,7 @@ export default function MatchSheetPage({ params }: { params: Promise<{ id: strin
                     >
                         COMENZAR SET
                     </button>
-                    <Link href="/admin/partidos" className="block mt-6 text-sm text-slate-500 hover:text-white">Cancelar y Volver</Link>
+                    <Link href="/admin" className="block mt-6 text-sm text-slate-500 hover:text-white">Cancelar y Volver</Link>
                 </div>
             </div>
         );
@@ -100,7 +100,7 @@ export default function MatchSheetPage({ params }: { params: Promise<{ id: strin
             {/* HEADER */}
             <header className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-white/5 p-4 flex items-center justify-between sticky top-0 z-50 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <Link href="/admin/partidos" className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full text-slate-500">
+                    <Link href="/admin" className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full text-slate-500">
                         <ArrowLeft size={20} />
                     </Link>
                     <div>

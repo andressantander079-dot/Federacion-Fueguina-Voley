@@ -48,8 +48,8 @@ export default function PublicMatchPage() {
             .from('matches')
             .select(`
                 *,
-                home_team:teams!home_team_id(name, id, club_id),
-                away_team:teams!away_team_id(name, id, club_id),
+                home_team:teams!home_team_id(name, id, club_id, shield_url),
+                away_team:teams!away_team_id(name, id, club_id, shield_url),
                 category:categories(name, gender),
                 court:courts(name)
             `)
@@ -138,6 +138,9 @@ export default function PublicMatchPage() {
                     <div className="flex items-center justify-between gap-4 md:gap-12">
                         {/* HOME */}
                         <div className="flex-1 flex flex-col items-center text-center">
+                            {match.home_team.shield_url && (
+                                <img src={match.home_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
+                            )}
                             <h2 className="text-xl md:text-3xl font-black mb-2 text-white leading-tight">{match.home_team.name}</h2>
                             <div className="text-6xl md:text-8xl font-black text-blue-500 tabular-nums tracking-tighter">
                                 {match.current_set_points_home || 0}
@@ -168,6 +171,9 @@ export default function PublicMatchPage() {
 
                         {/* AWAY */}
                         <div className="flex-1 flex flex-col items-center text-center">
+                            {match.away_team.shield_url && (
+                                <img src={match.away_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
+                            )}
                             <h2 className="text-xl md:text-3xl font-black mb-2 text-white leading-tight">{match.away_team.name}</h2>
                             <div className="text-6xl md:text-8xl font-black text-orange-500 tabular-nums tracking-tighter">
                                 {match.current_set_points_away || 0}

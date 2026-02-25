@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { useRouter } from 'next/navigation';
 
 // Definimos los tipos
-type UserRole = 'admin' | 'club' | 'planillero' | null;
+type UserRole = 'admin' | 'club' | null;
 
 interface AuthContextType {
   user: any;
@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // --- FUNCIÓN CON MODO DETECTIVE (LOGS) ---
   const fetchUserRole = async (userId: string) => {
     console.log("🕵️‍♂️ Buscando rol para el usuario:", userId);
-    
+
     try {
       const { data, error } = await supabase
         .from('profiles')

@@ -42,15 +42,29 @@ export default function AdminConfigPage() {
    useEffect(() => {
       if (initialSettings) {
          setSettings(initialSettings);
-         // FIX: Use procedure_fees
-         if (initialSettings.procedure_fees) setTramites(initialSettings.procedure_fees);
+         let loadedFees = initialSettings.procedure_fees ? [...initialSettings.procedure_fees] : [];
+
+         // Ensure system fees exist
+         const requiredFees = ['Inscripcion de clubes', 'Inscripcion de Jugadoras/es', 'Pase a prestamo', 'Pase'];
+         requiredFees.forEach(rf => {
+            const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const exists = loadedFees.find((lf: any) => norm(lf.title) === norm(rf));
+            if (!exists) loadedFees.push({ title: rf, price: '0' });
+         });
+
+         setTramites(loadedFees);
       } else if (!loadingSettings && !initialSettings) {
          // No settings found in DB
          setSettings({
             id: undefined,
             registration_open: true,
-            procedure_fees: [] // FIX
          });
+         setTramites([
+            { title: 'Inscripcion de clubes', price: '0' },
+            { title: 'Inscripcion de Jugadoras/es', price: '0' },
+            { title: 'Pase a prestamo', price: '0' },
+            { title: 'Pase', price: '0' }
+         ]);
       }
       if (!loadingSettings) fetchSubData();
    }, [initialSettings, loadingSettings]);
@@ -650,20 +664,37 @@ export default function AdminConfigPage() {
 
                      {/* EXISTING FEES SECTION */}
                      <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-2 pt-2">Tarifario de Aranceles</h4>
-                     {tramites.map((t: any, i: number) => (
-                        <div key={i} className="flex gap-4">
-                           <input className="flex-1 p-3 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600" placeholder="Nombre (Ej: Pase Interclub)" value={t.title} onChange={e => {
-                              const newT = [...tramites]; newT[i].title = e.target.value; setTramites(newT);
-                           }} />
-                           <input className="w-32 p-3 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600" placeholder="$$$" value={t.price} onChange={e => {
-                              const newT = [...tramites]; newT[i].price = e.target.value; setTramites(newT);
-                           }} />
-                           <button onClick={() => {
-                              const newT = tramites.filter((_, idx) => idx !== i); setTramites(newT);
-                           }} className="text-red-400 hover:bg-red-500/10 p-2 rounded"><Trash2 size={18} /></button>
-                        </div>
-                     ))}
-                     <button onClick={() => setTramites([...tramites, { title: '', price: '' }])} className="text-tdf-blue font-bold text-sm flex items-center gap-2 hover:bg-blue-500/10 px-4 py-2 rounded-lg w-fit transition"><Plus size={16} /> Agregar Item</button>
+                     {tramites.map((t: any, i: number) => {
+                        const isSystemFee = ['inscripcion de clubes', 'inscripcion de jugadoras/es', 'pase a prestamo', 'pase', 'inscripción de clubes', 'inscripción de jugadoras/es', 'pase a préstamo'].includes(t.title?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+                        return (
+                           <div key={i} className="flex gap-4 items-center">
+                              <input
+                                 className={`flex-1 p-3 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600 ${isSystemFee ? 'opacity-60 cursor-not-allowed text-zinc-400' : ''}`}
+                                 placeholder="Nombre (Ej: Pase Interclub)"
+                                 value={t.title}
+                                 readOnly={isSystemFee}
+                                 onChange={e => {
+                                    if (isSystemFee) return;
+                                    const newT = [...tramites]; newT[i].title = e.target.value; setTramites(newT);
+                                 }}
+                              />
+                              <div className="relative">
+                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">$</span>
+                                 <input className="w-32 p-3 pl-8 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600 focus:border-tdf-blue outline-none" placeholder="0" value={t.price} onChange={e => {
+                                    const newT = [...tramites]; newT[i].price = e.target.value; setTramites(newT);
+                                 }} />
+                              </div>
+                              {!isSystemFee ? (
+                                 <button onClick={() => {
+                                    const newT = tramites.filter((_, idx) => idx !== i); setTramites(newT);
+                                 }} className="text-red-400 hover:bg-red-500/10 p-2 rounded"><Trash2 size={18} /></button>
+                              ) : (
+                                 <div className="w-[34px]" title="Arancel de Sistema"></div>
+                              )}
+                           </div>
+                        )
+                     })}
+                     <button onClick={() => setTramites([...tramites, { title: '', price: '0' }])} className="text-tdf-blue font-bold text-sm flex items-center gap-2 hover:bg-blue-500/10 px-4 py-2 rounded-lg w-fit transition"><Plus size={16} /> Agregar Item</button>
 
                      <button onClick={handleSaveGeneral} disabled={saving} className="mt-4 w-full py-4 bg-tdf-blue text-white font-black rounded-xl hover:bg-blue-800 transition shadow-lg flex items-center justify-center gap-2">
                         {saving ? 'Guardando...' : <><Save size={20} /> Guardar Datos de Pago y Aranceles (Persistido)</>}

@@ -257,9 +257,11 @@ export default function AdminCompetenciasList() {
                                                     {t.name}
                                                 </h3>
                                             </div>
-                                            <div className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider ${t.status === 'activo' ? 'bg-green-500/10 text-green-500' : t.status === 'archivado' ? 'bg-zinc-800 text-zinc-400' : 'bg-yellow-500/10 text-yellow-500'}`}>
-                                                {t.status}
-                                            </div>
+                                            {t.status !== 'borrador' && (
+                                                <div className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider ${t.status === 'activo' ? 'bg-green-500/10 text-green-500' : t.status === 'archivado' ? 'bg-zinc-800 text-zinc-400' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                                                    {t.status}
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="mt-auto space-y-2">

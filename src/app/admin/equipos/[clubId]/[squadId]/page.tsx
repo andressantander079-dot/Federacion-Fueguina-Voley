@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, UserPlus, Upload, FileText, Save, Trash2, Edit2, CheckCircle, AlertCircle, Users, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, UserPlus, Upload, FileText, Save, Trash2, Edit2, CheckCircle, AlertCircle, Users, AlertTriangle, Lock, Unlock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useSettings } from '@/hooks/useSettings'
 
@@ -20,6 +20,7 @@ type Squad = {
     id: string
     name: string
     coach_name: string | null
+    password?: string | null
 }
 
 export default function SquadPlayersPage() {
@@ -74,6 +75,26 @@ export default function SquadPlayersPage() {
         }
         fetchSquadData()
     }, [squadId])
+
+    const manejarPassword = async () => {
+        if (!squad) return;
+        if (squad.password) {
+            if (confirm(`El plantel actualmente tiene el PIN: ${squad.password}\n¿Desea eliminar la protección por contraseña?`)) {
+                await supabase.from('squads').update({ password: null }).eq('id', squad.id);
+                setSquad({ ...squad, password: null });
+                alert('Protección eliminada.');
+            }
+        } else {
+            const pin = prompt('Ingrese un nuevo PIN exacto de 4 dígitos para proteger este plantel:');
+            if (pin && /^\d{4}$/.test(pin)) {
+                await supabase.from('squads').update({ password: pin }).eq('id', squad.id);
+                setSquad({ ...squad, password: pin });
+                alert('Protección activada correctamente.');
+            } else if (pin) {
+                alert('Error: El PIN debe contener exactamente 4 números.');
+            }
+        }
+    }
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, field: 'photo' | 'medical' | 'payment') => {
         if (e.target.files && e.target.files[0]) {
@@ -158,6 +179,15 @@ export default function SquadPlayersPage() {
                         <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                             {squad?.name}
                             <button className="text-gray-400 hover:text-tdf-orange"><Edit2 size={18} /></button>
+                            {squad && (
+                                <button
+                                    onClick={manejarPassword}
+                                    className={`p-2 rounded-lg transition ${squad.password ? 'text-amber-500 hover:bg-amber-500/10' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-500/10'}`}
+                                    title={squad.password ? "Cambiar/Quitar PIN" : "Proteger con PIN"}
+                                >
+                                    {squad.password ? <Lock size={18} /> : <Unlock size={18} />}
+                                </button>
+                            )}
                         </h1>
                         <p className="text-gray-500 flex items-center gap-2 mt-1">
                             <span className="font-semibold text-gray-700 dark:text-gray-300">DT:</span>

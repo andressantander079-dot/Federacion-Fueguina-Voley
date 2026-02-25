@@ -387,7 +387,7 @@ export default function DetalleTorneoPage() {
                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div className="mb-6">
                      <h2 className="text-xl font-black text-white">Control de Planillas</h2>
-                     <p className="text-sm text-zinc-500">Visualiza y descarga las planillas oficiales enviadas por los planilleros.</p>
+                     <p className="text-sm text-zinc-500">Visualiza y descarga las planillas oficiales de los encuentros.</p>
                   </div>
                   <MatchSheetsTable />
                </div>

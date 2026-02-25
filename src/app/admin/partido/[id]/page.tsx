@@ -163,7 +163,6 @@ export default function DefinirPartidoPage() {
 
     async function guardarCambios() {
         if (!extras.referee_1.trim()) return alert("❗ Faltan Datos: El 1º Árbitro es obligatorio.");
-        if (!extras.scorekeeper.trim()) return alert("❗ Faltan Datos: El Planillero es obligatorio.");
 
         setGuardando(true);
         const { homeWins, awayWins } = calcularGlobal();
@@ -267,8 +266,8 @@ export default function DefinirPartidoPage() {
                                 <p className="font-bold">{extras.referee_1 || '-'}</p>
                             </div>
                             <div>
-                                <p className="text-xs font-bold text-slate-400 uppercase">Planillero</p>
-                                <p className="font-bold">{extras.scorekeeper || '-'}</p>
+                                <p className="text-xs font-bold text-slate-400 uppercase">2º Árbitro</p>
+                                <p className="font-bold">{extras.referee_2 || '-'}</p>
                             </div>
                             <div className="col-span-2 mt-2">
                                 <p className="text-xs font-bold text-slate-400 uppercase">Observaciones</p>
@@ -300,10 +299,6 @@ export default function DefinirPartidoPage() {
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-[10px] font-bold text-indigo-600 uppercase block mb-1">1º Árbitro *</label>
                                 <input className="w-full border p-2 rounded bg-white" value={extras.referee_1} onChange={e => setExtras({ ...extras, referee_1: e.target.value })} />
-                            </div>
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="text-[10px] font-bold text-indigo-600 uppercase block mb-1">Planillero *</label>
-                                <input className="w-full border p-2 rounded bg-white" value={extras.scorekeeper} onChange={e => setExtras({ ...extras, scorekeeper: e.target.value })} />
                             </div>
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">2º Árbitro</label>

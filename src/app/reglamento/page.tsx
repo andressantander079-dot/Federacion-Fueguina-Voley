@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { FileText, Download, Search } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-import LoginModal from '@/components/auth/LoginModal'
 
 type Document = {
   id: string
@@ -27,7 +26,6 @@ export default function PublicReglamentosPage() {
   const [docs, setDocs] = useState<Document[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
-  const [isLoginOpen, setIsLoginOpen] = useState(false)
 
   useEffect(() => {
     async function fetchDocs() {
@@ -47,7 +45,7 @@ export default function PublicReglamentosPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-black font-sans text-slate-800 dark:text-slate-100">
-      <Navbar onOpenLogin={() => setIsLoginOpen(true)} />
+      <Navbar />
 
       <div className="pt-32 pb-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-5xl mx-auto">
@@ -134,7 +132,6 @@ export default function PublicReglamentosPage() {
       </div>
 
       <Footer />
-      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
     </div>
   )
 }

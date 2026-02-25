@@ -270,7 +270,7 @@ export default function PosicionesPage() {
                           {index > 2 && <span>{index + 1}</span>}
                         </td>
                         <td className="px-4 py-4 font-bold text-slate-800 dark:text-white whitespace-nowrap flex items-center gap-3">
-                          <img src={row.team.shield_url || '/placeholder.png'} className="w-6 h-6 object-contain grayscale opacity-80" alt="" />
+                          <img src={row.team.shield_url || '/placeholder.png'} className="w-6 h-6 object-contain" alt="" />
                           {row.team.name}
                         </td>
                         <td className="px-4 py-4 font-black text-center text-tdf-blue dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 text-base">

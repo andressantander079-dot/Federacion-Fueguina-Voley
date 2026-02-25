@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign } from 'lucide-react';
+import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign, Lock, Unlock, Plus, Trash, Search, Download, Eye, RefreshCw, X } from 'lucide-react';
+import PinPadModal from '@/components/security/PinPadModal';
 import { useClubAuth } from '@/hooks/useClubAuth';
 
 export default function PlantelPage() {
@@ -20,13 +21,26 @@ export default function PlantelPage() {
   const [clubCity, setClubCity] = useState('Ushuaia');
 
   // Estado de Vistas
-  const [vista, setVista] = useState<'categorias' | 'jugadores'>('categorias');
+  const [vista, setVista] = useState<'squads' | 'jugadores' | 'documentacion'>('squads');
 
   // Datos de Negocio
   const [squads, setSquads] = useState<any[]>([]);
   const [squadActual, setSquadActual] = useState<any>(null);
   const [jugadores, setJugadores] = useState<any[]>([]);
   const [globalCategories, setGlobalCategories] = useState<any[]>([]);
+
+  // PIN Modal State
+  const [pinModal, setPinModal] = useState<{
+    isOpen: boolean;
+    mode: 'set' | 'access' | 'remove';
+    title: string;
+    squad: any;
+  }>({
+    isOpen: false,
+    mode: 'access',
+    title: '',
+    squad: null
+  });
 
   // Formularios
   const [creandoSquad, setCreandoSquad] = useState(false);
@@ -181,11 +195,67 @@ export default function PlantelPage() {
     }
   }
 
+  async function manejarPassword(e: React.MouseEvent, squad: any) {
+    e.stopPropagation();
+    if (squad.password) {
+      setPinModal({
+        isOpen: true,
+        mode: 'remove',
+        title: 'Eliminar Contraseña',
+        squad: squad
+      });
+    } else {
+      if (confirm(`¿Seguro quieres ponerle contraseña al plantel "${squad.name}"?`)) {
+        setPinModal({
+          isOpen: true,
+          mode: 'set',
+          title: 'Configurar Contraseña',
+          squad: squad
+        });
+      }
+    }
+  }
+
   function abrirSquad(squad: any) {
-    const s = { ...squad, category_name: getCategoryName(squad.category_id) };
-    setSquadActual(s);
-    setVista('jugadores');
-    cargarJugadores(squad.id);
+    if (squad.password) {
+      setPinModal({
+        isOpen: true,
+        mode: 'access',
+        title: 'Acceso Protegido',
+        squad: squad
+      });
+    } else {
+      const s = { ...squad, category_name: getCategoryName(squad.category_id) };
+      setSquadActual(s);
+      setVista('jugadores');
+      cargarJugadores(squad.id);
+    }
+  }
+
+  async function onPinSuccess(pin: string) {
+    if (!pinModal.squad) return;
+
+    try {
+      const newPin = pin === '' ? null : pin;
+      const { error } = await supabase
+        .from('squads')
+        .update({ password: newPin })
+        .eq('id', pinModal.squad.id);
+
+      if (error) throw error;
+
+      if (pinModal.mode === 'access') {
+        const s = { ...pinModal.squad, category_name: getCategoryName(pinModal.squad.category_id) };
+        setSquadActual(s);
+        setVista('jugadores');
+        cargarJugadores(pinModal.squad.id);
+      } else {
+        if (clubId) cargarSquads(clubId);
+        // Si el modo era set/remove, el mensaje de éxito ya se mostró en el PinPadModal
+      }
+    } catch (err: any) {
+      alert("Error al actualizar PIN: " + err.message);
+    }
   }
 
   async function cargarJugadores(squadId: string) {
@@ -310,6 +380,22 @@ export default function PlantelPage() {
 
       <div className="p-6 md:p-12 max-w-7xl mx-auto">
 
+        {/* PIN PAD MODAL */}
+        <PinPadModal
+          isOpen={pinModal.isOpen}
+          onClose={() => setPinModal(prev => ({ ...prev, isOpen: false }))}
+          mode={pinModal.mode}
+          title={pinModal.title}
+          squadName={pinModal.squad?.name || ''}
+          currentPin={pinModal.squad?.password}
+          onSuccess={onPinSuccess}
+          onSwitchMode={(mode) => setPinModal(prev => ({
+            ...prev,
+            mode,
+            title: mode === 'remove' ? 'Eliminar Contraseña' : prev.title
+          }))}
+        />
+
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12 animate-in fade-in slide-in-from-top-4 duration-700">
           <div className="flex items-center gap-6">
             <div className="relative group">
@@ -350,7 +436,7 @@ export default function PlantelPage() {
             </div>
           </div>
 
-          {vista === 'categorias' && (
+          {vista === 'squads' && (
             <button
               onClick={() => (document.getElementById('dialog-new-squad') as HTMLDialogElement)?.showModal()}
               className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-3 rounded-xl font-bold transition shadow-lg shadow-orange-900/20 flex items-center gap-2 group"
@@ -361,7 +447,7 @@ export default function PlantelPage() {
           )}
         </div>
 
-        {vista === 'categorias' && (
+        {vista === 'squads' && (
           <div>
             <div className="flex items-center gap-3 mb-8">
               <Users className="text-zinc-600" />
@@ -409,13 +495,22 @@ export default function PlantelPage() {
                         <span className="text-sm font-bold">Ver Jugadores</span>
                       </div>
 
-                      <button
-                        onClick={(e) => { e.stopPropagation(); borrarSquad(squad.id); }}
-                        className="text-zinc-600 hover:text-red-500 hover:bg-red-500/10 p-2 rounded-lg transition"
-                        title="Eliminar Plantel"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => manejarPassword(e, squad)}
+                          className={`p-2 rounded-lg transition ${squad.password ? 'text-amber-500 hover:bg-amber-500/10' : 'text-zinc-600 hover:text-amber-500 hover:bg-amber-500/10'}`}
+                          title={squad.password ? "Cambiar/Quitar PIN" : "Proteger con PIN"}
+                        >
+                          {squad.password ? <Lock size={18} /> : <Unlock size={18} />}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); borrarSquad(squad.id); }}
+                          className="text-zinc-600 hover:text-red-500 hover:bg-red-500/10 p-2 rounded-lg transition"
+                          title="Eliminar Plantel"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </div>
                     <div className="mt-2 text-xs text-zinc-600 font-mono">DT: {squad.coach_name || 'Sin asignar'}</div>
                   </div>
@@ -440,7 +535,7 @@ export default function PlantelPage() {
                 {squadActual.name}
               </h2>
               <button
-                onClick={() => setVista('categorias')}
+                onClick={() => setVista('squads')}
                 className="text-zinc-400 hover:text-white font-bold text-sm px-4 py-2 bg-zinc-900 rounded-lg border border-zinc-800"
               >
                 &larr; Volver

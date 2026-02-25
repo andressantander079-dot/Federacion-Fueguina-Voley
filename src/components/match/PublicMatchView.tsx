@@ -12,6 +12,7 @@ export default function PublicMatchView() {
     const [supabase] = useState(() => createClient());
 
     const [matchData, setMatchData] = useState<any>(null);
+    const [sponsors, setSponsors] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -50,9 +51,17 @@ export default function PublicMatchView() {
                     awayName: data.away_team?.name || 'Visita',
                     awayShield: data.away_team?.shield_url,
                     awayColor: data.away_team?.main_color || 'red',
-                    categoryName: data.category?.name
+                    categoryName: data.category?.name,
+                    date: data.date,
+                    time: data.time,
+                    phase: data.phase,
+                    gym: data.location
                 });
             }
+
+            const { data: sponsorsData } = await supabase.from('sponsors').select('*').eq('active', true).order('display_order', { ascending: true });
+            if (sponsorsData) setSponsors(sponsorsData);
+
             setLoading(false);
         };
 
@@ -71,17 +80,22 @@ export default function PublicMatchView() {
     if (loading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold animate-pulse">Cargando...</div>;
     if (!matchData) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold">Partido no encontrado.</div>;
 
-    const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, homeName, awayName, homeShield, awayShield, categoryName } = matchData;
+    const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, homeName, awayName, homeShield, awayShield, categoryName, date, time, phase } = matchData;
     const currentSet = sets[currentSetIdx] || { home: 0, away: 0, number: 1 };
 
     // @ts-ignore
     const renderPlayerList = (posArr, benchArr) => {
         // @ts-ignore
-        const all = [...(posArr || []), ...(benchArr || [])].sort((a, b) => a.number - b.number);
+        const all = [...(posArr || []), ...(benchArr || [])]
+            .filter(p => p && p.number !== undefined) // Filter nulls and missing numbers
+            .sort((a, b) => (a.number || 0) - (b.number || 0));
+
         return all.map((p: any) => (
             <div key={p.id || p.number} className="flex items-center gap-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 px-4 transition">
                 <span className="font-black text-xl w-8 text-right text-zinc-500">{p.number}</span>
-                <span className="font-bold text-base text-zinc-200 uppercase truncate">{p.name}</span>
+                <span className="font-bold text-base text-zinc-200 uppercase truncate flex-1">{p.name}</span>
+                {p.isLibero && <span className="bg-purple-900/50 text-purple-400 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-purple-500/20">Líbero</span>}
+                {p.isCaptain && <span className="bg-yellow-900/50 text-yellow-400 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-yellow-500/20">Capitán</span>}
             </div>
         ));
     };
@@ -98,6 +112,20 @@ export default function PublicMatchView() {
                         <ArrowLeft size={14} /> Volver al Inicio
                     </Link>
                 </div>
+
+                {/* METADATA ROW */}
+                <div className="flex gap-6 mt-12 mb-2 md:mt-0 md:mb-0 items-center justify-center">
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-400 uppercase">
+                        📅 {date || 'HOY'}
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-400 uppercase">
+                        ⏰ {time?.slice(0, 5) || 'A CONFIRMAR'}
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/20 border border-blue-500/20 text-xs font-bold text-blue-400 uppercase">
+                        🏆 {phase || categoryName || 'Liga'}
+                    </div>
+                </div>
+
                 <div className="absolute top-6 right-6">
                     <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-full animate-pulse">
                         <div className="w-2 h-2 bg-red-500 rounded-full"></div>
@@ -187,9 +215,17 @@ export default function PublicMatchView() {
 
             {/* 3. FOOTER SPONSORS */}
             <footer className="w-full max-w-7xl px-4 mt-8 pb-4">
-                <div className="h-24 bg-zinc-900/50 rounded-2xl border border-white/5 flex items-center justify-center gap-12 overflow-hidden">
-                    <span className="text-zinc-800 font-black uppercase text-3xl">Espacio Publicitario</span>
-                </div>
+                {sponsors.length > 0 ? (
+                    <div className="min-h-24 bg-zinc-900/50 rounded-2xl border border-white/5 flex flex-wrap items-center justify-center gap-8 overflow-hidden py-4 px-8">
+                        {sponsors.map(s => (
+                            <img key={s.id} src={s.image_url} alt={s.name} className="max-h-16 max-w-[150px] object-contain opacity-80 hover:opacity-100 transition" />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="h-24 bg-zinc-900/50 rounded-2xl border border-white/5 flex items-center justify-center gap-12 overflow-hidden">
+                        <span className="text-zinc-800 font-black uppercase text-3xl">Espacio Publicitario</span>
+                    </div>
+                )}
             </footer>
         </div>
     );

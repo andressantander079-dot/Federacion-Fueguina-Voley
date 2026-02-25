@@ -18,10 +18,14 @@ import {
     Wallet,
     Shield,
     UserCog,
-    Calendar
+    Calendar,
+    Download
 } from 'lucide-react'
 import RecentMatches from '@/components/admin/RecentMatches';
 import { createClient } from '@/lib/supabase/client';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
 
 // Definición de las tarjetas del mosaico
 const getMosaicCards = (counts: any) => [
@@ -137,6 +141,7 @@ export default function AdminDashboardPage() {
         torneos: 0,
         jugadores: 0
     });
+    const [exporting, setExporting] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -187,6 +192,159 @@ export default function AdminDashboardPage() {
             setLoading(false);
         }
     }
+    const exportToPDF = async () => {
+        setExporting(true);
+        try {
+            // 1. Fetch all data using separate queries for robustness
+            const [
+                { data: clubs, error: clubsErr },
+                { data: allSquads, error: squadsErr },
+                { data: allPlayers, error: playersErr },
+                { data: categories, error: catsErr }
+            ] = await Promise.all([
+                supabase.from('teams').select('id, name, city').order('name'),
+                supabase.from('squads').select('id, team_id, name, coach_name, category_id'),
+                supabase.from('players').select('name, number, squad_id'),
+                supabase.from('categories').select('id, name')
+            ]);
+
+            if (clubsErr) throw clubsErr;
+            if (squadsErr) throw squadsErr;
+            if (playersErr) throw playersErr;
+
+            // 2. Map and Assemble Data
+            const catMap = (categories || []).reduce((acc: any, cat) => {
+                acc[cat.id] = cat.name;
+                return acc;
+            }, {});
+
+            // Group squads by team_id
+            const squadsByTeam = (allSquads || []).reduce((acc: any, sq) => {
+                if (!acc[sq.team_id]) acc[sq.team_id] = [];
+                acc[sq.team_id].push(sq);
+                return acc;
+            }, {});
+
+            // Group players by squad_id
+            const playersBySquad = (allPlayers || []).reduce((acc: any, pl) => {
+                if (!acc[pl.squad_id]) acc[pl.squad_id] = [];
+                acc[pl.squad_id].push(pl);
+                return acc;
+            }, {});
+
+            // Assemble everything into a structure similar to our original nested query
+            const assembledClubs = (clubs || []).map(club => ({
+                ...club,
+                squads: (squadsByTeam[club.id] || []).map((sq: any) => ({
+                    ...sq,
+                    players: (playersBySquad[sq.id] || [])
+                }))
+            }));
+
+            // 3. Create PDF
+            const doc = new jsPDF();
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const dateStr = format(new Date(), 'dd/MM/yyyy HH:mm');
+
+            // Header
+            doc.setFillColor(15, 23, 42); // slate-900
+            doc.rect(0, 0, pageWidth, 40, 'F');
+
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.text('FEDERACIÓN DE VOLEY', pageWidth / 2, 20, { align: 'center' });
+
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text('REPORTE MAESTRO DE CLUBES Y PLANTELES', pageWidth / 2, 30, { align: 'center' });
+
+            doc.setTextColor(100, 116, 139); // slate-400
+            doc.text(`Generado: ${dateStr}`, pageWidth - 15, 30, { align: 'right' });
+
+            let currentY = 50;
+
+            assembledClubs.forEach((club) => {
+                // Check page break
+                if (currentY > 250) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+
+                // Club Title
+                doc.setTextColor(194, 65, 12); // orange-700
+                doc.setFontSize(16);
+                doc.setFont('helvetica', 'bold');
+                doc.text(club.name.toUpperCase(), 15, currentY);
+                currentY += 5;
+                doc.setDrawColor(229, 231, 235);
+                doc.line(15, currentY, pageWidth - 15, currentY);
+                currentY += 10;
+
+                club.squads?.forEach((squad: any) => {
+                    const catName = catMap[squad.category_id] || 'General';
+
+                    // Squad Info
+                    doc.setTextColor(30, 41, 59); // slate-800
+                    doc.setFontSize(12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`${catName} - ${squad.name}`, 15, currentY);
+
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(100, 116, 139);
+                    doc.text(`Entrenador: ${squad.coach_name || 'Sin asignar'}`, 15, currentY + 5);
+
+                    currentY += 10;
+
+                    // Players Table
+                    const tableData = squad.players.map((p: any) => [
+                        p.number || '-',
+                        p.name.toUpperCase()
+                    ]);
+
+                    autoTable(doc, {
+                        startY: currentY,
+                        head: [['#', 'NOMBRE Y APELLIDO']],
+                        body: tableData.length > 0 ? tableData : [['-', 'SIN JUGADORES']],
+                        theme: 'grid',
+                        headStyles: {
+                            fillColor: [30, 41, 59],
+                            textColor: [255, 255, 255],
+                            fontSize: 8,
+                            halign: 'center'
+                        },
+                        styles: { fontSize: 8, cellPadding: 2 },
+                        columnStyles: {
+                            0: { halign: 'center', cellWidth: 15 }
+                        },
+                        margin: { left: 15, right: 15 }
+                    });
+
+                    currentY = (doc as any).lastAutoTable.finalY + 15;
+                });
+
+                currentY += 10;
+            });
+
+            // Footer / Page numbers
+            const pageCount = doc.internal.pages.length - 1;
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.setTextColor(150);
+                doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+            }
+
+            doc.save(`Ficha_Federacion_${format(new Date(), 'yyyyMMdd')}.pdf`);
+
+        } catch (err: any) {
+            console.error("Error al exportar PDF:", err);
+            alert("Error al generar PDF: " + err.message);
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const cards = getMosaicCards(counts);
 
@@ -269,9 +427,19 @@ export default function AdminDashboardPage() {
                     </div>
                     <div className="text-xs font-bold text-slate-400 uppercase">Jugadores</div>
                 </div>
-                <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
-                    <div className="text-4xl font-black text-emerald-500 mb-1">OK</div>
-                    <div className="text-xs font-bold text-slate-400 uppercase">Estado Sistema</div>
+                <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5 flex flex-col justify-between">
+                    <div>
+                        <div className="text-4xl font-black text-emerald-500 mb-1">OK</div>
+                        <div className="text-xs font-bold text-slate-400 uppercase">Estado Sistema</div>
+                    </div>
+                    <button
+                        onClick={exportToPDF}
+                        disabled={exporting}
+                        className="mt-4 flex items-center justify-center gap-2 py-2 px-4 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold transition shadow-lg disabled:opacity-50"
+                    >
+                        {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                        PORTAL PDF
+                    </button>
                 </div>
             </div>
 

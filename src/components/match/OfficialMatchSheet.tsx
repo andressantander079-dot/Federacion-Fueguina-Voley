@@ -8,7 +8,7 @@ import LogoutButton from '@/components/LogoutButton';
 import {
     RefreshCw, Trophy, X, Check, Search, Plus,
     Download, User, Users, Calendar, Clock, ArrowRightLeft, Volleyball,
-    QrCode, MapPin, ArrowLeft
+    QrCode, MapPin, ArrowLeft, Trash2, Edit2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -23,12 +23,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const params = useParams();
     const matchId = params.id as string;
 
-    const {
-        sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
-        servingTeam, setServingTeam, addPoint, subtractPoint,
-        substitutePlayer, finishSet, initPositions, addPlayerToBench,
-        setAllState, setBenchHome, setBenchAway, // Important for hydration
-        moveToCourt, removeFromCourt
+    const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
+        moveToCourt, removeFromCourt, removePlayerFromMatch,
+        blockedPlayers, blockPlayer, unblockSetPlayers
     } = useVolleyMatch();
 
     // --- ESTADOS DE UI ---
@@ -41,7 +38,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [teamsInfo, setTeamsInfo] = useState<{
         home: { name: string, shield: string | null },
         away: { name: string, shield: string | null },
-        category: string
+        category: string,
+        date?: string,
+        time?: string,
+        phase?: string,
+        gym?: string,
+        gender?: string
     } | null>(null);
 
     // --- BUSCADOR JUGADORES ---
@@ -98,7 +100,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         jersey_number,
                         is_libero,
                         is_captain,
-                        player:players(id, name, number)
+                        player:players(id, name, number, team_id)
                     `)
                     .eq('match_id', matchId);
 
@@ -129,54 +131,65 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 // We'll rely on the fetched data to populate bench if empty.
 
                 // We need to know which team_id is home/away.
-                // We can fetch match again or rely on existing fetchMetadata promise?
-                // Let's re-fetch match basic info to be sure about IDs.
-                const { data: matchData } = await supabase.from('matches').select('home_team_id, away_team_id').eq('id', matchId).single();
+                // Re-fetch match basic info to be sure about IDs and category
+                const { data: matchData } = await supabase.from('matches').select('home_team_id, away_team_id, category_id').eq('id', matchId).single();
 
                 if (matchData) {
                     if (lineups) {
                         lineups.forEach((l: any) => {
                             const p = formatPlayer(l);
-                            if (l.team_id === matchData.home_team_id) homeRoster.push(p);
-                            else if (l.team_id === matchData.away_team_id) awayRoster.push(p);
+                            // Robustness: Use player's team_id directly from the JOIN if available, otherwise lineup's team_id
+                            // This handles cases where lineup was saved with Club ID but player has Team ID
+                            const pTeamId = l.player?.team_id || l.team_id;
+
+                            if (pTeamId === matchData.home_team_id) homeRoster.push(p);
+                            else if (pTeamId === matchData.away_team_id) awayRoster.push(p);
                         });
                     }
 
 
-                    // 2. CHECK IF EMPTY -> FETCH ALL PLAYERS (Fallback)
-                    console.log("Checking rosters. Home:", homeRoster.length, "Away:", awayRoster.length);
 
+                    // 2. CHECK IF EMPTY -> FETCH ALL PLAYERS (Fallback)
+
+
+
+                    // 2. CHECK IF EMPTY -> FETCH ALL PLAYERS (Fallback)
                     if (homeRoster.length === 0) {
                         try {
-                            const { data: allHome, error: errH } = await supabase.from('players').select('id, name, number, is_libero, is_captain').eq('team_id', matchData.home_team_id);
-                            if (errH) console.error("Error fetching home players:", errH);
-                            if (allHome) {
-                                console.log("Loaded all home players:", allHome.length);
-                                allHome.forEach((p: any) => homeRoster.push({
-                                    id: p.id,
-                                    name: p.name,
-                                    number: p.number,
-                                    isLibero: p.is_libero,
-                                    isCaptain: p.is_captain
-                                }));
+                            const { data: homeSquad } = await supabase.from('squads').select('id').eq('team_id', matchData.home_team_id).eq('category_id', matchData.category_id).maybeSingle();
+                            if (homeSquad) {
+                                const { data: allHome, error: errH } = await supabase.from('players').select('id, name, number').eq('squad_id', homeSquad.id).eq('status', 'active');
+                                if (errH) console.error("Error fetching home players:", errH);
+                                if (allHome) {
+                                    allHome.forEach((p: any) => homeRoster.push({
+                                        id: p.id,
+                                        name: p.name,
+                                        number: p.number,
+                                        isLibero: false,
+                                        isCaptain: false
+                                    }));
+                                }
                             }
                         } catch (e) {
                             console.error("Exception fetching home players:", e);
                         }
                     }
+
                     if (awayRoster.length === 0) {
                         try {
-                            const { data: allAway, error: errA } = await supabase.from('players').select('id, name, number, is_libero, is_captain').eq('team_id', matchData.away_team_id);
-                            if (errA) console.error("Error fetching away players:", errA);
-                            if (allAway) {
-                                console.log("Loaded all away players:", allAway.length);
-                                allAway.forEach((p: any) => awayRoster.push({
-                                    id: p.id,
-                                    name: p.name,
-                                    number: p.number,
-                                    isLibero: p.is_libero,
-                                    isCaptain: p.is_captain
-                                }));
+                            const { data: awaySquad } = await supabase.from('squads').select('id').eq('team_id', matchData.away_team_id).eq('category_id', matchData.category_id).maybeSingle();
+                            if (awaySquad) {
+                                const { data: allAway, error: errA } = await supabase.from('players').select('id, name, number').eq('squad_id', awaySquad.id).eq('status', 'active');
+                                if (errA) console.error("Error fetching away players:", errA);
+                                if (allAway) {
+                                    allAway.forEach((p: any) => awayRoster.push({
+                                        id: p.id,
+                                        name: p.name,
+                                        number: p.number,
+                                        isLibero: false,
+                                        isCaptain: false
+                                    }));
+                                }
                             }
                         } catch (e) {
                             console.error("Exception fetching away players:", e);
@@ -196,11 +209,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     // Accessing state here directly?
                     // We can use the setter.
                     setBenchHome(prev => {
-                        if (prev.length === 0 && posHome.length === 0) return homeRoster;
+                        const activePos = posHome.filter(p => p !== null);
+                        if (prev.length === 0 && activePos.length === 0) return homeRoster;
                         return prev;
                     });
                     setBenchAway(prev => {
-                        if (prev.length === 0 && posAway.length === 0) return awayRoster;
+                        const activePos = posAway.filter(p => p !== null);
+                        if (prev.length === 0 && activePos.length === 0) return awayRoster;
                         return prev;
                     });
                 }
@@ -215,14 +230,21 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     useEffect(() => {
         if (!matchId || matchId === 'test') return;
 
-        // Fetch Initial Metadata (Teams, Logos, Status)
         const fetchMetadata = async () => {
-            const { data } = await supabase.from('matches').select(`
+            const { data, error } = await supabase.from('matches').select(`
                 status,
+                scheduled_time,
+                round,
+                court_name,
                 home_team:teams!home_team_id(name, shield_url),
                 away_team:teams!away_team_id(name, shield_url),
-                category:categories(name)
+                category:categories(name),
+                tournament:tournaments!tournament_id(gender)
             `).eq('id', matchId).single();
+
+            if (error) {
+                console.error("Match metadata fetch error:", error);
+            }
 
             if (data) {
                 // Map DB status to UI Status if needed
@@ -230,13 +252,31 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 else if (data.status === 'finalizado') setMatchStatus('finished');
                 else setMatchStatus('scheduled');
 
+                // Robustly handle if Supabase returns objects or arrays for the joins
+                const getTeamInfo = (teamData: any) => {
+                    if (!teamData) return { name: '', shield: null };
+                    if (Array.isArray(teamData)) {
+                        return { name: teamData[0]?.name || '', shield: teamData[0]?.shield_url || null };
+                    }
+                    return { name: teamData.name || '', shield: teamData.shield_url || null };
+                };
+
+                const homeInfo = getTeamInfo(data.home_team);
+                const awayInfo = getTeamInfo(data.away_team);
+
+                const scheduledDate = data.scheduled_time ? new Date(data.scheduled_time) : null;
+
                 setTeamsInfo({
+                    home: homeInfo,
+                    away: awayInfo,
                     // @ts-ignore
-                    home: { name: data.home_team?.name, shield: data.home_team?.shield_url },
+                    category: data.category?.name || 'Voley',
+                    date: scheduledDate ? scheduledDate.toLocaleDateString() : 'A CONFIRMAR',
+                    time: scheduledDate ? scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'A CONFIRMAR',
+                    phase: data.round || 'Fase Regular',
+                    gym: data.court_name || 'Polivalente',
                     // @ts-ignore
-                    away: { name: data.away_team?.name, shield: data.away_team?.shield_url },
-                    // @ts-ignore
-                    category: data.category?.name || 'Voley'
+                    gender: data.tournament?.gender || 'S/D'
                 });
             }
         };
@@ -317,7 +357,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             posAway: data.pos_away || data.posAway,
             benchHome: data.bench_home || data.benchHome,
             benchAway: data.bench_away || data.benchAway,
-            servingTeam: data.serving_team || data.servingTeam
+            servingTeam: data.serving_team || data.servingTeam,
+            blockedPlayers: data.blocked_players || []
         };
 
         setAllState(normalizedState);
@@ -399,9 +440,39 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         bench_home: benchHome,
         bench_away: benchAway,
         serving_team: servingTeam,
+        blocked_players: blockedPlayers,
         staff,
         metadata: { category: teamsInfo?.category || 'Voley' }
     });
+
+    const handleSanction = (type: 'yellow' | 'red' | 'expulsion' | 'disqualify') => {
+        if (!selectedPlayer) return;
+
+        if (type === 'yellow') {
+            alert(`Amonestación (Amarilla) registrada para ${selectedPlayer.name}.`);
+        } else if (type === 'red') {
+            if (confirm(`¿Castigo (Roja) para ${selectedPlayer.name}?\nEsto otorgará un punto y el saque al equipo contrario.`)) {
+                const opposing = selectedPlayer.team === 'home' ? 'away' : 'home';
+                addPoint(opposing);
+                alert(`Punto otorgado al equipo contrario.`);
+            } else return;
+        } else if (type === 'expulsion') {
+            if (confirm(`¿Expulsión (Amarilla y Roja juntas) para ${selectedPlayer.name}?\nDeberá ser sustituido y no podrá jugar el resto del SET.`)) {
+                blockPlayer(selectedPlayer.id, 'set');
+                alert(`Expulsado del Set. Seleccione su reemplazo.`);
+                setModalSubOpen(true);
+                return;
+            } else return;
+        } else if (type === 'disqualify') {
+            if (confirm(`¿Descalificación (Amarilla y Roja separadas) para ${selectedPlayer.name}?\nDeberá ser sustituido y no podrá jugar el resto del PARTIDO.`)) {
+                blockPlayer(selectedPlayer.id, 'match');
+                alert(`Descalificado del Partido. Seleccione su reemplazo.`);
+                setModalSubOpen(true);
+                return;
+            } else return;
+        }
+        setModalActionOpen(false);
+    };
 
     // Auto-save logic (Referee Only)
     // Debounce to prevent too many DB writes
@@ -489,16 +560,125 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     }
 
     // --- LÓGICA BUSCADOR (Simulada para demo) ---
-    const openAddPlayerModal = (team: 'home' | 'away') => {
-        setTargetTeamForAdd(team); setSearchTerm(''); setSearchResults([]); setModalAddPlayerOpen(true);
+    const loadAvailablePlayers = async (team: 'home' | 'away') => {
+        setIsSearching(true);
+        try {
+            let matchData;
+            let matchCategory = null;
+
+            if (matchId === 'test') {
+                // Mock match data for "test" mode
+                const { data: randomTeam } = await supabase.from('teams').select('id').limit(1).single();
+                const { data: randCat } = await supabase.from('categories').select('*').limit(1).single();
+                matchData = {
+                    home_team_id: randomTeam?.id,
+                    away_team_id: randomTeam?.id,
+                    category_id: randCat?.id,
+                    scheduled_time: new Date().toISOString()
+                };
+                matchCategory = randCat;
+            } else {
+                const { data, error: matchErr } = await supabase.from('matches').select('home_team_id, away_team_id, category_id, scheduled_time').eq('id', matchId).single();
+                if (matchErr || !data) throw new Error("Match data not found");
+                matchData = data;
+                const { data: catData } = await supabase.from('categories').select('*').eq('id', matchData.category_id).maybeSingle();
+                matchCategory = catData;
+            }
+
+            const teamId = team === 'home' ? matchData.home_team_id : matchData.away_team_id;
+
+            const { data: clubSquads } = await supabase.from('squads').select('id, category_id, category:categories(name, min_year, max_year)').eq('team_id', teamId);
+            if (!clubSquads || clubSquads.length === 0) {
+                setSearchResults([]);
+                setIsSearching(false);
+                return;
+            }
+
+            const squadIds = clubSquads.map(s => s.id);
+            const squadMap = clubSquads.reduce((acc, squad) => {
+                acc[squad.id] = Array.isArray(squad.category) ? squad.category[0] : squad.category;
+                return acc;
+            }, {} as Record<string, any>);
+
+            const { data: players } = await supabase.from('players')
+                .select('id, name, number, squad_id, team_id')
+                .in('squad_id', squadIds)
+                .eq('status', 'active');
+
+            let todaysMatches: any[] | null = [];
+            if (matchData.scheduled_time) {
+                const day = matchData.scheduled_time.split('T')[0];
+                const { data } = await supabase
+                    .from('matches')
+                    .select('id')
+                    .gte('scheduled_time', `${day}T00:00:00Z`)
+                    .lte('scheduled_time', `${day}T23:59:59Z`);
+                todaysMatches = data;
+            }
+
+            const otherMatchIds = todaysMatches?.map(m => m.id).filter(id => id !== matchId) || [];
+            let dailyMatchCounts: Record<string, number> = {};
+
+            if (otherMatchIds.length > 0) {
+                const { data: dailyLineups } = await supabase
+                    .from('match_lineups')
+                    .select('player_id')
+                    .in('match_id', otherMatchIds);
+
+                dailyLineups?.forEach(l => {
+                    dailyMatchCounts[l.player_id] = (dailyMatchCounts[l.player_id] || 0) + 1;
+                });
+            }
+
+            const currentRoster = team === 'home' ? [...posHome, ...benchHome] : [...posAway, ...benchAway];
+            // @ts-ignore
+            const existingIds = new Set(currentRoster.filter(p => !!p).map(p => p.id));
+
+            const results = (players || []).filter(p => !existingIds.has(p.id)).map(p => {
+                const playerCat = squadMap[p.squad_id] || {};
+                const catName = playerCat.name || 'S/D';
+
+                let isBlocked = false;
+                let blockReason = '';
+
+                if (dailyMatchCounts[p.id] >= 2) {
+                    isBlocked = true;
+                    blockReason = "Límite: 2 partidos hoy";
+                } else if (playerCat.max_year && matchCategory?.max_year) {
+                    if (playerCat.max_year < matchCategory.max_year) {
+                        isBlocked = true;
+                        blockReason = `Jugador Mayor (${catName})`;
+                    }
+                }
+
+                return {
+                    ...p,
+                    categoryName: catName,
+                    isBlocked,
+                    blockReason
+                };
+            });
+
+            results.sort((a, b) => {
+                if (a.isBlocked !== b.isBlocked) return a.isBlocked ? 1 : -1;
+                return a.name.localeCompare(b.name);
+            });
+
+            setSearchResults(results);
+
+        } catch (error: any) {
+            console.error("Error loading players:", error);
+        } finally {
+            setIsSearching(false);
+        }
     };
 
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault(); setIsSearching(true);
-        setTimeout(() => {
-            const mockResults = [{ id: `db_${Date.now()}`, number: 99, name: `Jugador ${searchTerm}` }];
-            setSearchResults(mockResults); setIsSearching(false);
-        }, 500);
+    const openAddPlayerModal = (team: 'home' | 'away') => {
+        setTargetTeamForAdd(team);
+        setSearchTerm('');
+        setSearchResults([]);
+        setModalAddPlayerOpen(true);
+        loadAvailablePlayers(team);
     };
 
     const confirmAddPlayer = (player: any) => {
@@ -648,9 +828,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             {/* HEADER APP (Con Logout) */}
             <header className={`bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-20 ${closingStep === 4 ? 'hidden' : ''}`}>
                 <div className="flex gap-4 items-center">
-                    <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Calendar size={14} /> HOY</div>
-                    <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Clock size={14} /> 20:00</div>
-                    <div className="flex items-center gap-2 text-blue-600 text-xs font-black uppercase bg-blue-50 px-3 py-1 rounded-full"><Trophy size={14} /> {teamsInfo?.category || 'Fase Regular'}</div>
+                    <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Calendar size={14} /> {teamsInfo?.date || 'HOY'}</div>
+                    <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Clock size={14} /> {teamsInfo?.time?.slice(0, 5) || '20:00'}</div>
+                    <div className="flex items-center gap-2 text-blue-600 text-xs font-black uppercase bg-blue-50 px-3 py-1 rounded-full"><Trophy size={14} /> {teamsInfo?.phase || teamsInfo?.category || 'Fase Regular'}</div>
                     <button onClick={() => setShowRostersModal(true)} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 text-xs font-bold uppercase transition"><Users size={14} /> Planteles</button>
 
                 </div>
@@ -730,11 +910,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <aside className="w-64 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                     <div className="p-4 bg-blue-600 flex flex-col items-center gap-2 relative overflow-hidden">
                         {/* Header Logo Local */}
-                        <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center">
-                            {teamsInfo?.home.shield
-                                ? <img src={teamsInfo.home.shield} className="w-full h-full object-contain" />
-                                : <span className="font-black text-2xl text-blue-600">{teamsInfo?.home.name?.charAt(0) || 'L'}</span>
-                            }
+                        <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
+                            <span className="font-black text-2xl text-blue-600 absolute inset-0 flex items-center justify-center">{teamsInfo?.home.name?.charAt(0) || 'L'}</span>
+                            {teamsInfo?.home.shield && (
+                                <img
+                                    src={teamsInfo.home.shield}
+                                    className="w-full h-full object-contain relative z-10"
+                                    onError={(e) => e.currentTarget.style.display = 'none'}
+                                />
+                            )}
                         </div>
                         <h2 className="font-black text-white text-center leading-tight z-10 relative">{teamsInfo?.home.name || 'LOCAL'}</h2>
 
@@ -747,12 +931,23 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                             <button onClick={() => openAddPlayerModal('home')} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:bg-slate-50 hover:text-blue-600 transition flex items-center justify-center gap-2"><Search size={16} /> + Agregar</button>
                         )}
                         {benchHome.map(p => (
-                            <div key={p.id} onClick={() => !readOnly && moveToCourt('home', p)} className={`p-2 bg-slate-50 rounded border border-slate-100 flex justify-between items-center ${!readOnly ? 'cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition' : ''}`}>
-                                <span className="font-black text-slate-700">#{p.number}</span>
-                                <div className="flex items-center gap-1">
-                                    <span className="text-xs font-medium text-slate-600 truncate max-w-[100px]">{p.name}</span>
-                                    {p.isLibero && <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded font-bold">L</span>}
+                            <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 group">
+                                <div onClick={() => !readOnly && moveToCourt('home', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
+                                    <span className="font-black text-slate-400 w-6 text-right">#{p.number}</span>
+                                    <span className="font-bold text-slate-700 flex-1">{p.name}</span>
+                                    {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
+                                    {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Capitán</span>}
                                 </div>
+                                {!readOnly && matchStatus === 'scheduled' && (
+                                    <div className="flex gap-1 transition">
+                                        <button onClick={(e) => { e.stopPropagation(); setSelectedPlayer({ ...p, team: 'home' }); setModalActionOpen(true); }} className="p-1 text-slate-300 hover:text-blue-500 rounded-full" title="Editar">
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); removePlayerFromMatch('home', p); }} className="p-1 text-slate-300 hover:text-red-500 rounded-full" title="Eliminar de lista">
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -802,16 +997,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">1er Árbitro</label>
                             <select className="font-bold text-slate-700 bg-transparent outline-none text-sm" value={staff.ref1} onChange={e => setStaff({ ...staff, ref1: e.target.value })}>
                                 <option value="">Seleccionar...</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name}</option>)}
                             </select>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Planillero</label>
-                            <input className="font-bold text-slate-700 bg-transparent outline-none text-sm" placeholder="Nombre..." value={staff.scorer} onChange={e => setStaff({ ...staff, scorer: e.target.value })} />
                         </div>
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">2do Árbitro</label>
@@ -856,11 +1047,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <aside className="w-64 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                     <div className="p-4 bg-red-600 flex flex-col items-center gap-2 relative overflow-hidden">
                         {/* Header Logo Visita */}
-                        <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center">
-                            {teamsInfo?.away.shield
-                                ? <img src={teamsInfo.away.shield} className="w-full h-full object-contain" />
-                                : <span className="font-black text-2xl text-red-600">{teamsInfo?.away.name?.charAt(0) || 'V'}</span>
-                            }
+                        <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
+                            <span className="font-black text-2xl text-red-600 absolute inset-0 flex items-center justify-center">{teamsInfo?.away.name?.charAt(0) || 'V'}</span>
+                            {teamsInfo?.away.shield && (
+                                <img
+                                    src={teamsInfo.away.shield}
+                                    className="w-full h-full object-contain relative z-10"
+                                    onError={(e) => e.currentTarget.style.display = 'none'}
+                                />
+                            )}
                         </div>
                         <h2 className="font-black text-white text-center leading-tight z-10 relative">{teamsInfo?.away.name || 'VISITA'}</h2>
 
@@ -873,12 +1068,23 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                             <button onClick={() => openAddPlayerModal('away')} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:bg-slate-50 hover:text-red-600 transition flex items-center justify-center gap-2"><Search size={16} /> + Agregar</button>
                         )}
                         {benchAway.map(p => (
-                            <div key={p.id} onClick={() => !readOnly && moveToCourt('away', p)} className={`p-2 bg-slate-50 rounded border border-slate-100 flex justify-between items-center ${!readOnly ? 'cursor-pointer hover:bg-red-50 hover:border-red-200 transition' : ''}`}>
-                                <span className="font-black text-slate-700">#{p.number}</span>
-                                <div className="flex items-center gap-1">
-                                    <span className="text-xs font-medium text-slate-600 truncate max-w-[100px]">{p.name}</span>
-                                    {p.isLibero && <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded font-bold">L</span>}
+                            <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 group">
+                                <div onClick={() => !readOnly && moveToCourt('away', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
+                                    <span className="font-black text-slate-400 w-6 text-right">#{p.number}</span>
+                                    <span className="font-bold text-slate-700 flex-1">{p.name}</span>
+                                    {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
+                                    {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Capitán</span>}
                                 </div>
+                                {!readOnly && matchStatus === 'scheduled' && (
+                                    <div className="flex gap-1 transition">
+                                        <button onClick={(e) => { e.stopPropagation(); setSelectedPlayer({ ...p, team: 'away' }); setModalActionOpen(true); }} className="p-1 text-slate-300 hover:text-red-500 rounded-full" title="Editar">
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); removePlayerFromMatch('away', p); }} className="p-1 text-slate-300 hover:text-red-500 rounded-full" title="Eliminar de lista">
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -889,16 +1095,75 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             {modalActionOpen && selectedPlayer && (
                 <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 backdrop-blur-sm">
                     <div className="bg-white p-6 rounded-3xl shadow-2xl w-80">
-                        <h3 className="text-center font-black text-3xl mb-1 text-slate-800">#{selectedPlayer.number}</h3>
-                        <div className="flex flex-col gap-3 mt-4">
-                            {matchStatus === 'scheduled' ? (
-                                <button onClick={() => { removeFromCourt(selectedPlayer.team, selectedPlayer); setModalActionOpen(false); setSelectedPlayer(null); }} className="bg-slate-50 text-slate-800 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-600 border-2 border-slate-100 hover:border-red-200"><X size={18} /> Sacar de Cancha</button>
-                            ) : (
-                                <button onClick={() => { setModalSubOpen(true); }} className="bg-slate-50 text-slate-800 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-100"><RefreshCw size={18} /> Sustitución</button>
-                            )}
-                            <div className="flex gap-3"><button className="flex-1 bg-yellow-400 text-yellow-900 py-4 rounded-2xl font-black">Amarilla</button><button className="flex-1 bg-red-600 text-white py-4 rounded-2xl font-black">Roja</button></div>
-                        </div>
-                        <button onClick={() => setModalActionOpen(false)} className="mt-6 w-full text-slate-400 font-bold hover:text-slate-600">Cancelar</button>
+                        {matchStatus === 'scheduled' ? (
+                            <>
+                                <h3 className="text-center font-black text-xl mb-4 text-slate-800">Editar Jugador</h3>
+                                <div className="flex flex-col gap-3 mb-4">
+                                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Camiseta</label>
+                                        <input type="number"
+                                            value={selectedPlayer.number}
+                                            onChange={(e) => setSelectedPlayer({ ...selectedPlayer, number: parseInt(e.target.value) || 0 })}
+                                            className="w-16 p-1 border-b-2 border-slate-300 bg-transparent text-center font-black text-xl outline-none focus:border-blue-600 transition"
+                                        />
+                                    </div>
+                                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100 cursor-pointer" onClick={() => setSelectedPlayer({ ...selectedPlayer, isLibero: !selectedPlayer.isLibero })}>
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Líbero</label>
+                                        <div className={`w-10 h-6 flex items-center bg-slate-300 rounded-full p-1 duration-300 ease-in-out cursor-pointer ${selectedPlayer.isLibero ? 'bg-purple-500' : ''}`}>
+                                            <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ease-in-out ${selectedPlayer.isLibero ? 'translate-x-4' : ''}`}></div>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100 cursor-pointer" onClick={() => setSelectedPlayer({ ...selectedPlayer, isCaptain: !selectedPlayer.isCaptain })}>
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer">Capitán/a</label>
+                                        <div className={`w-10 h-6 flex items-center bg-slate-300 rounded-full p-1 duration-300 ease-in-out cursor-pointer ${selectedPlayer.isCaptain ? 'bg-yellow-500' : ''}`}>
+                                            <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ease-in-out ${selectedPlayer.isCaptain ? 'translate-x-4' : ''}`}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <button onClick={() => {
+                                        const team = selectedPlayer.team;
+                                        // Validar cantidad de capitanes
+                                        if (selectedPlayer.isCaptain) {
+                                            const currentBench = team === 'home' ? benchHome : benchAway;
+                                            const currentPos = team === 'home' ? posHome : posAway;
+                                            const allPlayers = [...currentBench, ...currentPos].filter(p => !!p);
+                                            const captainsCount = allPlayers.filter(p => p!.isCaptain && p!.id !== selectedPlayer.id).length;
+                                            if (captainsCount >= 2) {
+                                                alert("¡Atención! Ya hay 2 capitanas marcadas en este equipo. El sistema no permite más de 2 capitanas simultáneas según reglas. Desmarque otra capitana primero.");
+                                                return;
+                                            }
+                                        }
+
+                                        if (team === 'home') {
+                                            setBenchHome(prev => prev.map(p => p.id === selectedPlayer.id ? selectedPlayer : p).sort((a, b) => a.number - b.number));
+                                            setPosHome(prev => prev.map(p => p?.id === selectedPlayer.id ? selectedPlayer : p));
+                                        } else {
+                                            setBenchAway(prev => prev.map(p => p.id === selectedPlayer.id ? selectedPlayer : p).sort((a, b) => a.number - b.number));
+                                            setPosAway(prev => prev.map(p => p?.id === selectedPlayer.id ? selectedPlayer : p));
+                                        }
+                                        setModalActionOpen(false);
+                                    }} className="w-full bg-blue-600 hover:bg-blue-700 transition text-white font-black py-3 rounded-xl shadow-md">Guardar Cambios</button>
+
+                                    <button onClick={() => { removeFromCourt(selectedPlayer.team, selectedPlayer); setModalActionOpen(false); setSelectedPlayer(null); }} className="w-full bg-slate-50 text-slate-800 py-3 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-600 border border-slate-200 transition">Sacar de Cancha</button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h3 className="text-center font-black text-4xl mb-6 text-slate-800 text-shadow-sm">#{selectedPlayer.number}</h3>
+                                <div className="flex flex-col gap-3">
+                                    <button onClick={() => { setModalSubOpen(true); }} className="bg-blue-50 text-blue-700 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-100 transition shadow-sm border border-blue-200"><RefreshCw size={18} /> Sustitución</button>
+
+                                    <div className="grid grid-cols-2 gap-2 mt-2">
+                                        <button onClick={() => handleSanction('yellow')} className="bg-yellow-400 text-yellow-900 py-3 rounded-2xl font-black shadow-sm uppercase text-xs tracking-wide active:scale-95 transition">Amarilla<br /><span className="text-[9px] font-bold opacity-75 leading-none block">Advertencia</span></button>
+                                        <button onClick={() => handleSanction('red')} className="bg-red-600 text-white py-3 rounded-2xl font-black shadow-sm uppercase text-xs tracking-wide active:scale-95 transition">Roja<br /><span className="text-[9px] font-bold opacity-75 leading-none block">Punto Rival</span></button>
+                                        <button onClick={() => handleSanction('expulsion')} className="bg-gradient-to-r from-yellow-400 to-red-600 text-white py-3 rounded-2xl font-black shadow-sm uppercase text-xs tracking-wide active:scale-95 transition flex flex-col items-center justify-center"><span className="leading-tight">A+R Juntas</span><span className="text-[9px] font-bold text-white/90 leading-none">Expulsión Set</span></button>
+                                        <button onClick={() => handleSanction('disqualify')} className="bg-slate-800 text-white border-2 border-red-500 py-3 rounded-2xl font-black shadow-sm uppercase text-xs tracking-wide active:scale-95 transition flex flex-col items-center justify-center"><span className="leading-tight text-red-500">A+R Sep.</span><span className="text-[9px] font-bold text-slate-300 leading-none">Descalificado</span></button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                        <button onClick={() => setModalActionOpen(false)} className="mt-6 w-full text-slate-400 font-bold hover:text-slate-600 transition uppercase text-xs tracking-wider">Cancelar y Volver</button>
                     </div>
                 </div>
             )}
@@ -907,7 +1172,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     <div className="bg-white p-6 rounded-3xl shadow-2xl w-80 h-[500px] flex flex-col">
                         <h3 className="font-black text-lg mb-4 text-slate-800">Elegir Suplente</h3>
                         <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                            {activeBench && activeBench.length > 0 ? activeBench.map(p => (
+                            {activeBench && activeBench.length > 0 ? activeBench.filter(p => !blockedPlayers.find(bp => bp.id === p.id)).map(p => (
                                 <div key={p.id} onClick={() => handleSubConfirm(p)} className="p-3 border border-slate-100 rounded-xl hover:bg-blue-50 cursor-pointer flex gap-4 items-center">
                                     <span className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center font-black text-slate-700">{p.number}</span> <span className="font-bold text-slate-600">{p.name}</span>
                                 </div>
@@ -957,11 +1222,30 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[80] backdrop-blur-sm">
                     <div className="bg-white p-6 rounded-3xl shadow-2xl w-96 flex flex-col">
                         <div className="flex justify-between items-center mb-4"><h3 className="font-black text-lg text-slate-800">Buscar Jugador</h3><button onClick={() => setModalAddPlayerOpen(false)}><X size={20} className="text-slate-400" /></button></div>
-                        <form onSubmit={handleSearch} className="flex gap-2 mb-4"><input className="flex-1 border-2 border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none" placeholder="Apellido..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus /><button type="submit" className="bg-slate-800 text-white p-3 rounded-xl"><Search size={18} /></button></form>
-                        <div className="flex-1 h-64 overflow-y-auto border-t border-slate-100 pt-2 space-y-2">
-                            {isSearching && <p className="text-center text-slate-400 text-xs py-4">Buscando...</p>}
-                            {searchResults.map(player => (
-                                <div key={player.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl hover:bg-slate-100"><span className="block font-black text-slate-800">#{player.number} {player.name}</span><button onClick={() => confirmAddPlayer(player)} className="bg-green-500 text-white p-2 rounded-lg"><Plus size={16} /></button></div>
+                        <form onSubmit={e => e.preventDefault()} className="flex gap-2 mb-4"><input className="flex-1 border-2 border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none border-blue-500 focus:ring-4 focus:ring-blue-100 transition" placeholder="Buscar por Apellido..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus /></form>
+                        <div className="flex-1 h-64 overflow-y-auto border-t border-slate-100 pt-2 space-y-2 pr-2">
+                            {isSearching && <p className="text-center text-slate-400 text-xs py-4">Cargando planteles...</p>}
+                            {!isSearching && searchResults.length === 0 && (
+                                <div className="text-center text-slate-400 text-xs py-4 flex flex-col items-center gap-2">
+                                    <span className="text-2xl">⚠️</span>
+                                    <p>No se encontraron jugadoras activas para este club.</p>
+                                    <p className="text-[10px] text-slate-300">Verifique el estado del Match ID o de los planteles.</p>
+                                </div>
+                            )}
+                            {searchResults.filter(p => !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(player => (
+                                <div key={player.id} className={`flex justify-between items-center p-3 rounded-xl ${player.isBlocked ? 'bg-red-50 border border-red-100' : 'bg-slate-50 hover:bg-slate-100'}`}>
+                                    <div>
+                                        <span className={`block font-black ${player.isBlocked ? 'text-red-700' : 'text-slate-800'}`}>#{player.number} {player.name}</span>
+                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border mt-1 inline-block ${player.isBlocked ? 'bg-red-100 text-red-600 border-red-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                            {player.isBlocked ? player.blockReason : player.categoryName}
+                                        </span>
+                                    </div>
+                                    {!player.isBlocked ? (
+                                        <button onClick={() => confirmAddPlayer(player)} className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600"><Plus size={16} /></button>
+                                    ) : (
+                                        <button disabled className="bg-red-200 text-red-500 p-2 rounded-lg cursor-not-allowed"><X size={16} /></button>
+                                    )}
+                                </div>
                             ))}
                         </div>
                     </div>
@@ -1094,22 +1378,22 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     </div>
                                 </div>
 
-                                {/* DATOS ENCUENTRO (7 CAMPOS COMPLETO) */}
-                                <div className="grid grid-cols-4 gap-4 mb-8 text-xs uppercase bg-slate-50 p-4 border border-slate-200 rounded-lg">
-                                    <div><strong className="block text-slate-400 mb-1">Fecha</strong> {new Date().toLocaleDateString()}</div>
-                                    <div><strong className="block text-slate-400 mb-1">Hora</strong> 20:00</div>
-                                    <div><strong className="block text-slate-400 mb-1">Gimnasio</strong> Polivalente</div>
-                                    <div><strong className="block text-slate-400 mb-1">Instancia</strong> Fase Regular</div>
-                                    {/* NUEVOS CAMPOS */}
-                                    <div><strong className="block text-slate-400 mb-1">Competencia</strong> Apertura 2026</div>
-                                    <div><strong className="block text-slate-400 mb-1">Categoría</strong> Mayores</div>
-                                    <div><strong className="block text-slate-400 mb-1">Género</strong> Masculino</div>
+                                {/* DATOS ENCUENTRO COMPACTOS */}
+                                <div className="grid grid-cols-4 gap-2 mb-6 text-[10px] uppercase bg-slate-50 p-2 border border-slate-200 rounded-md">
+                                    <div><strong className="block text-slate-400 font-black">Fecha</strong> {teamsInfo?.date || new Date().toLocaleDateString()}</div>
+                                    <div><strong className="block text-slate-400 font-black">Hora</strong> {teamsInfo?.time?.slice(0, 5) || 'A CONFIRMAR'}</div>
+                                    <div className="col-span-2"><strong className="block text-slate-400 font-black">Gimnasio</strong> {teamsInfo?.gym || 'Polivalente'}</div>
+
+                                    <div><strong className="block text-slate-400 font-black">Competencia</strong> Apertura 2026</div>
+                                    <div><strong className="block text-slate-400 font-black">Instancia</strong> {teamsInfo?.phase || 'Fase Regular'}</div>
+                                    <div><strong className="block text-slate-400 font-black">Categoría</strong> {teamsInfo?.category || 'Mayores'}</div>
+                                    <div><strong className="block text-slate-400 font-black">Género</strong> {teamsInfo?.gender || 'Masculino'}</div>
                                 </div>
 
                                 {/* MARCADOR GLOBAL */}
                                 <div className="flex items-center justify-between mb-8 px-8">
                                     <div className="text-center w-1/3">
-                                        <h2 className="text-2xl font-black text-blue-800">CLUB A LOCAL</h2>
+                                        <h2 className="text-2xl font-black text-blue-800 uppercase">{teamsInfo?.home?.name || 'Local'}</h2>
                                         <div className="w-full h-1 bg-blue-800 mt-2 mx-auto"></div>
                                     </div>
                                     <div className="text-6xl font-black text-slate-800 px-8 border-x-2 border-slate-100 flex items-center justify-center gap-4">
@@ -1118,7 +1402,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                         <span>{setsWonAway}</span>
                                     </div>
                                     <div className="text-center w-1/3">
-                                        <h2 className="text-2xl font-black text-red-800">CLUB B VISITA</h2>
+                                        <h2 className="text-2xl font-black text-red-800 uppercase">{teamsInfo?.away?.name || 'Visita'}</h2>
                                         <div className="w-full h-1 bg-red-800 mt-2 mx-auto"></div>
                                     </div>
                                 </div>
@@ -1197,8 +1481,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 {/* FOOTER */}
                                 <div className="flex justify-between items-end text-[10px] text-slate-400 pt-4 border-t border-slate-100">
                                     <div>
-                                        <p>Planillero: <span className="font-bold text-slate-600">{staff.scorer}</span></p>
-                                        {staff.ref2 && <p>2do Árbitro: <span className="font-bold text-slate-600">{referees.find(r => r.id === staff.ref2)?.last_name}</span></p>}
+                                        {staff.ref1 && <p>1º Árbitro: <span className="font-bold text-slate-600">{referees.find(r => r.id === staff.ref1)?.last_name}</span></p>}
+                                        {staff.ref2 && <p>2º Árbitro: <span className="font-bold text-slate-600">{referees.find(r => r.id === staff.ref2)?.last_name}</span></p>}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <QrCode size={32} className="text-slate-800" />

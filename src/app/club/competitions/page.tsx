@@ -126,11 +126,13 @@ export default function ClubCompetitionsList() {
                                                     <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700">
                                                         {t.season}
                                                     </span>
-                                                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${t.status === 'activo' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
-                                                        t.status === 'finalizado' ? 'bg-zinc-800 text-zinc-500 border-zinc-700' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-                                                        }`}>
-                                                        {t.status}
-                                                    </span>
+                                                    {t.status !== 'borrador' && (
+                                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${t.status === 'activo' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                                                            t.status === 'finalizado' ? 'bg-zinc-800 text-zinc-500 border-zinc-700' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                                                            }`}>
+                                                            {t.status}
+                                                        </span>
+                                                    )}
                                                 </div>
 
                                                 <h3 className="text-lg font-black text-white leading-tight group-hover:text-blue-400 transition">

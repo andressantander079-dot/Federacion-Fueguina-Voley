@@ -6,6 +6,7 @@ export type Player = {
     number: number;
     name: string;
     isLibero?: boolean;
+    isCaptain?: boolean;
 };
 
 export type TeamSide = 'home' | 'away';
@@ -48,6 +49,7 @@ export type MatchState = {
     // Only 6 substitutions per set per team.
     substitutionsHome: number;
     substitutionsAway: number;
+    blockedPlayers: { id: string, type: 'set' | 'match' }[];
 };
 
 export function useVolleyMatch(initialState?: Partial<MatchState>) {
@@ -65,6 +67,8 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
     const [subsCount, setSubsCount] = useState({ home: 0, away: 0 }); // Track count per set
 
+    const [blockedPlayers, setBlockedPlayers] = useState<{ id: string, type: 'set' | 'match' }[]>(initialState?.blockedPlayers || []);
+
     // Undo History
     const [history, setHistory] = useState<string[]>([]); // Store JSON strings for deep copy simplicity
 
@@ -72,10 +76,10 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
     const snapshot = useCallback(() => {
         const state = {
-            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount
+            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers
         };
         setHistory(prev => [...prev, JSON.stringify(state)]);
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers]);
 
     const undo = () => {
         if (history.length === 0) return;
@@ -90,6 +94,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         setBenchAway(lastState.benchAway);
         setServingTeam(lastState.servingTeam);
         setSubsCount(lastState.subsCount);
+        setBlockedPlayers(lastState.blockedPlayers || []);
 
         setHistory(prev => prev.slice(0, -1));
     };
@@ -103,9 +108,9 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     const rotateTeamArray = (arr: (Player | null)[]) => {
         if (arr.length < 6) return arr;
         const newArr = [...arr];
-        const last = newArr.pop();
+        const first = newArr.shift(); // Remove First
         // @ts-ignore
-        newArr.unshift(last);
+        newArr.push(first); // Add to End
         return newArr;
     };
 
@@ -235,6 +240,11 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         setBench(prev => [...prev, player].sort((a, b) => a.number - b.number));
     };
 
+    const removePlayerFromMatch = (team: TeamSide, player: Player) => {
+        const setBench = team === 'home' ? setBenchHome : setBenchAway;
+        setBench(prev => prev.filter(p => p.id !== player.id));
+    };
+
     const initPositions = () => {
         // Dummy implementation or logic to reset/load defaults if needed
         // For now, it seems the component calls it to ensure state is ready?
@@ -259,6 +269,8 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         if (currentSetIdx < 4) {
             setCurrentSetIdx(prev => prev + 1);
             setSubsCount({ home: 0, away: 0 }); // Reset subs for new set
+            // Unblock players blocked only for the set
+            setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
         }
     };
 
@@ -271,13 +283,22 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         if (state.benchHome) setBenchHome(state.benchHome);
         if (state.benchAway) setBenchAway(state.benchAway);
         if (state.servingTeam !== undefined) setServingTeam(state.servingTeam);
+        if (state.blockedPlayers) setBlockedPlayers(state.blockedPlayers);
     };
 
     return {
         sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
-        servingTeam, subsCount,
+        servingTeam, subsCount, blockedPlayers,
         addPoint, subtractPoint, substitutePlayer, finishSet, undo,
         setAllState, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
-        initPositions, addPlayerToBench, moveToCourt, removeFromCourt
+        initPositions, addPlayerToBench, moveToCourt, removeFromCourt, removePlayerFromMatch,
+        blockPlayer: (id: string, type: 'set' | 'match') => {
+            snapshot();
+            setBlockedPlayers(prev => [...prev.filter(p => p.id !== id), { id, type }]);
+        },
+        unblockSetPlayers: () => {
+            snapshot();
+            setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
+        }
     };
 }

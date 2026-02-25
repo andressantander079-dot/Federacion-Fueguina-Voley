@@ -111,6 +111,26 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
             const matchCatObj = categories.find(c => c.id === match.category_id);
             const matchMinYear = matchCatObj?.min_year || 0;
 
+            // Fetch Daily Matches to apply limit
+            const { data: todaysMatches } = await supabase
+                .from('matches')
+                .select('id')
+                .eq('date', match.date);
+
+            const otherMatchIds = todaysMatches?.map(m => m.id).filter(id => id !== match.id) || [];
+            let dailyMatchCounts: Record<string, number> = {};
+
+            if (otherMatchIds.length > 0) {
+                const { data: dailyLineups } = await supabase
+                    .from('match_lineups')
+                    .select('player_id')
+                    .in('match_id', otherMatchIds);
+
+                dailyLineups?.forEach(l => {
+                    dailyMatchCounts[l.player_id] = (dailyMatchCounts[l.player_id] || 0) + 1;
+                });
+            }
+
             // Combine info
             const formattedPlayers = squadPlayers?.map((sp: any) => {
                 const squad = genderFilteredSquads.find(s => s.id === sp.squad_id);
@@ -118,11 +138,17 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                 const categoryName = catObj?.name;
 
                 // Blocking Logic: Block if Squad is OLDER (min_year < match_min_year)
-                // Example: Match Sub-14 (2012). Squad Sub-16 (2010). 2010 < 2012 -> Blocked.
-                // Example: Match Sub-14 (2012). Squad Sub-12 (2014). 2014 >= 2012 -> Allowed.
                 let isBlocked = false;
+                let blockReason = '';
                 if (catObj?.min_year && matchMinYear) {
                     isBlocked = catObj.min_year < matchMinYear;
+                    if (isBlocked) blockReason = "Exceso de edad";
+                }
+
+                // Match limit logic
+                if (!isBlocked && dailyMatchCounts[sp.id] >= 2) {
+                    isBlocked = true;
+                    blockReason = "Límite: 2 partidos diarios";
                 }
 
                 const nameParts = (sp.name || '').split(' ');
@@ -139,6 +165,7 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                     squad_name: categoryName || 'General',
                     squad_id: sp.squad_id,
                     isBlocked: isBlocked,
+                    blockReason: blockReason,
                     categoryYear: catObj?.min_year
                 };
             }) || [];

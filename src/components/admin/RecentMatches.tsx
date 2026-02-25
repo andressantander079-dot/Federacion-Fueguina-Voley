@@ -145,7 +145,7 @@ export default function RecentMatches() {
                                     {match.court_name || 'Cancha Central'}
                                 </div>
                                 <Link
-                                    href={`/admin/matches/${match.id}/sheet`}
+                                    href={`/partido/${match.id}`}
                                     className="px-4 py-2 bg-tdf-orange text-white text-xs font-bold rounded-lg hover:bg-orange-600 transition flex items-center gap-2"
                                 >
                                     Ir a Planilla <ArrowRight size={14} />

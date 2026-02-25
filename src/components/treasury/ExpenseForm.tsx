@@ -62,7 +62,7 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
             // 3. Insert Movement
             const { error: insertError } = await supabase.from('treasury_movements').insert([{
                 type: 'EGRESO',
-                amount: parseFloat(formData.amount),
+                amount: parseFloat(formData.amount.replace(/\D/g, '') || '0'),
                 date: formData.date,
                 description: formData.description,
                 tax_id: formData.tax_id,
@@ -173,11 +173,19 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
                         <div className="relative">
                             <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input
-                                type="number"
+                                type="text"
                                 required
                                 value={formData.amount}
-                                onChange={e => setFormData({ ...formData, amount: e.target.value })}
-                                placeholder="0.00"
+                                onChange={e => {
+                                    const raw = e.target.value.replace(/\D/g, '');
+                                    if (raw) {
+                                        const formatted = parseInt(raw, 10).toLocaleString('es-AR');
+                                        setFormData({ ...formData, amount: formatted });
+                                    } else {
+                                        setFormData({ ...formData, amount: '' });
+                                    }
+                                }}
+                                placeholder="0"
                                 className="w-full pl-10 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-blue outline-none transition-all text-lg font-bold"
                             />
                         </div>

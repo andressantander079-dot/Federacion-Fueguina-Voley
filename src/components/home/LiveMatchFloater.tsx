@@ -14,7 +14,7 @@ export default function LiveMatchFloater() {
         const fetchLiveMatches = async () => {
             const { data } = await supabase
                 .from('matches')
-                .select('id, home_team:teams!home_team_id(name), away_team:teams!away_team_id(name), sheet_data')
+                .select('id, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
                 .in('status', ['live', 'en_curso']);
 
             if (data) setLiveMatches(data);
@@ -75,11 +75,19 @@ export default function LiveMatchFloater() {
                         <div className="relative z-10 flex flex-col">
                             <span className="text-[10px] font-black uppercase text-white/70 tracking-widest mb-0.5">En Vivo</span>
                             <div className="flex items-center gap-2">
-                                <span className="text-sm font-bold text-white uppercase truncate max-w-[80px]">{match.home_team.name}</span>
+                                <div className="flex flex-col items-end">
+                                    {match.home_team.shield_url && <img src={match.home_team.shield_url} className="w-5 h-5 object-contain" />}
+                                    <span className="text-[10px] font-bold text-white uppercase truncate max-w-[60px]">{match.home_team.name}</span>
+                                </div>
+
                                 <div className="bg-black/50 px-2 py-0.5 rounded text-white font-mono font-black text-sm border border-white/10 shadow-inner">
                                     {currentSet.home}-{currentSet.away}
                                 </div>
-                                <span className="text-sm font-bold text-white uppercase truncate max-w-[80px]">{match.away_team.name}</span>
+
+                                <div className="flex flex-col items-start">
+                                    {match.away_team.shield_url && <img src={match.away_team.shield_url} className="w-5 h-5 object-contain" />}
+                                    <span className="text-[10px] font-bold text-white uppercase truncate max-w-[60px]">{match.away_team.name}</span>
+                                </div>
                             </div>
                             <span className="text-[10px] text-white/50 font-medium">Set {sets.length}</span>
                         </div>

@@ -49,7 +49,6 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       onClose();
       switch (profile.role) {
         case 'admin': router.push('/admin/dashboard'); break;
-        case 'planillero': router.push('/planillero'); break;
         case 'club': router.push('/club'); break;
         default: router.push('/');
       }

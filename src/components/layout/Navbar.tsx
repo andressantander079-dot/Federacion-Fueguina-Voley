@@ -6,9 +6,11 @@ import { useState, useEffect } from 'react'
 import { ThemeToggle } from '../ThemeToggle'
 
 import { useSettings } from '@/hooks/useSettings';
+import LoginModal from '@/components/auth/LoginModal';
 
-export default function Navbar({ onOpenLogin }: { onOpenLogin?: () => void }) {
+export default function Navbar() {
     const [scrolled, setScrolled] = useState(false)
+    const [isLoginOpen, setIsLoginOpen] = useState(false)
     const { settings } = useSettings()
 
     // Detectar scroll para el efecto de glassmorphism más intenso
@@ -80,7 +82,7 @@ export default function Navbar({ onOpenLogin }: { onOpenLogin?: () => void }) {
                     <div className="flex items-center gap-4">
                         <ThemeToggle className="text-white hover:bg-white/10" />
                         <button
-                            onClick={onOpenLogin}
+                            onClick={() => setIsLoginOpen(true)}
                             className="group flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-full transition-all shadow-md hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 cursor-pointer border border-white/10"
                         >
                             <User className="w-4 h-4" />
@@ -89,6 +91,8 @@ export default function Navbar({ onOpenLogin }: { onOpenLogin?: () => void }) {
                     </div>
                 </div>
             </div>
+
+            <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
         </nav>
     )
 }

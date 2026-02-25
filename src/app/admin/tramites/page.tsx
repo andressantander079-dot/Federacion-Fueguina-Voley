@@ -124,17 +124,24 @@ export default function AdminTramitesPage() {
       try {
          // 1. Obtener Cuenta de Tesorería y Configuración (Fee)
          const { data: accounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'ACTIVO').limit(1);
-         const { data: settings } = await supabase.from('settings').select('player_fee').single();
+         const { data: settings } = await supabase.from('settings').select('procedure_fees').single();
 
          const accountId = accounts && accounts.length > 0 ? accounts[0].id : null;
-         const playerFee = settings?.player_fee || 0; // Default to 0 if not set
+         const fees = settings?.procedure_fees || [];
+
+         const getFee = (title: string) => {
+            const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const f = fees.find((x: any) => norm(x.title) === norm(title));
+            return f ? Number(f.price) : 0;
+         };
 
          if (selectedItem.type === 'procedure') {
             // == TRÁMITE ==
-            if (accountId) {
+            const procedureFee = getFee(selectedItem.subtitle) || Number(selectedItem.originalData.amount) || 0;
+            if (accountId && procedureFee > 0) {
                const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
                   type: 'INGRESO',
-                  amount: Number(selectedItem.originalData.amount) || 0,
+                  amount: procedureFee,
                   description: `Trámite: ${selectedItem.title} - Op: ${selectedItem.originalData.code || 'S/N'}`,
                   entity_name: selectedItem.team_name,
                   date: new Date(),
@@ -146,10 +153,11 @@ export default function AdminTramitesPage() {
             alert("Trámite aprobado y registrado en Tesorería.");
          } else {
             // == JUGADOR ==
-            if (accountId && playerFee > 0) {
+            const playerFeeAmount = getFee('Inscripcion de Jugadoras/es') || getFee('Inscripción de Jugadoras/es');
+            if (accountId && playerFeeAmount > 0) {
                const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
                   type: 'INGRESO',
-                  amount: playerFee,
+                  amount: playerFeeAmount,
                   description: `Inscripción Jugador: ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
                   entity_name: selectedItem.team_name,
                   date: new Date(),
@@ -159,7 +167,7 @@ export default function AdminTramitesPage() {
             }
             // Update Player Status
             await supabase.from('players').update({ status: 'active', rejection_reason: null }).eq('id', selectedItem.id);
-            alert(playerFee > 0 ? `Jugador validado. Se generó un ingreso de $${playerFee} en Tesorería.` : "Jugador validado correctamente.");
+            alert(playerFeeAmount > 0 ? `Jugador validado. Se generó un ingreso de $${playerFeeAmount} en Tesorería.` : "Jugador validado correctamente.");
          }
 
          await fetchAll();

@@ -43,7 +43,7 @@ export function useRefereeAuth() {
                     .from('referees')
                     .select('id')
                     .eq('user_id', profile.id)
-                    .single();
+                    .maybeSingle();
 
                 if (refData) {
                     setRefereeId(refData.id);

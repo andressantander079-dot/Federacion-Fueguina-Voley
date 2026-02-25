@@ -102,7 +102,7 @@ export default function FixturePage() {
       // Fetch Matches
       const { data: mData } = await supabase
         .from('matches')
-        .select('*, home_team:teams!home_team_id(name), away_team:teams!away_team_id(name)')
+        .select('*, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url)')
         .eq('tournament_id', tournamentId)
         .neq('status', 'borrador') // Don't show drafts
         .neq('status', 'cancelado') // Don't show canceled matches
@@ -111,7 +111,7 @@ export default function FixturePage() {
       // Fetch Teams for Standings
       const { data: equiposRel } = await supabase
         .from('tournament_teams')
-        .select('team_id, team:teams(*)')
+        .select('team_id, team:teams(id, name, shield_url)')
         .eq('tournament_id', tournamentId);
 
       const teams = equiposRel ? equiposRel.map((r: any) => r.team) : [];
@@ -253,7 +253,14 @@ export default function FixturePage() {
                         {standings.map((row, i) => (
                           <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition">
                             <td className={`p-3 text-center font-bold ${i < 3 ? 'text-tdf-orange' : 'text-slate-400'}`}>{i + 1}</td>
-                            <td className="p-3 font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]" title={row.name}>{row.name}</td>
+                            <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
+                              <div className="flex items-center gap-2 truncate max-w-[150px]">
+                                {row.team?.shield_url && (
+                                  <img src={row.team.shield_url} className="w-6 h-6 object-contain" alt="" />
+                                )}
+                                <span title={row.name}>{row.name}</span>
+                              </div>
+                            </td>
                             <td className="p-3 text-center font-medium text-slate-500">{row.pg + row.pp}</td>
                             <td className="p-3 text-center font-black text-lg bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white">{row.pts}</td>
                           </tr>
@@ -340,8 +347,12 @@ export default function FixturePage() {
 
                               {/* TEAMS */}
                               <div className="flex-1 w-full grid grid-cols-3 items-center gap-4">
-                                <div className={`text-right font-bold truncate ${m.home_score > m.away_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
-                                  {m.home_team?.name}
+                                <div className={`flex items-center gap-3 justify-end font-bold truncate ${m.home_score > m.away_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
+                                  <span className="hidden md:inline">{m.home_team?.name}</span>
+                                  <span className="md:hidden">{m.home_team?.name.slice(0, 3).toUpperCase()}</span>
+                                  {m.home_team?.shield_url && (
+                                    <img src={m.home_team.shield_url} className="w-8 h-8 object-contain" alt="" />
+                                  )}
                                 </div>
 
                                 <div className="flex justify-center">
@@ -354,8 +365,12 @@ export default function FixturePage() {
                                   </div>
                                 </div>
 
-                                <div className={`text-left font-bold truncate ${m.away_score > m.home_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
-                                  {m.away_team?.name}
+                                <div className={`flex items-center gap-3 justify-start font-bold truncate ${m.away_score > m.home_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
+                                  {m.away_team?.shield_url && (
+                                    <img src={m.away_team.shield_url} className="w-8 h-8 object-contain" alt="" />
+                                  )}
+                                  <span className="hidden md:inline">{m.away_team?.name}</span>
+                                  <span className="md:hidden">{m.away_team?.name.slice(0, 3).toUpperCase()}</span>
                                 </div>
                               </div>
 
