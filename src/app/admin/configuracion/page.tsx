@@ -213,6 +213,17 @@ export default function AdminConfigPage() {
       }
    };
 
+   const handleToggleSponsorActive = async (sponsor: any) => {
+      try {
+         const newActive = !sponsor.active;
+         setSponsors(prev => prev.map(s => s.id === sponsor.id ? { ...s, active: newActive } : s));
+         await supabase.from('sponsors').update({ active: newActive }).eq('id', sponsor.id);
+      } catch (err) {
+         console.error("Error toggling sponsor:", err);
+         fetchSubData(); // reload on error
+      }
+   };
+
    // --- VENUES LOGIC ---
    async function handleAddVenue(e: React.FormEvent) {
       e.preventDefault();
@@ -410,48 +421,52 @@ export default function AdminConfigPage() {
                      </button>
                   </header>
 
-                  <table className="w-full text-left">
-                     <thead className="bg-gray-50 dark:bg-zinc-800/50 text-xs font-bold text-slate-500 uppercase">
-                        <tr>
-                           <th className="p-4">Orden</th>
-                           <th className="p-4">Logo</th>
-                           <th className="p-4">Nombre / Web</th>
-                           <th className="p-4">Estado</th>
-                           <th className="p-4 text-right">Acciones</th>
-                        </tr>
-                     </thead>
-                     <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
-                        {sponsors.map((sp) => (
-                           <tr key={sp.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/30 transition">
-                              <td className="p-4 font-mono text-slate-400">#{sp.display_order}</td>
-                              <td className="p-4">
-                                 <div className="w-24 h-12 relative bg-gray-100 dark:bg-zinc-800 rounded flex items-center justify-center p-2">
-                                    {sp.logo_url ? (
-                                       <img src={sp.logo_url} className="max-w-full max-h-full object-contain" alt={sp.name} />
-                                    ) : <span className="text-xs text-slate-400">No img</span>}
-                                 </div>
-                              </td>
-                              <td className="p-4">
-                                 <div className="font-bold text-slate-700 dark:text-slate-200">{sp.name}</div>
-                                 {sp.website && (
-                                    <a href={sp.website} target="_blank" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-                                       {sp.website} <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                 )}
-                              </td>
-                              <td className="p-4">
-                                 <span className={`px-2 py-1 rounded text-xs font-bold ${sp.active ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-                                    {sp.active ? 'Activo' : 'Inactivo'}
-                                 </span>
-                              </td>
-                              <td className="p-4 text-right space-x-2">
-                                 <button onClick={() => handleEditSponsor(sp)} className="text-slate-400 hover:text-blue-500 p-2"><Upload className="w-4 h-4" /></button>
-                                 <button onClick={() => handleDeleteSponsor(sp.id)} className="text-slate-400 hover:text-red-500 p-2"><Trash2 className="w-4 h-4" /></button>
-                              </td>
+                  <div className="overflow-x-auto w-full">
+                     <table className="w-full text-left min-w-[600px]">
+                        <thead className="bg-gray-50 dark:bg-zinc-800/50 text-xs font-bold text-slate-500 uppercase">
+                           <tr>
+                              <th className="p-4">Orden</th>
+                              <th className="p-4">Logo</th>
+                              <th className="p-4">Nombre / Web</th>
+                              <th className="p-4 text-center">Activo</th>
+                              <th className="p-4 text-right">Acciones</th>
                            </tr>
-                        ))}
-                     </tbody>
-                  </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
+                           {sponsors.map((sp) => (
+                              <tr key={sp.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/30 transition">
+                                 <td className="p-4 font-mono text-slate-400">#{sp.display_order}</td>
+                                 <td className="p-4">
+                                    <div className="w-24 h-12 relative bg-gray-100 dark:bg-zinc-800 rounded flex items-center justify-center p-2">
+                                       {sp.logo_url ? (
+                                          <img src={sp.logo_url} className="max-w-full max-h-full object-contain" alt={sp.name} />
+                                       ) : <span className="text-xs text-slate-400">No img</span>}
+                                    </div>
+                                 </td>
+                                 <td className="p-4">
+                                    <div className="font-bold text-slate-700 dark:text-slate-200">{sp.name}</div>
+                                    {sp.website && (
+                                       <a href={sp.website} target="_blank" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                                          {sp.website} <ExternalLink className="w-3 h-3" />
+                                       </a>
+                                    )}
+                                 </td>
+                                 <td className="p-4 text-center">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                       <input type="checkbox" checked={sp.active} onChange={() => handleToggleSponsorActive(sp)} className="sr-only peer" />
+                                       <div className="w-11 h-6 bg-zinc-200 dark:bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                    </label>
+                                 </td>
+                                 <td className="p-4 text-right space-x-2">
+                                    <button onClick={() => handleEditSponsor(sp)} className="text-slate-400 hover:text-blue-500 p-2"><Upload className="w-4 h-4" /></button>
+                                    <button onClick={() => handleDeleteSponsor(sp.id)} className="text-slate-400 hover:text-red-500 p-2"><Trash2 className="w-4 h-4" /></button>
+                                 </td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+
                   {sponsors.length === 0 && (
                      <div className="p-12 text-center text-slate-400">No hay sponsors registrados</div>
                   )}

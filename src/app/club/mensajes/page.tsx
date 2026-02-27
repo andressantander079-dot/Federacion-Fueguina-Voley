@@ -8,7 +8,7 @@ import {
    Mail, Send, Inbox, Plus, Search,
    ChevronRight, ArrowLeft, Clock,
    AlertCircle, CheckCircle, FileText,
-   User, Shield
+   User, Shield, Paperclip, Download
 } from 'lucide-react';
 import { useClubAuth } from '@/hooks/useClubAuth';
 
@@ -37,6 +37,7 @@ export default function ClubMensajesPage() {
       body: '',
       priority: 'normal'
    });
+   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
    const [sending, setSending] = useState(false);
 
    useEffect(() => {
@@ -57,7 +58,7 @@ export default function ClubMensajesPage() {
          .select(`
         *,
         message:messages (
-          id, subject, body, created_at, priority, type, sender_id
+          id, subject, body, created_at, priority, type, sender_id, attachments
         )
       `)
          .eq('recipient_club_id', cId)
@@ -90,12 +91,35 @@ export default function ClubMensajesPage() {
 
       setSending(true);
       try {
+         let attachmentUrl = null;
+
+         // Upload attachment if present
+         if (attachmentFile) {
+            const fileExt = attachmentFile.name.split('.').pop();
+            const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const { error: uploadError } = await supabase.storage
+               .from('message-attachments')
+               .upload(`attachments/${fileName}`, attachmentFile);
+
+            if (uploadError) {
+               console.error("Upload error:", uploadError);
+               throw new Error("Error subiendo el archivo adjunto.");
+            }
+
+            const { data: publicUrlData } = supabase.storage
+               .from('message-attachments')
+               .getPublicUrl(`attachments/${fileName}`);
+
+            attachmentUrl = publicUrlData.publicUrl;
+         }
+
          const { error } = await supabase.from('messages').insert([{
             sender_id: profile?.id,
             subject: newMsg.subject,
             body: newMsg.body,
             priority: newMsg.priority,
-            type: 'consulta'
+            type: 'consulta',
+            attachments: attachmentUrl ? [{ url: attachmentUrl, name: attachmentFile!.name }] : null
             // No creamos recipients porque la admin lee todo lo que sea type='consulta'
          }]);
 
@@ -103,6 +127,7 @@ export default function ClubMensajesPage() {
 
          alert("Mensaje enviado a la Federación.");
          setNewMsg({ subject: '', body: '', priority: 'normal' });
+         setAttachmentFile(null);
          setActiveTab('sent');
          if (clubId && profile?.id) fetchMessages(clubId, profile.id);
 
@@ -226,6 +251,12 @@ export default function ClubMensajesPage() {
                            {msg.body}
                         </p>
 
+                        {msg.attachment_url && (
+                           <div className="absolute right-4 top-4 text-zinc-600">
+                              <Paperclip size={14} />
+                           </div>
+                        )}
+
                         {activeTab === 'inbox' && !msg.read_at && (
                            <div className="absolute right-4 bottom-4 w-2 h-2 bg-orange-600 rounded-full animate-pulse" />
                         )}
@@ -283,14 +314,32 @@ export default function ClubMensajesPage() {
                            ))}
                         </div>
 
-                        <div className="min-h-[300px] bg-zinc-900/30 rounded-2xl p-4 border border-zinc-800/50">
+                        <div className="min-h-[300px] flex flex-col bg-zinc-900/30 rounded-2xl p-4 border border-zinc-800/50">
                            <textarea
-                              className="w-full h-full bg-transparent text-zinc-300 placeholder-zinc-700 outline-none resize-none"
+                              className="w-full h-full flex-1 bg-transparent text-zinc-300 placeholder-zinc-700 outline-none resize-none"
                               placeholder="Escribe tu mensaje aquí..."
                               value={newMsg.body}
                               onChange={e => setNewMsg({ ...newMsg, body: e.target.value })}
-                              rows={12}
                            />
+
+                           {/* ATTACHMENT UPLOAD */}
+                           <div className="mt-4 pt-4 border-t border-zinc-800/50">
+                              <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition ${attachmentFile ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'bg-zinc-800/50 text-zinc-400 border border-transparent hover:bg-zinc-800 hover:text-white'}`}>
+                                 <Paperclip size={14} />
+                                 {attachmentFile ? attachmentFile.name : 'Adjuntar Archivo'}
+                                 <input
+                                    type="file"
+                                    className="hidden"
+                                    onChange={e => setAttachmentFile(e.target.files?.[0] || null)}
+                                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                 />
+                              </label>
+                              {attachmentFile && (
+                                 <button onClick={() => setAttachmentFile(null)} className="ml-2 text-xs text-red-400 hover:text-red-300 transition">
+                                    Quitar
+                                 </button>
+                              )}
+                           </div>
                         </div>
 
                         <div className="flex justify-end pt-4">
@@ -337,6 +386,25 @@ export default function ClubMensajesPage() {
                      <div className="prose prose-invert max-w-none text-zinc-300 leading-relaxed whitespace-pre-wrap">
                         {selectedMessage.body}
                      </div>
+
+                     {/* ATTACHMENT PREVIEW */}
+                     {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
+                        <div className="mt-8 p-4 bg-zinc-950 border border-zinc-800 rounded-xl flex items-center justify-between">
+                           <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-zinc-900 rounded-lg flex items-center justify-center text-blue-500">
+                                 <FileText size={20} />
+                              </div>
+                              <div>
+                                 <p className="text-sm font-bold text-white">Archivo Adjunto</p>
+                                 <p className="text-xs text-zinc-500">{selectedMessage.attachments[0].name || 'Documento subido en esta consulta'}</p>
+                              </div>
+                           </div>
+                           <a href={selectedMessage.attachments[0].url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-zinc-800 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-zinc-700 transition">
+                              <Download size={14} />
+                              Ver Documento
+                           </a>
+                        </div>
+                     )}
 
                      {/* Footer Mensaje */}
                      <div className="mt-12 pt-8 border-t border-zinc-800 flex items-center gap-4 opacity-50">

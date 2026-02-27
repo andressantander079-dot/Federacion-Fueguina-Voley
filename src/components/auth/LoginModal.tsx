@@ -158,20 +158,6 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                             Iniciar Sesión
                         </button>
                     </form>
-
-                    {/* NEW REGISTER LINK */}
-                    <div className="mt-8 pt-6 border-t border-gray-100 dark:border-white/5 text-center">
-                        <p className="text-sm text-gray-500 mb-3">
-                            ¿Necesitas registrar tu club?
-                        </p>
-                        <Link
-                            href="/registro"
-                            onClick={onClose}
-                            className="inline-flex items-center gap-2 text-tdf-blue hover:text-tdf-blue-dark font-bold hover:underline transition-colors uppercase text-sm tracking-wide"
-                        >
-                            Solicitar Acceso <ArrowRight size={14} />
-                        </Link>
-                    </div>
                 </div>
             </div>
         </div>

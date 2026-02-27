@@ -7,7 +7,6 @@ import { X, Lock, User, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
 export default function LoginPage() {
-    const [isRegister, setIsRegister] = useState(false)
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
@@ -45,48 +44,44 @@ export default function LoginPage() {
         setMessage(null)
 
         try {
-            if (isRegister) {
-                // Feature removed in favor of /registro
-            } else {
-                // LOGIN
-                const { data, error: authError } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                })
+            // LOGIN
+            const { data, error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            })
 
-                if (authError) throw authError
+            if (authError) throw authError
 
-                if (data.user) {
-                    // Consultar perfil
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('role, club_id')
-                        .eq('id', data.user.id)
-                        .single()
+            if (data.user) {
+                // Consultar perfil
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('role, club_id')
+                    .eq('id', data.user.id)
+                    .single()
 
-                    if (profileError || !profile) {
-                        router.push('/')
-                        return
-                    }
+                if (profileError || !profile) {
+                    router.push('/')
+                    return
+                }
 
-                    // Redirección basada en rol
-                    switch (profile.role) {
-                        case 'admin':
-                            router.push('/admin')
-                            break
-                        case 'club':
-                            if (profile.club_id) {
-                                router.push('/club')
-                            } else {
-                                router.push('/')
-                            }
-                            break
-                        case 'referee':
-                            router.push('/referee')
-                            break
-                        default:
+                // Redirección basada en rol
+                switch (profile.role) {
+                    case 'admin':
+                        router.push('/admin')
+                        break
+                    case 'club':
+                        if (profile.club_id) {
+                            router.push('/club')
+                        } else {
                             router.push('/')
-                    }
+                        }
+                        break
+                    case 'referee':
+                        router.push('/referee')
+                        break
+                    default:
+                        router.push('/')
                 }
             }
         } catch (err: any) {
@@ -170,7 +165,7 @@ export default function LoginPage() {
                             {loading ? (
                                 <>
                                     <Loader2 className="w-5 h-5 animate-spin" />
-                                    {isRegister ? 'Creando cuenta...' : 'Verificando...'}
+                                    Verificando...
                                 </>
                             ) : (
                                 <>
@@ -180,15 +175,6 @@ export default function LoginPage() {
                             )}
                         </button>
                     </form>
-
-                    <div className="flex flex-col gap-2 mt-8 pt-6 border-t border-gray-100 dark:border-white/5 text-center">
-                        <p className="text-sm text-gray-500 mb-3">
-                            ¿No tienes acceso?
-                        </p>
-                        <Link href="/registro" className="text-tdf-blue hover:text-tdf-blue-dark font-bold hover:underline transition-colors block">
-                            Solicita tu alta aquí
-                        </Link>
-                    </div>
                 </div>
             </div>
             <div className="absolute bottom-6 text-white/40 text-xs font-medium">

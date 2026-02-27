@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useVolleyMatch } from '@/hooks/useVolleyMatch';
+import { useVolleyMatch, TeamSide } from '@/hooks/useVolleyMatch';
 import { createClient } from '@/lib/supabase/client';
 import LogoutButton from '@/components/LogoutButton';
 import {
@@ -25,7 +25,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
         moveToCourt, removeFromCourt, removePlayerFromMatch,
-        blockedPlayers, blockPlayer, unblockSetPlayers
+        blockedPlayers, blockPlayer, unblockSetPlayers, sanctionsLog, addSanction
     } = useVolleyMatch();
 
     // --- ESTADOS DE UI ---
@@ -55,7 +55,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     // --- STAFF & CIERRE ---
     const [referees, setReferees] = useState<any[]>([]);
-    const [staff, setStaff] = useState({ ref1: '', ref2: '', scorer: '' });
+    const [staff, setStaff] = useState({ ref1: '', ref2: '', scorer: '', coachHome: '', ayTecHome: '', coachAway: '', ayTecAway: '' });
 
     const [closingFlow, setClosingFlow] = useState(false);
     const [closingStep, setClosingStep] = useState(0);
@@ -236,9 +236,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 scheduled_time,
                 round,
                 court_name,
-                home_team:teams!home_team_id(name, shield_url),
-                away_team:teams!away_team_id(name, shield_url),
-                category:categories(name),
+                home_team:teams!home_team_id(id, name, shield_url),
+                away_team:teams!away_team_id(id, name, shield_url),
+                category:categories(id, name),
                 tournament:tournaments!tournament_id(gender)
             `).eq('id', matchId).single();
 
@@ -253,12 +253,20 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 else setMatchStatus('scheduled');
 
                 // Robustly handle if Supabase returns objects or arrays for the joins
+                const getJoinData = (itemData: any) => {
+                    if (!itemData) return null;
+                    if (Array.isArray(itemData)) return itemData[0];
+                    return itemData;
+                };
+
+                const hTeam = getJoinData(data.home_team);
+                const aTeam = getJoinData(data.away_team);
+                const catInfo = getJoinData(data.category);
+                const tournInfo = getJoinData(data.tournament);
+
                 const getTeamInfo = (teamData: any) => {
-                    if (!teamData) return { name: '', shield: null };
-                    if (Array.isArray(teamData)) {
-                        return { name: teamData[0]?.name || '', shield: teamData[0]?.shield_url || null };
-                    }
-                    return { name: teamData.name || '', shield: teamData.shield_url || null };
+                    const t = getJoinData(teamData);
+                    return { name: t?.name || '', shield: t?.shield_url || null };
                 };
 
                 const homeInfo = getTeamInfo(data.home_team);
@@ -270,14 +278,41 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     home: homeInfo,
                     away: awayInfo,
                     // @ts-ignore
-                    category: data.category?.name || 'Voley',
+                    category: catInfo?.name || 'Voley',
                     date: scheduledDate ? scheduledDate.toLocaleDateString() : 'A CONFIRMAR',
                     time: scheduledDate ? scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'A CONFIRMAR',
                     phase: data.round || 'Fase Regular',
                     gym: data.court_name || 'Polivalente',
                     // @ts-ignore
-                    gender: data.tournament?.gender || 'S/D'
+                    gender: tournInfo?.gender || 'S/D'
                 });
+
+                // Auto-fill Coaches from Squads
+                if (hTeam?.id && catInfo?.id && tournInfo?.gender) {
+                    const { data: homeSquad } = await supabase.from('squads')
+                        .select('coach_name')
+                        .eq('club_id', hTeam.id)
+                        .eq('category_id', catInfo.id)
+                        .eq('gender', tournInfo.gender)
+                        .single();
+
+                    let awaySquadData = null;
+                    if (aTeam?.id) {
+                        const { data: awaySquad } = await supabase.from('squads')
+                            .select('coach_name')
+                            .eq('club_id', aTeam.id)
+                            .eq('category_id', catInfo.id)
+                            .eq('gender', tournInfo.gender)
+                            .single();
+                        awaySquadData = awaySquad;
+                    }
+
+                    setStaff(prev => ({
+                        ...prev,
+                        coachHome: prev.coachHome || homeSquad?.coach_name || '',
+                        coachAway: prev.coachAway || awaySquadData?.coach_name || ''
+                    }));
+                }
             }
         };
         fetchMetadata();
@@ -441,6 +476,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         bench_away: benchAway,
         serving_team: servingTeam,
         blocked_players: blockedPlayers,
+        sanctionsLog,
         staff,
         metadata: { category: teamsInfo?.category || 'Voley' }
     });
@@ -448,16 +484,29 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const handleSanction = (type: 'yellow' | 'red' | 'expulsion' | 'disqualify') => {
         if (!selectedPlayer) return;
 
+        const sanctionData = {
+            playerId: selectedPlayer.id,
+            playerName: selectedPlayer.name,
+            team: selectedPlayer.team as TeamSide,
+            type,
+            setNum: currentSetIdx + 1,
+            homeScore: sets[currentSetIdx].home,
+            awayScore: sets[currentSetIdx].away
+        };
+
         if (type === 'yellow') {
+            addSanction(sanctionData);
             alert(`Amonestación (Amarilla) registrada para ${selectedPlayer.name}.`);
         } else if (type === 'red') {
             if (confirm(`¿Castigo (Roja) para ${selectedPlayer.name}?\nEsto otorgará un punto y el saque al equipo contrario.`)) {
+                addSanction(sanctionData);
                 const opposing = selectedPlayer.team === 'home' ? 'away' : 'home';
                 addPoint(opposing);
                 alert(`Punto otorgado al equipo contrario.`);
             } else return;
         } else if (type === 'expulsion') {
             if (confirm(`¿Expulsión (Amarilla y Roja juntas) para ${selectedPlayer.name}?\nDeberá ser sustituido y no podrá jugar el resto del SET.`)) {
+                addSanction(sanctionData);
                 blockPlayer(selectedPlayer.id, 'set');
                 alert(`Expulsado del Set. Seleccione su reemplazo.`);
                 setModalSubOpen(true);
@@ -465,6 +514,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             } else return;
         } else if (type === 'disqualify') {
             if (confirm(`¿Descalificación (Amarilla y Roja separadas) para ${selectedPlayer.name}?\nDeberá ser sustituido y no podrá jugar el resto del PARTIDO.`)) {
+                addSanction(sanctionData);
                 blockPlayer(selectedPlayer.id, 'match');
                 alert(`Descalificado del Partido. Seleccione su reemplazo.`);
                 setModalSubOpen(true);
@@ -506,6 +556,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 bench_home: benchHome,
                 bench_away: benchAway,
                 serving_team: servingTeam,
+                blocked_players: blockedPlayers,
+                sanctionsLog,
                 metadata: {
                     category: teamsInfo?.category || 'Voley',
                     competition: 'Torneo Oficial'
@@ -531,7 +583,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         }, 2000); // 2 second debounce
 
         return () => { clearTimeout(timeoutId); clearTimeout(watchdog); };
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase, blockedPlayers, sanctionsLog]);
 
     // Manual Refresh for Viewers
     const handleForceRefresh = () => {
@@ -651,11 +703,17 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     }
                 }
 
+                let isOtherCategory = false;
+                if (!isBlocked && playerCat.id !== matchCategory?.id) {
+                    isOtherCategory = true; // Mark players from different categories (e.g., younger playing up)
+                }
+
                 return {
                     ...p,
                     categoryName: catName,
                     isBlocked,
-                    blockReason
+                    blockReason,
+                    isOtherCategory
                 };
             });
 
@@ -938,7 +996,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
                                     {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Capitán</span>}
                                 </div>
-                                {!readOnly && matchStatus === 'scheduled' && (
+                                {!readOnly && (
                                     <div className="flex gap-1 transition">
                                         <button onClick={(e) => { e.stopPropagation(); setSelectedPlayer({ ...p, team: 'home' }); setModalActionOpen(true); }} className="p-1 text-slate-300 hover:text-blue-500 rounded-full" title="Editar">
                                             <Edit2 size={14} />
@@ -950,6 +1008,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 )}
                             </div>
                         ))}
+                    </div>
+
+                    {/* DT LOCAL INPUTS */}
+                    <div className="p-3 bg-blue-50/50 border-t border-blue-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
+                        <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Cuerpo Técnico L</label>
+                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Nombre DT..." value={staff.coachHome || ''} onChange={e => setStaff({ ...staff, coachHome: e.target.value })} />
+                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-blue-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Ayudante Técnico..." value={staff.ayTecHome || ''} onChange={e => setStaff({ ...staff, ayTecHome: e.target.value })} />
                     </div>
                 </aside>
 
@@ -1000,14 +1065,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">1er Árbitro</label>
-                            <select className="font-bold text-slate-700 bg-transparent outline-none text-sm" value={staff.ref1} onChange={e => setStaff({ ...staff, ref1: e.target.value })}>
-                                <option value="">Seleccionar...</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name}</option>)}
+                            <select disabled={readOnly || matchStatus !== 'scheduled'} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref1 || ''} onChange={e => setStaff({ ...staff, ref1: e.target.value })}>
+                                <option value="">Seleccionar...</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name || ''}</option>)}
                             </select>
                         </div>
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">2do Árbitro</label>
-                            <select className="font-bold text-slate-700 bg-transparent outline-none text-sm" value={staff.ref2} onChange={e => setStaff({ ...staff, ref2: e.target.value })}>
-                                <option value="">Opcional</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name}</option>)}
+                            <select disabled={readOnly || matchStatus !== 'scheduled'} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref2 || ''} onChange={e => setStaff({ ...staff, ref2: e.target.value })}>
+                                <option value="">Opcional</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name || ''}</option>)}
                             </select>
                         </div>
                     </div>
@@ -1075,7 +1140,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
                                     {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Capitán</span>}
                                 </div>
-                                {!readOnly && matchStatus === 'scheduled' && (
+                                {!readOnly && (
                                     <div className="flex gap-1 transition">
                                         <button onClick={(e) => { e.stopPropagation(); setSelectedPlayer({ ...p, team: 'away' }); setModalActionOpen(true); }} className="p-1 text-slate-300 hover:text-red-500 rounded-full" title="Editar">
                                             <Edit2 size={14} />
@@ -1087,6 +1152,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 )}
                             </div>
                         ))}
+                    </div>
+
+                    {/* DT VISITA INPUTS */}
+                    <div className="p-3 bg-red-50/50 border-t border-red-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
+                        <label className="text-[10px] font-black text-red-600 uppercase tracking-widest px-1">Cuerpo Técnico V</label>
+                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-red-500 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Nombre DT..." value={staff.coachAway || ''} onChange={e => setStaff({ ...staff, coachAway: e.target.value })} />
+                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-red-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Ayudante Técnico..." value={staff.ayTecAway || ''} onChange={e => setStaff({ ...staff, ayTecAway: e.target.value })} />
                     </div>
                 </aside>
             </div>
@@ -1236,9 +1308,16 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div key={player.id} className={`flex justify-between items-center p-3 rounded-xl ${player.isBlocked ? 'bg-red-50 border border-red-100' : 'bg-slate-50 hover:bg-slate-100'}`}>
                                     <div>
                                         <span className={`block font-black ${player.isBlocked ? 'text-red-700' : 'text-slate-800'}`}>#{player.number} {player.name}</span>
-                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border mt-1 inline-block ${player.isBlocked ? 'bg-red-100 text-red-600 border-red-200' : 'bg-white text-slate-500 border-slate-200'}`}>
-                                            {player.isBlocked ? player.blockReason : player.categoryName}
-                                        </span>
+                                        <div className="flex gap-2 items-center mt-1">
+                                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border inline-block ${player.isBlocked ? 'bg-red-100 text-red-600 border-red-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                                {player.isBlocked ? player.blockReason : player.categoryName}
+                                            </span>
+                                            {player.isOtherCategory && (
+                                                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border inline-block bg-orange-100 text-orange-600 border-orange-200" title="Baja de otra categoría del mismo club">
+                                                    Otra Cat.
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     {!player.isBlocked ? (
                                         <button onClick={() => confirmAddPlayer(player)} className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600"><Plus size={16} /></button>
@@ -1456,6 +1535,40 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     </div>
                                 </div>
 
+                                {/* SANCTIONS DIAGRAM / LOG */}
+                                {sanctionsLog && sanctionsLog.length > 0 && (
+                                    <div className="mb-8 border border-slate-200 rounded-lg overflow-hidden">
+                                        <div className="bg-red-50 text-red-900 font-bold p-2 text-center text-xs uppercase border-b border-red-200">
+                                            Registro de Sanciones (Tarjetas)
+                                        </div>
+                                        <table className="w-full text-[10px] text-center">
+                                            <thead className="bg-slate-50 text-slate-500 uppercase">
+                                                <tr>
+                                                    <th className="p-1">Jugador/a</th>
+                                                    <th className="p-1">Sanción</th>
+                                                    <th className="p-1">Set</th>
+                                                    <th className="p-1">Puntos</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {sanctionsLog.map(s => (
+                                                    <tr key={s.id} className="border-b border-slate-100 uppercase font-medium">
+                                                        <td className="p-1 text-slate-700">{s.playerName} ({s.team === 'home' ? 'L' : 'V'})</td>
+                                                        <td className="p-1">
+                                                            {s.type === 'yellow' ? <span className="text-yellow-600">Amonestación</span> :
+                                                                s.type === 'red' ? <span className="text-red-600">Castigo</span> :
+                                                                    s.type === 'expulsion' ? <span className="text-orange-600 tracking-tighter">Expulsión (Set)</span> :
+                                                                        <span className="text-rose-800 tracking-tighter">Descalif. (Partido)</span>}
+                                                        </td>
+                                                        <td className="p-1 font-bold">{s.setNum}</td>
+                                                        <td className="p-1 font-bold">{s.homeScore} - {s.awayScore}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+
                                 {/* OBSERVACIONES */}
                                 <div className="bg-yellow-50 border border-yellow-200 p-4 mb-8 text-xs rounded-lg">
                                     <strong className="block text-yellow-700 uppercase mb-2">Observaciones del Árbitro</strong>
@@ -1464,11 +1577,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                                 {/* FIRMAS */}
                                 <div className="grid grid-cols-3 gap-8 mb-8 mt-auto">
-                                    <div className="text-center border-t border-slate-300 pt-2">
+                                    <div className="text-center border-t border-slate-300 pt-2 relative">
+                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachHome ? `DT: ${staff.coachHome}` : ''} {staff.ayTecHome ? `| Ay: ${staff.ayTecHome}` : ''}</p>
                                         {signatures.capHome && <img src={signatures.capHome} className="h-12 mx-auto mb-1" />}
                                         <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Local</p>
                                     </div>
-                                    <div className="text-center border-t border-slate-300 pt-2">
+                                    <div className="text-center border-t border-slate-300 pt-2 relative">
+                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachAway ? `DT: ${staff.coachAway}` : ''} {staff.ayTecAway ? `| Ay: ${staff.ayTecAway}` : ''}</p>
                                         {signatures.capAway && <img src={signatures.capAway} className="h-12 mx-auto mb-1" />}
                                         <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Visita</p>
                                     </div>

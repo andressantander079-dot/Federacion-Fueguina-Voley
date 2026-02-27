@@ -289,6 +289,25 @@ export default function PlantelPage() {
 
     setUploading(true);
     try {
+      // 1. DUPLICATE REGISTRATION CHECK
+      const { data: existingPlayers, error: dupErr } = await supabase
+        .from('players')
+        .select('team_id, teams(name)')
+        .eq('dni', nuevoJugador.dni)
+        .eq('birth_date', nuevoJugador.birth_date);
+
+      if (dupErr) throw dupErr;
+
+      if (existingPlayers && existingPlayers.length > 0) {
+        const conflict = existingPlayers.find(p => p.team_id !== clubId);
+        if (conflict) {
+          setUploading(false);
+          // @ts-ignore - Handle possible array/object return from join
+          const conflictTeamName = conflict.teams ? (Array.isArray(conflict.teams) ? conflict.teams[0]?.name : conflict.teams.name) : 'otro club';
+          return alert(`REGISTRO BLOQUEADO: El jugador con DNI ${nuevoJugador.dni} ya se encuentra registrado activamente en "${conflictTeamName}". Por favor, contacte a la Federación si considera que es un error (Pase/Préstamo).`);
+        }
+      }
+
       let photoUrl = null;
       if (nuevoJugador.photo_file) {
         const fileExt = nuevoJugador.photo_file.name.split('.').pop();

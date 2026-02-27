@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Home, CalendarDays, Trophy, Newspaper, Menu, X,
   BookOpen, Download, Users, FileText,
   LayoutDashboard, Settings, CircleDollarSign,
-  Activity, LogOut, ChevronUp
+  Activity, LogOut, Plus
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { ThemeToggle } from './ThemeToggle';
@@ -15,8 +15,7 @@ import { ThemeToggle } from './ThemeToggle';
 type NavItemProp = {
   href: string;
   label: string;
-  action?: boolean; // For special buttons like Menu
-  icon?: any; // Icon is secondary in this view, mostly text based like Camera app
+  icon: any;
 };
 
 export default function MobileNav() {
@@ -25,7 +24,6 @@ export default function MobileNav() {
   const [role, setRole] = useState<'public' | 'club' | 'referee' | 'admin'>('public');
   const [loading, setLoading] = useState(true);
   const [supabase] = useState(() => createClient());
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const checkRole = async () => {
@@ -36,106 +34,97 @@ export default function MobileNav() {
           .select('role')
           .eq('id', session.user.id)
           .single();
-
-        if (profile?.role) {
-          // @ts-ignore
-          setRole(profile.role);
-        }
+        if (profile?.role) setRole(profile.role as any);
       }
       setLoading(false);
     };
     checkRole();
   }, [supabase]);
 
-  // CONFIGURATION PER ROLE (Corrected Routes)
-  const NAV_ITEMS: Record<string, NavItemProp[]> = {
+  // Unified configuration (Exactly 4 items per role)
+  const NAV_CONFIG: Record<string, NavItemProp[]> = {
     public: [
-      { href: '/posiciones', label: 'TABLA', icon: Trophy },
-      { href: '/fixture', label: 'FIXTURE', icon: CalendarDays },
-      { href: '/', label: 'INICIO', icon: Home },
-      { href: '/noticias', label: 'NOTICIAS', icon: Newspaper },
-      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+      { href: '/', label: 'Inicio', icon: Home },
+      { href: '/fixture', label: 'Fixture', icon: CalendarDays },
+      { href: '/posiciones', label: 'Posiciones', icon: Trophy },
+      { href: '/noticias', label: 'Noticias', icon: Newspaper },
     ],
     club: [
-      { href: '/club/plantel', label: 'PLANTEL', icon: Users },
-      { href: '/club/agenda', label: 'PARTIDOS', icon: Activity }, // Fixed Route
-      { href: '/club/dashboard', label: 'CLUB', icon: Home },
-      { href: '/club/tramites', label: 'TRÁMITES', icon: FileText },
-      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+      { href: '/club/dashboard', label: 'Inicio', icon: Home },
+      { href: '/club/plantel', label: 'Plantel', icon: Users },
+      { href: '/club/agenda', label: 'Partidos', icon: Activity },
+      { href: '/club/tramites', label: 'Trámites', icon: FileText },
     ],
     referee: [
-      { href: '/referee/agenda', label: 'AGENDA', icon: CalendarDays },
-      { href: '/referee', label: 'PARTIDOS', icon: Activity },
-      { href: '/', label: 'INICIO', icon: Home },
-      { href: '/reglamento', label: 'REGLAS', icon: BookOpen },
-      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+      { href: '/', label: 'Inicio', icon: Home },
+      { href: '/referee/agenda', label: 'Agenda', icon: CalendarDays },
+      { href: '/referee', label: 'Partidos', icon: Activity },
+      { href: '/reglamento', label: 'Reglas', icon: BookOpen },
     ],
     admin: [
-      { href: '/admin/configuracion', label: 'CONFIG', icon: Settings },
-      { href: '/admin/treasury', label: 'TESORERÍA', icon: CircleDollarSign }, // Fixed Route
-      { href: '/admin', label: 'PANEL', icon: LayoutDashboard },
-      { href: '/admin/matches', label: 'TORNEOS', icon: Trophy }, // Fixed Route
-      { href: '#menu', label: 'MENÚ', icon: Menu, action: true },
+      { href: '/admin', label: 'Panel', icon: LayoutDashboard },
+      { href: '/admin/competitions', label: 'Torneos', icon: Trophy },
+      { href: '/admin/tramites', label: 'Trámites', icon: FileText },
+      { href: '/admin/treasury', label: 'Pagos', icon: CircleDollarSign },
     ]
   };
 
-  const currentItems = NAV_ITEMS[role] || NAV_ITEMS.public;
+  const navItems = NAV_CONFIG[role] || NAV_CONFIG.public;
 
-  // Determine active index
+  // Compute active index [0..3]
   const activeIdx = useMemo(() => {
-    const found = currentItems.findIndex(item => item.href === pathname);
-    if (found !== -1) return found;
-    // Fallback to center item if exact match not found
-    return currentItems.findIndex(item => item.label === 'INICIO' || item.label === 'CLUB' || item.label === 'PANEL');
-  }, [pathname, currentItems]);
-
-  // Scroll to active item on mount/change
-  useEffect(() => {
-    if (scrollRef.current) {
-      const container = scrollRef.current;
-      const items = container.children;
-      if (items[activeIdx]) {
-        const item = items[activeIdx] as HTMLElement;
-        const containerWidth = container.offsetWidth;
-        const itemWidth = item.offsetWidth;
-        const itemLeft = item.offsetLeft;
-
-        // Calculate center position
-        const scrollLeft = itemLeft - (containerWidth / 2) + (itemWidth / 2);
-
-        container.scrollTo({
-          left: scrollLeft,
-          behavior: 'smooth'
-        });
-      }
-    }
-  }, [activeIdx, role]);
+    return navItems.findIndex(item => item.href === pathname);
+  }, [pathname, navItems]);
 
   const handleMenuClick = () => setIsMenuOpen(!isMenuOpen);
 
   if (loading) return null;
+
+  // Calculate sliding indicator multiplier based on 5 theoretical columns (20vw each)
+  const getIndicatorIndex = (idx: number) => {
+    if (idx === -1) return -1;
+    // If idx < 2 (left side: col 0 or 1), multiplier = idx.
+    // If idx >= 2 (right side), we skip the center (col 2), so multiplier = idx + 1
+    return idx < 2 ? idx : idx + 1;
+  };
+
+  const indicatorIndex = getIndicatorIndex(activeIdx);
+
+  // Determine standard app background to fake the cutout effectively
+  const appBgBorder = role === 'public'
+    ? 'border-white dark:border-black'
+    : 'border-gray-50 dark:border-zinc-950';
 
   return (
     <>
       {/* MENU OVERLAY */}
       {isMenuOpen && (
         <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsMenuOpen(false)}>
-          <div className="absolute bottom-28 left-0 right-0 mx-auto w-64 bg-zinc-900 border border-zinc-800 rounded-3xl p-2 shadow-2xl animate-in slide-in-from-bottom-5" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-white/5 mb-2 text-center">
-              <span className="text-xs font-black text-yellow-500 uppercase tracking-widest">Opciones {role === 'public' ? 'FVU' : role}</span>
+          <div className="absolute bottom-32 left-0 right-0 mx-auto w-64 bg-zinc-900 border border-zinc-800 rounded-3xl p-2 shadow-2xl animate-in slide-in-from-bottom-5" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-white/5 mb-2 flex items-center justify-between">
+              <span className="text-xs font-black text-tdf-orange uppercase tracking-widest">Opciones {role === 'public' ? 'FVU' : role}</span>
+              <button onClick={() => setIsMenuOpen(false)} className="text-zinc-500 hover:text-white transition"><X size={18} /></button>
             </div>
             <div className="flex flex-col gap-1">
               <Link href="/reglamento" className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
-                <BookOpen size={18} /> Reglamento
+                <BookOpen size={18} /> Reglamento Oficial
               </Link>
               <Link href="/descargas" className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
-                <Download size={18} /> Descargas
+                <Download size={18} /> Centro de Descargas
               </Link>
               <div className="h-px bg-white/5 my-2"></div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-black/20">
-                <span className="text-sm font-bold text-zinc-500">Tema</span>
+                <span className="text-sm font-bold text-zinc-500">Apariencia</span>
                 <ThemeToggle />
               </div>
+              {role === 'admin' && (
+                <>
+                  <Link href="/admin/configuracion" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
+                    <Settings size={18} /> Ajustes (Configuración)
+                  </Link>
+                  <div className="h-px bg-white/5 my-2"></div>
+                </>
+              )}
               {role !== 'public' && (
                 <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }} className="flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-500/10 transition font-bold text-sm mt-2">
                   <LogOut size={18} /> Cerrar Sesión
@@ -146,51 +135,82 @@ export default function MobileNav() {
         </div>
       )}
 
-      {/* CAMERA DIAL NAVBAR */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-black pb-safe text-white h-24 flex flex-col justify-end overflow-hidden">
+      {/* FIXED BOTTOM NAV WITH SAFE AREA FOR iOS/ANDROID */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 pointer-events-none pb-[env(safe-area-inset-bottom)]">
 
-        {/* Pointer/Indicator */}
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 text-yellow-500 animate-bounce-slow">
-          <ChevronUp size={20} fill="currentColor" />
-        </div>
+        {/* Main curved container */}
+        <div className="w-full max-w-lg mx-auto h-[88px] relative bg-zinc-900 rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] pointer-events-auto flex items-end">
 
-        {/* Dial Container */}
-        <div
-          ref={scrollRef}
-          className="flex items-center overflow-x-auto no-scrollbar snap-x snap-mandatory py-6 px-[50vw]" // Large padding to allow centering first/last
-          style={{ scrollBehavior: 'smooth' }}
-        >
-          {currentItems.map((item, i) => {
-            const isActive = i === activeIdx;
-            return (
-              <div key={i} className="snap-center shrink-0 px-6 transition-all duration-300 transform origin-center flex flex-col items-center justify-center cursor-pointer">
-                {item.action ? (
-                  <button
-                    onClick={handleMenuClick}
-                    className={`font-black text-sm uppercase tracking-widest whitespace-nowrap transition-all duration-300 ${isActive ? 'text-yellow-400 scale-110' : 'text-zinc-600 scale-90 hover:text-zinc-400'}`}
-                  >
-                    {item.label}
-                  </button>
-                ) : (
+          {/* Animated Top Indicator */}
+          <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden rounded-t-[2.5rem]">
+            <div
+              className={`absolute top-0 w-[20%] h-1.5 flex justify-center transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) ${indicatorIndex === -1 ? 'opacity-0 translate-y-2' : 'opacity-100'}`}
+              style={{ transform: indicatorIndex !== -1 ? `translateX(${indicatorIndex * 100}%)` : 'translateX(0)' }}
+            >
+              <div className="w-10 h-full bg-tdf-orange rounded-b-full shadow-[0_4px_12px_rgba(250,90,0,0.8)]" />
+            </div>
+          </div>
+
+          <div className="flex w-full h-[72px] relative z-10">
+            {/* Left Items (0 and 1) */}
+            <div className="flex w-2/5 h-full">
+              {navItems.slice(0, 2).map((item, idx) => {
+                const isActive = activeIdx === idx;
+                const Icon = item.icon;
+                return (
                   <Link
+                    key={item.href}
                     href={item.href}
-                    className={`font-black text-sm uppercase tracking-widest whitespace-nowrap transition-all duration-300 flex items-center gap-2 ${isActive ? 'text-yellow-400 scale-110 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' : 'text-zinc-600 scale-90 hover:text-zinc-400'}`}
+                    className="w-1/2 h-full flex flex-col items-center justify-center gap-1.5 tap-highlight-transparent active:scale-95 transition-transform"
                   >
-                    {item.label}
+                    <Icon size={24} className={`transition-all duration-300 ${isActive ? 'text-tdf-orange scale-110 drop-shadow-[0_2px_8px_rgba(250,90,0,0.4)]' : 'text-zinc-500 scale-100'}`} strokeWidth={isActive ? 2.5 : 2} />
+                    <span className={`text-[10px] font-bold transition-colors duration-300 ${isActive ? 'text-tdf-orange' : 'text-zinc-500'}`}>
+                      {item.label}
+                    </span>
                   </Link>
-                )}
+                );
+              })}
+            </div>
 
-                {/* Tick Mark below (Camera Style) */}
-                <div className={`mt-3 w-0.5 h-2 rounded-full transition-all duration-300 ${isActive ? 'bg-yellow-500 h-4' : 'bg-zinc-800'}`}></div>
+            {/* Central FAB Area (Space) */}
+            <div className="w-1/5 h-full flex justify-center relative pointer-events-none">
+              <div className="absolute -top-[42px] pointer-events-auto">
+                {/* The "Cutout" is actually a thick border matching the background */}
+                <button
+                  onClick={handleMenuClick}
+                  className={`w-[72px] h-[72px] bg-zinc-950 border-[8px] ${appBgBorder} rounded-full flex items-center justify-center transition-transform active:scale-90 shadow-inner group`}
+                >
+                  {/* Green/Orange inner accent matching the image "plus" button vibe */}
+                  <div className="w-12 h-12 rounded-full bg-tdf-orange flex items-center justify-center text-white shadow-lg group-hover:scale-105 transition-transform">
+                    <Menu size={24} strokeWidth={2.5} />
+                  </div>
+                </button>
               </div>
-            );
-          })}
+            </div>
+
+            {/* Right Items (2 and 3) */}
+            <div className="flex w-2/5 h-full">
+              {navItems.slice(2, 4).map((item, idx) => {
+                const globalIdx = idx + 2;
+                const isActive = activeIdx === globalIdx;
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="w-1/2 h-full flex flex-col items-center justify-center gap-1.5 tap-highlight-transparent active:scale-95 transition-transform"
+                  >
+                    <Icon size={24} className={`transition-all duration-300 ${isActive ? 'text-tdf-orange scale-110 drop-shadow-[0_2px_8px_rgba(250,90,0,0.4)]' : 'text-zinc-500 scale-100'}`} strokeWidth={isActive ? 2.5 : 2} />
+                    <span className={`text-[10px] font-bold transition-colors duration-300 ${isActive ? 'text-tdf-orange' : 'text-zinc-500'}`}>
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
         </div>
-
-        {/* Side Fade Gradient */}
-        <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-black to-transparent pointer-events-none z-10"></div>
-        <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-black to-transparent pointer-events-none z-10"></div>
-
       </div>
     </>
   );

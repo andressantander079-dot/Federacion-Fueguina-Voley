@@ -78,7 +78,7 @@ export default function ClubTramitesPage() {
                     club_id: clubId,
                     type: 'payment',
                     title: selectedFee.title,
-                    amount: selectedFee.price,
+                    amount: parseInt(String(selectedFee.price).replace(/\D/g, '') || '0'),
                     status: 'en_revision',
                     code: operationNumber, // storing operation number in code or metadata
                     metadata: {

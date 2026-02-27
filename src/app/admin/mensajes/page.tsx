@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Search, Mail, User, Clock, CheckCircle2, AlertCircle, ChevronRight } from 'lucide-react'
+import { Search, Mail, User, Clock, CheckCircle2, AlertCircle, ChevronRight, FileText, Download, Shield } from 'lucide-react'
 
 // Simularemos que 'Solicitudes' viene de la tabla 'tickets' o 'consultas'
 // Si no existe, podemos crearla o usar una estructura genérica.
@@ -13,6 +13,7 @@ export default function InboxPage() {
     const [messages, setMessages] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
+    const [selectedMessage, setSelectedMessage] = useState<any | null>(null)
     const supabase = createClient()
 
     useEffect(() => {
@@ -36,12 +37,30 @@ export default function InboxPage() {
         setLoading(false)
     }
 
+    const markAsRead = async (msg: any) => {
+        setSelectedMessage(msg)
+        if (!msg.read_at) {
+            const now = new Date().toISOString()
+            await supabase.from('messages').update({ read_at: now }).eq('id', msg.id)
+            setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, read_at: now } : m))
+        }
+    }
+
     const filteredMessages = messages.filter(m =>
         m.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
         m.sender?.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
-    if (loading) return <div className="p-8 text-center text-slate-400">Cargando bandeja...</div>
+    if (loading) return <div className="p-8 text-center text-slate-400">Cargando bandeja de entrada...</div>
+
+    const getPriorityBadge = (p: string) => {
+        const map: any = {
+            'urgente': 'bg-red-500/10 text-red-600 border-red-200 dark:bg-red-500/20 dark:text-red-500 dark:border-red-500/50',
+            'importante': 'bg-yellow-500/10 text-yellow-600 border-yellow-200 dark:bg-yellow-500/20 dark:text-yellow-500 dark:border-yellow-500/50',
+            'normal': 'bg-blue-500/10 text-blue-600 border-blue-200 dark:bg-blue-500/20 dark:text-blue-500 dark:border-blue-500/50'
+        }
+        return <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${map[p] || map['normal']}`}>{p}</span>
+    }
 
     return (
         <div className="flex h-full bg-slate-50 dark:bg-black/20">
@@ -68,16 +87,20 @@ export default function InboxPage() {
                         </div>
                     ) : (
                         filteredMessages.map((msg) => (
-                            <div key={msg.id} className="p-4 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl cursor-pointer transition-colors group border border-transparent hover:border-slate-100 dark:hover:border-white/5 relative">
+                            <div
+                                key={msg.id}
+                                onClick={() => markAsRead(msg)}
+                                className={`p-4 rounded-xl cursor-pointer transition-colors group border relative ${selectedMessage?.id === msg.id ? 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 shadow-sm' : 'border-transparent hover:bg-slate-50 dark:hover:bg-white/5 hover:border-slate-100 dark:hover:border-white/5'}`}
+                            >
                                 <div className="flex justify-between mb-1">
-                                    <span className="font-bold text-slate-800 dark:text-white text-sm line-clamp-1">{msg.sender?.full_name || 'Usuario'}</span>
-                                    <span className="text-[10px] text-slate-400">{new Date(msg.created_at).toLocaleDateString()}</span>
+                                    <span className={`text-sm line-clamp-1 ${!msg.read_at ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-700 dark:text-slate-300'}`}>{msg.sender?.full_name || 'Club Indefinido'}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono">{new Date(msg.created_at).toLocaleDateString()}</span>
                                 </div>
-                                <h4 className="text-xs font-bold text-tdf-blue dark:text-tdf-orange mb-1 truncate">{msg.subject}</h4>
+                                <h4 className={`text-xs mb-1 truncate ${!msg.read_at ? 'font-black text-tdf-blue dark:text-tdf-orange' : 'font-bold text-slate-600 dark:text-slate-400'}`}>{msg.subject}</h4>
                                 <p className="text-xs text-slate-500 line-clamp-2">
                                     {msg.body}
                                 </p>
-                                {msg.read_at && <div className="absolute right-4 bottom-4 w-2 h-2 bg-blue-500 rounded-full"></div>}
+                                {!msg.read_at && <div className="absolute right-4 bottom-4 w-2 h-2 bg-tdf-orange rounded-full animate-pulse"></div>}
                             </div>
                         ))
                     )}
@@ -86,11 +109,70 @@ export default function InboxPage() {
 
             {/* Detail View (Placeholder for now) */}
             <div className="hidden md:flex flex-1 flex-col items-center justify-center text-slate-300 dark:text-slate-600 bg-slate-50/50 dark:bg-transparent">
-                <div className="w-24 h-24 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4">
-                    <Mail size={40} className="opacity-50" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-400 dark:text-slate-500">Selecciona una solicitud</h3>
-                <p className="text-sm">Para ver el detalle y responder</p>
+                {selectedMessage ? (
+                    <div className="w-full max-w-3xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm">
+                        <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-zinc-800 pb-6">
+                            <div className="space-y-4">
+                                {getPriorityBadge(selectedMessage.priority)}
+                                <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white leading-tight">
+                                    {selectedMessage.subject}
+                                </h2>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center">
+                                        <User size={18} className="text-slate-500 dark:text-zinc-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">
+                                            {selectedMessage.sender?.full_name || 'Desconocido'}
+                                        </p>
+                                        <p className="text-xs text-slate-500 font-mono">
+                                            {new Date(selectedMessage.created_at).toLocaleString()}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                            {selectedMessage.body}
+                        </div>
+
+                        {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
+                            <div className="mt-8 p-4 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm rounded-lg flex items-center justify-center text-tdf-blue dark:text-blue-500">
+                                        <FileText size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-slate-800 dark:text-white">Archivo Adjunto</p>
+                                        <p className="text-xs text-slate-500">{selectedMessage.attachments[0].name || 'Documento subido por el club'}</p>
+                                    </div>
+                                </div>
+                                <a href={selectedMessage.attachments[0].url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-white dark:bg-zinc-800 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700 shadow-sm px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-zinc-700 transition">
+                                    <Download size={14} />
+                                    Descargar
+                                </a>
+                            </div>
+                        )}
+
+                        {/* Fake reply placeholder / info box for next phase */}
+                        <div className="mt-8 bg-blue-50 dark:bg-blue-500/10 p-4 rounded-xl border border-blue-100 dark:border-blue-500/20 flex gap-3">
+                            <AlertCircle size={18} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                            <div>
+                                <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300">Respuesta Oficial</h4>
+                                <p className="text-xs text-blue-800 dark:text-blue-400 mt-1">Próximamente la administración podrá responder directamente a este hilo por correo electrónico o desde este panel.</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="w-24 h-24 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm rounded-full flex items-center justify-center mb-4">
+                            <Mail size={40} className="text-slate-300 dark:text-zinc-600" />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-400 dark:text-slate-500">Mesa de Entrada</h3>
+                        <p className="text-sm">Selecciona una consulta del panel izquierdo para leerla aquí.</p>
+                    </>
+                )}
             </div>
         </div>
     )

@@ -11,6 +11,18 @@ export type Player = {
 
 export type TeamSide = 'home' | 'away';
 
+export type SanctionEvent = {
+    id: string;
+    playerId: string;
+    playerName: string;
+    team: TeamSide;
+    type: 'yellow' | 'red' | 'expulsion' | 'disqualify';
+    setNum: number;
+    homeScore: number;
+    awayScore: number;
+    timestamp: number;
+};
+
 export type SetData = {
     number: number;
     home: number;
@@ -50,6 +62,7 @@ export type MatchState = {
     substitutionsHome: number;
     substitutionsAway: number;
     blockedPlayers: { id: string, type: 'set' | 'match' }[];
+    sanctionsLog: SanctionEvent[];
 };
 
 export function useVolleyMatch(initialState?: Partial<MatchState>) {
@@ -68,6 +81,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     const [subsCount, setSubsCount] = useState({ home: 0, away: 0 }); // Track count per set
 
     const [blockedPlayers, setBlockedPlayers] = useState<{ id: string, type: 'set' | 'match' }[]>(initialState?.blockedPlayers || []);
+    const [sanctionsLog, setSanctionsLog] = useState<SanctionEvent[]>(initialState?.sanctionsLog || []);
 
     // Undo History
     const [history, setHistory] = useState<string[]>([]); // Store JSON strings for deep copy simplicity
@@ -76,10 +90,10 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
     const snapshot = useCallback(() => {
         const state = {
-            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers
+            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers, sanctionsLog
         };
         setHistory(prev => [...prev, JSON.stringify(state)]);
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers, sanctionsLog]);
 
     const undo = () => {
         if (history.length === 0) return;
@@ -95,6 +109,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         setServingTeam(lastState.servingTeam);
         setSubsCount(lastState.subsCount);
         setBlockedPlayers(lastState.blockedPlayers || []);
+        setSanctionsLog(lastState.sanctionsLog || []);
 
         setHistory(prev => prev.slice(0, -1));
     };
@@ -284,11 +299,22 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         if (state.benchAway) setBenchAway(state.benchAway);
         if (state.servingTeam !== undefined) setServingTeam(state.servingTeam);
         if (state.blockedPlayers) setBlockedPlayers(state.blockedPlayers);
+        if (state.sanctionsLog) setSanctionsLog(state.sanctionsLog);
+    };
+
+    const addSanction = (event: Omit<SanctionEvent, 'id' | 'timestamp'>) => {
+        snapshot();
+        const newEvent: SanctionEvent = {
+            ...event,
+            id: Math.random().toString(36).substr(2, 9),
+            timestamp: Date.now()
+        };
+        setSanctionsLog(prev => [...prev, newEvent]);
     };
 
     return {
         sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
-        servingTeam, subsCount, blockedPlayers,
+        servingTeam, subsCount, blockedPlayers, sanctionsLog,
         addPoint, subtractPoint, substitutePlayer, finishSet, undo,
         setAllState, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
         initPositions, addPlayerToBench, moveToCourt, removeFromCourt, removePlayerFromMatch,
@@ -299,6 +325,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         unblockSetPlayers: () => {
             snapshot();
             setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
-        }
+        },
+        addSanction
     };
 }

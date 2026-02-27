@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { LayoutDashboard, Users, Trophy, ClipboardList, LogOut, Settings, Mail, Megaphone, FileText, UserPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -15,6 +15,29 @@ export default function AdminLayout({
 }) {
     const router = useRouter()
     const supabase = createClient()
+    const [unreadMsgs, setUnreadMsgs] = useState(0)
+
+    useEffect(() => {
+        const fetchUnread = async () => {
+            const { count } = await supabase
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('type', 'consulta')
+                .is('read_at', null)
+
+            if (count !== null) setUnreadMsgs(count)
+        }
+
+        // Initial fetch
+        fetchUnread()
+
+        // Realtime subscription
+        const channel = supabase.channel('admin-msgs-badge')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: "type=eq.consulta" }, fetchUnread)
+            .subscribe()
+
+        return () => { supabase.removeChannel(channel) }
+    }, [supabase])
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -25,36 +48,36 @@ export default function AdminLayout({
         <div className="flex min-h-screen bg-white text-orange-700 dark:bg-zinc-900 dark:text-gray-100 transition-colors duration-300">
             {/* Sidebar */}
             <aside className="w-64 bg-blue-600 text-white hidden md:flex flex-col fixed inset-y-0 shadow-xl border-r border-white/5">
-                <div className="p-6 border-b border-white/10 bg-blue-700">
+                <div className="p-4 border-b border-white/10 bg-blue-700">
                     <h2 className="text-xl font-bold flex items-center gap-2">
                         <span className="w-8 h-8 bg-tdf-orange rounded-lg flex items-center justify-center text-xs shadow-lg">FVU</span>
                         <span className="tracking-tight">Panel Admin</span>
                     </h2>
                 </div>
 
-                <nav className="flex-1 p-4 space-y-1">
-                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-4">Gestión</div>
-                    <AdminNavLink href="/admin" icon={<LayoutDashboard size={20} />} label="Inicio" />
+                <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto mb-2 custom-scrollbar">
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3 mt-2">Gestión</div>
+                    <AdminNavLink href="/admin" icon={<LayoutDashboard size={18} />} label="Inicio" />
 
-                    <AdminNavLink href="/admin/mensajes" icon={<Mail size={20} />} label="Mensajes" />
-                    <AdminNavLink href="/admin/noticias" icon={<Megaphone size={20} />} label="Noticias" />
+                    <AdminNavLink href="/admin/mensajes" icon={<Mail size={18} />} label="Mensajes" badge={unreadMsgs} />
+                    <AdminNavLink href="/admin/noticias" icon={<Megaphone size={18} />} label="Noticias" />
 
-                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-6">Deportivo</div>
-                    <AdminNavLink href="/admin/competencias" icon={<Trophy size={20} />} label="Competencias" />
-                    <AdminNavLink href="/admin/equipos" icon={<Users size={20} />} label="Equipos" />
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3 mt-4">Deportivo</div>
+                    <AdminNavLink href="/admin/competencias" icon={<Trophy size={18} />} label="Competencias" />
+                    <AdminNavLink href="/admin/equipos" icon={<Users size={18} />} label="Equipos" />
 
-                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-6">Institucional</div>
-                    <AdminNavLink href="/admin/tramites" icon={<ClipboardList size={20} />} label="Trámites" />
-                    <AdminNavLink href="/admin/reglamentos" icon={<FileText size={20} />} label="Reglamentos" />
-                    <AdminNavLink href="/admin/configuracion" icon={<Settings size={20} />} label="Configuración" />
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3 mt-4">Institucional</div>
+                    <AdminNavLink href="/admin/tramites" icon={<ClipboardList size={18} />} label="Trámites" />
+                    <AdminNavLink href="/admin/reglamentos" icon={<FileText size={18} />} label="Reglamentos" />
+                    <AdminNavLink href="/admin/configuracion" icon={<Settings size={18} />} label="Configuración" />
                 </nav>
 
-                <div className="p-4 border-t border-white/10 bg-black/20 flex flex-col gap-2">
+                <div className="p-3 border-t border-white/10 bg-black/20 flex flex-col gap-2 shrink-0">
                     <button
                         onClick={handleLogout}
-                        className="flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg w-full transition-all group"
+                        className="flex items-center gap-3 px-3 py-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg w-full transition-all group text-sm"
                     >
-                        <LogOut size={20} className="group-hover:text-tdf-orange transition-colors" />
+                        <LogOut size={18} className="group-hover:text-tdf-orange transition-colors" />
                         <span>Cerrar Sesión</span>
                     </button>
                 </div>
@@ -81,15 +104,22 @@ export default function AdminLayout({
     )
 }
 
-function AdminNavLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
+function AdminNavLink({ href, icon, label, badge }: { href: string; icon: React.ReactNode; label: string, badge?: number }) {
     // Basic implementation - Active state logic would require usePathname
     return (
         <Link
             href={href}
-            className="flex items-center gap-3 px-4 py-2.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-all font-medium hover:pl-5"
+            className="flex items-center justify-between px-3 py-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-all font-medium text-sm hover:pl-4 group"
         >
-            <span className="opacity-70 group-hover:opacity-100">{icon}</span>
-            <span>{label}</span>
+            <div className="flex items-center gap-3">
+                <span className="opacity-70 group-hover:opacity-100">{icon}</span>
+                <span>{label}</span>
+            </div>
+            {badge !== undefined && badge > 0 && (
+                <span className="bg-tdf-orange text-white text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                    {badge}
+                </span>
+            )}
         </Link>
     )
 }

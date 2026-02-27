@@ -5,10 +5,11 @@ import { createClient } from '@/lib/supabase/client';
 import { useParams } from 'next/navigation';
 import {
     Zap, Calendar, MapPin,
-    MonitorPlay, Activity, Clock
+    MonitorPlay, Activity, Clock, Users
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import SponsorsBanner from '@/components/home/SponsorsBanner';
 
 export default function PublicMatchPage() {
     const { id } = useParams();
@@ -50,7 +51,7 @@ export default function PublicMatchPage() {
                 *,
                 home_team:teams!home_team_id(name, id, club_id, shield_url),
                 away_team:teams!away_team_id(name, id, club_id, shield_url),
-                category:categories(name, gender),
+                category:categories(id, name, gender),
                 court:courts(name)
             `)
             .eq('id', id)
@@ -58,7 +59,38 @@ export default function PublicMatchPage() {
 
         if (error) {
             console.error('Error fetching match:', error);
-        } else {
+        } else if (data) {
+            // Check for DT fallback
+            const homeClubId = Array.isArray(data.home_team) ? data.home_team[0]?.club_id : data.home_team?.club_id;
+            const awayClubId = Array.isArray(data.away_team) ? data.away_team[0]?.club_id : data.away_team?.club_id;
+            const catInfo = Array.isArray(data.category) ? data.category[0] : data.category;
+
+            if (!data.sheet_data?.staff?.coachHome && homeClubId && catInfo?.id) {
+                const { data: homeSquad } = await supabase.from('squads').select('coach_name')
+                    .eq('club_id', homeClubId)
+                    .eq('category_id', catInfo.id)
+                    .single();
+
+                if (homeSquad?.coach_name) {
+                    if (!data.sheet_data) data.sheet_data = { staff: {} };
+                    if (!data.sheet_data.staff) data.sheet_data.staff = {};
+                    data.sheet_data.staff.coachHome = homeSquad.coach_name;
+                }
+            }
+
+            if (!data.sheet_data?.staff?.coachAway && awayClubId && catInfo?.id) {
+                const { data: awaySquad } = await supabase.from('squads').select('coach_name')
+                    .eq('club_id', awayClubId)
+                    .eq('category_id', catInfo.id)
+                    .single();
+
+                if (awaySquad?.coach_name) {
+                    if (!data.sheet_data) data.sheet_data = { staff: {} };
+                    if (!data.sheet_data.staff) data.sheet_data.staff = {};
+                    data.sheet_data.staff.coachAway = awaySquad.coach_name;
+                }
+            }
+
             setMatch(data);
         }
         setLoading(false);
@@ -141,7 +173,10 @@ export default function PublicMatchPage() {
                             {match.home_team.shield_url && (
                                 <img src={match.home_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
                             )}
-                            <h2 className="text-xl md:text-3xl font-black mb-2 text-white leading-tight">{match.home_team.name}</h2>
+                            <h2 className="text-xl md:text-3xl font-black mb-1 text-white leading-tight">{match.home_team.name}</h2>
+                            {match.sheet_data?.staff?.coachHome && (
+                                <div className="text-xs text-zinc-400 font-bold mb-2 uppercase tracking-wide">DT: {match.sheet_data.staff.coachHome}</div>
+                            )}
                             <div className="text-6xl md:text-8xl font-black text-blue-500 tabular-nums tracking-tighter">
                                 {match.current_set_points_home || 0}
                             </div>
@@ -174,7 +209,10 @@ export default function PublicMatchPage() {
                             {match.away_team.shield_url && (
                                 <img src={match.away_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
                             )}
-                            <h2 className="text-xl md:text-3xl font-black mb-2 text-white leading-tight">{match.away_team.name}</h2>
+                            <h2 className="text-xl md:text-3xl font-black mb-1 text-white leading-tight">{match.away_team.name}</h2>
+                            {match.sheet_data?.staff?.coachAway && (
+                                <div className="text-xs text-zinc-400 font-bold mb-2 uppercase tracking-wide">DT: {match.sheet_data.staff.coachAway}</div>
+                            )}
                             <div className="text-6xl md:text-8xl font-black text-orange-500 tabular-nums tracking-tighter">
                                 {match.current_set_points_away || 0}
                             </div>
@@ -246,6 +284,54 @@ export default function PublicMatchPage() {
                     </div>
                 )}
 
+                {/* ROSTERS INFO */}
+                {match.sheet_data && (match.sheet_data.roster_home || match.sheet_data.roster_away) && (
+                    <div className="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
+                        <h3 className="font-bold mb-6 flex items-center gap-2 text-white text-xl">
+                            <Users size={20} className="text-blue-500" />
+                            Planteles Oficiales
+                        </h3>
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div>
+                                <h4 className="font-black text-blue-400 mb-4 border-b border-zinc-800 pb-2 flex justify-between items-center">
+                                    {match.home_team.name}
+                                    {match.sheet_data?.staff?.ayTecHome && <span className="text-[10px] text-zinc-500 font-normal">Ay.Tec: {match.sheet_data.staff.ayTecHome}</span>}
+                                </h4>
+                                <ul className="space-y-2 text-sm">
+                                    {match.sheet_data.roster_home?.map((p: any, i: number) => (
+                                        <li key={i} className="flex gap-3 text-zinc-300">
+                                            <span className="text-zinc-500 font-mono w-6 text-right">#{p.number}</span>
+                                            <span className="font-bold">{p.name}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 className="font-black text-orange-400 mb-4 border-b border-zinc-800 pb-2 flex justify-between items-center">
+                                    {match.away_team.name}
+                                    {match.sheet_data?.staff?.ayTecAway && <span className="text-[10px] text-zinc-500 font-normal">Ay.Tec: {match.sheet_data.staff.ayTecAway}</span>}
+                                </h4>
+                                <ul className="space-y-2 text-sm">
+                                    {match.sheet_data.roster_away?.map((p: any, i: number) => (
+                                        <li key={i} className="flex gap-3 text-zinc-300">
+                                            <span className="text-zinc-500 font-mono w-6 text-right">#{p.number}</span>
+                                            <span className="font-bold">{p.name}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+            </div>
+
+            {/* SPONSORS */}
+            <div className="bg-zinc-950 py-8 border-t border-zinc-800">
+                <div className="max-w-4xl mx-auto px-4">
+                    <p className="text-center font-bold text-zinc-600 text-[10px] uppercase tracking-widest mb-4">Sponsors Oficiales</p>
+                    <SponsorsBanner />
+                </div>
             </div>
 
         </div>

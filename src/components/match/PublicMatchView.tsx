@@ -218,7 +218,13 @@ export default function PublicMatchView() {
                 {sponsors.length > 0 ? (
                     <div className="min-h-24 bg-zinc-900/50 rounded-2xl border border-white/5 flex flex-wrap items-center justify-center gap-8 overflow-hidden py-4 px-8">
                         {sponsors.map(s => (
-                            <img key={s.id} src={s.image_url} alt={s.name} className="max-h-16 max-w-[150px] object-contain opacity-80 hover:opacity-100 transition" />
+                            s.website ? (
+                                <a key={s.id} href={s.website} target="_blank" rel="noopener noreferrer" className="opacity-80 hover:opacity-100 transition">
+                                    <img src={s.logo_url} alt={s.name} className="max-h-16 max-w-[150px] object-contain" />
+                                </a>
+                            ) : (
+                                <img key={s.id} src={s.logo_url} alt={s.name} className="max-h-16 max-w-[150px] object-contain opacity-80 hover:opacity-100 transition" />
+                            )
                         ))}
                     </div>
                 ) : (

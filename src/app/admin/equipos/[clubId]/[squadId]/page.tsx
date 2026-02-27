@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, UserPlus, Upload, FileText, Save, Trash2, Edit2, CheckCircle, AlertCircle, Users, AlertTriangle, Lock, Unlock } from 'lucide-react'
+import { ChevronLeft, UserPlus, Upload, FileText, Save, Trash2, Edit2, CheckCircle, AlertCircle, Users, AlertTriangle, Lock, Unlock, Camera, DollarSign } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useSettings } from '@/hooks/useSettings'
 
@@ -13,12 +13,14 @@ type Player = {
     name: string
     number: number
     dni: string | null
+    status: string
     // Add medical/payment fields if in schema, assuming placeholders for now or JSON
 }
 
 type Squad = {
     id: string
     name: string
+    category_id: string
     coach_name: string | null
     password?: string | null
 }
@@ -34,12 +36,16 @@ export default function SquadPlayersPage() {
     const [players, setPlayers] = useState<Player[]>([])
     const [loading, setLoading] = useState(true)
 
+    const [categories, setCategories] = useState<any[]>([])
+
     // Create Player Mode
     const [isAddingPlayer, setIsAddingPlayer] = useState(false)
     const [newPlayer, setNewPlayer] = useState({
         name: '',
         number: '',
         dni: '',
+        birth_date: '',
+        position: 'Punta',
         photo: null as File | null,
         medical: null as File | null,
         payment: null as File | null
@@ -49,6 +55,10 @@ export default function SquadPlayersPage() {
         const fetchSquadData = async () => {
             if (!squadId) return
             try {
+                // Fetch Categories for age validation
+                const { data: catsData } = await supabase.from('categories').select('*')
+                if (catsData) setCategories(catsData)
+
                 // Fetch Squad
                 const { data: squadData } = await supabase
                     .from('squads')
@@ -74,7 +84,7 @@ export default function SquadPlayersPage() {
             }
         }
         fetchSquadData()
-    }, [squadId])
+    }, [squadId, supabase])
 
     const manejarPassword = async () => {
         if (!squad) return;
@@ -119,43 +129,90 @@ export default function SquadPlayersPage() {
 
     const handleSavePlayer = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (!newPlayer.dni || !newPlayer.name || !newPlayer.birth_date) return alert("Completa Nombre, DNI y Fecha de Nacimiento.")
+
+        if (squad && squad.category_id) {
+            const category = categories.find(c => c.id === squad.category_id);
+            if (category) {
+                const birthYear = parseInt(newPlayer.birth_date.split('-')[0]);
+
+                if (category.min_year && birthYear < category.min_year) {
+                    return alert(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es menor al permitido para la categoría ${category.name} (Min: ${category.min_year})`);
+                }
+                if (category.max_year && birthYear > category.max_year) {
+                    return alert(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es mayor al permitido para la categoría ${category.name} (Max: ${category.max_year})`);
+                }
+            }
+        }
+
         setLoading(true) // Reusing loading state for submission for simplicity, or add specific submitting state
 
         try {
+            // 1. DUPLICATE REGISTRATION CHECK
+            const { data: existingPlayers, error: dupErr } = await supabase
+                .from('players')
+                .select('team_id, teams(name)')
+                .eq('dni', newPlayer.dni)
+                .eq('birth_date', newPlayer.birth_date);
+
+            if (dupErr) throw dupErr;
+
+            if (existingPlayers && existingPlayers.length > 0) {
+                const conflict = existingPlayers.find(p => p.team_id !== clubId);
+                if (conflict) {
+                    setLoading(false);
+                    // @ts-ignore
+                    const conflictTeamName = conflict.teams ? (Array.isArray(conflict.teams) ? conflict.teams[0]?.name : conflict.teams.name) : 'otro club';
+                    return alert(`REGISTRO BLOQUEADO: El DNI ${newPlayer.dni} ya está registrado activamente en "${conflictTeamName}".`);
+                }
+            }
+
             let photoUrl = null
             let medicalUrl = null
             let paymentUrl = null
 
-            // Upload Files if present
+            // Use exact same bucket locations as clubs to match Tramites process
             if (newPlayer.photo) {
-                photoUrl = await uploadFile(newPlayer.photo, `photos/${clubId}`)
-            }
-            if (newPlayer.medical) {
-                medicalUrl = await uploadFile(newPlayer.medical, `medical/${clubId}`)
+                const fileExt = newPlayer.photo.name.split('.').pop()
+                const fileName = `foto-${Date.now()}-${newPlayer.dni}.${fileExt}`
+                await supabase.storage.from('player-photos').upload(fileName, newPlayer.photo)
+                photoUrl = supabase.storage.from('player-photos').getPublicUrl(fileName).data.publicUrl
             }
             if (newPlayer.payment) {
-                paymentUrl = await uploadFile(newPlayer.payment, `payments/${clubId}`)
+                const fileExt = newPlayer.payment.name.split('.').pop()
+                const payFileName = `pago-${Date.now()}-${newPlayer.dni}.${fileExt}`
+                await supabase.storage.from('procedure-files').upload(payFileName, newPlayer.payment)
+                paymentUrl = supabase.storage.from('procedure-files').getPublicUrl(payFileName).data.publicUrl
+            }
+            if (newPlayer.medical) {
+                const fileExt = newPlayer.medical.name.split('.').pop()
+                const medFileName = `medico-${Date.now()}-${newPlayer.dni}.${fileExt}`
+                await supabase.storage.from('procedure-files').upload(medFileName, newPlayer.medical)
+                medicalUrl = supabase.storage.from('procedure-files').getPublicUrl(medFileName).data.publicUrl
             }
 
-            // Insert Player
-            const { data, error } = await supabase.from('players').insert({
+            // Insert Player with exactly the same payload as club/plantel
+            const { data, error } = await supabase.from('players').insert([{
                 squad_id: squadId,
                 team_id: clubId,
+                category_id: squad?.category_id,
                 name: newPlayer.name,
-                number: parseInt(newPlayer.number),
+                birth_date: newPlayer.birth_date,
+                position: newPlayer.position,
+                number: newPlayer.number ? parseInt(newPlayer.number) : null,
                 dni: newPlayer.dni,
                 photo_url: photoUrl,
                 medical_url: medicalUrl,
-                payment_url: paymentUrl
-            }).select().single()
+                payment_url: paymentUrl,
+                status: 'pending' // MATCH: Trigger Tramite
+            }]).select().single()
 
             if (error) throw error
 
             if (data) {
                 setPlayers([...players, data])
-                setIsAddingPlayer(false)
-                setNewPlayer({ name: '', number: '', dni: '', photo: null, medical: null, payment: null })
-                alert('Jugador inscrito correctamente')
+                setNewPlayer({ name: '', number: '', dni: '', birth_date: '', position: 'Punta', photo: null, medical: null, payment: null })
+                alert('Jugador inscrito y trámite generado.')
             }
         } catch (error: any) {
             console.error('Error saving player', error)
@@ -168,15 +225,15 @@ export default function SquadPlayersPage() {
     if (loading) return <div className="p-12 text-center">Cargando plantel...</div>
 
     return (
-        <div className="p-8 min-h-screen pb-32">
+        <div className="p-8 min-h-screen pb-32 bg-zinc-950 font-sans text-white selection:bg-orange-500 selection:text-white">
             {/* Header */}
             <div className="mb-8">
-                <Link href={`/admin/equipos/${clubId}`} className="inline-flex items-center text-sm text-gray-500 hover:text-tdf-orange mb-4 transition-colors">
+                <Link href={`/admin/equipos/${clubId}`} className="inline-flex items-center text-sm text-zinc-500 hover:text-orange-500 mb-4 transition-colors font-medium">
                     <ChevronLeft size={16} /> Volver al Club
                 </Link>
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                        <h1 className="text-3xl font-black text-white flex items-center gap-3">
                             {squad?.name}
                             <button className="text-gray-400 hover:text-tdf-orange"><Edit2 size={18} /></button>
                             {squad && (
@@ -189,8 +246,8 @@ export default function SquadPlayersPage() {
                                 </button>
                             )}
                         </h1>
-                        <p className="text-gray-500 flex items-center gap-2 mt-1">
-                            <span className="font-semibold text-gray-700 dark:text-gray-300">DT:</span>
+                        <p className="text-zinc-500 flex items-center gap-2 mt-1">
+                            <span className="font-bold text-zinc-400">DT:</span>
                             {squad?.coach_name || 'Sin asignar'}
                         </p>
                     </div>
@@ -201,98 +258,102 @@ export default function SquadPlayersPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
                 {/* Left: Players List */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-xl font-bold flex items-center gap-2">
-                            <Users className="text-tdf-blue" />
-                            Lista de Buena Fe
-                            <span className="text-xs bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-full text-gray-500">{players.length}</span>
-                        </h2>
+                <div className="lg:col-span-2 space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Users size={18} className="text-orange-500" />
+                        <h3 className="font-bold text-lg text-white">Lista de Buena Fe</h3>
+                        <span className="bg-zinc-800 text-white text-xs px-2 py-0.5 rounded-full">{players.length}</span>
                     </div>
 
-                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-100 dark:border-white/5 overflow-hidden">
-                        {players.length === 0 ? (
-                            <div className="p-12 text-center text-gray-400">
-                                <p>No hay jugadores en este plantel.</p>
-                                <p className="text-sm">Usa el formulario para inscribir al primero.</p>
+                    {players.length === 0 ? (
+                        <div className="p-12 text-center bg-zinc-900/50 border border-dashed border-zinc-800 rounded-2xl">
+                            <p className="text-zinc-500 italic">No hay jugadores inscritos.</p>
+                            <p className="text-zinc-600 text-sm">Usa el formulario para inscribir al primero.</p>
+                        </div>
+                    ) : (
+                        players.map((j: any) => (
+                            <div
+                                key={j.id}
+                                className={`
+                                    border p-4 rounded-xl flex items-center gap-4 transition group cursor-pointer relative overflow-hidden
+                                    ${j.status === 'pending'
+                                        ? 'bg-yellow-500/10 border-yellow-500/50 hover:bg-yellow-500/20'
+                                        : 'bg-zinc-900 border-zinc-800/80 hover:border-zinc-700'
+                                    }
+                                `}
+                            >
+                                {j.status === 'pending' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500" />}
+
+                                <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center font-black text-zinc-500 text-sm">
+                                    {j.number || '#'}
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <h4 className="font-bold text-white">{j.name}</h4>
+                                        {j.status === 'pending' && (
+                                            <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                Pendiente
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                                        <span>DNI {j.dni}</span>
+                                        {j.position && <><span className="w-1 h-1 bg-zinc-700 rounded-full" /><span>{j.position}</span></>}
+                                        {j.birth_date && (
+                                            <span className="text-zinc-600">({j.birth_date.split('-')[0]})</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    {j.medical_url && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
+                                    {j.photo_url && <span title="Foto OK"><Camera size={16} className="text-blue-500" /></span>}
+                                </div>
+
+                                <button className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-0 group-hover:opacity-100 z-10">
+                                    <Trash2 size={16} />
+                                </button>
                             </div>
-                        ) : (
-                            <table className="w-full text-left">
-                                <thead className="bg-gray-50 dark:bg-white/5 text-xs uppercase text-gray-500 font-semibold border-b border-gray-100 dark:border-white/5">
-                                    <tr>
-                                        <th className="px-6 py-4">#</th>
-                                        <th className="px-6 py-4">Nombre</th>
-                                        <th className="px-6 py-4">Docs</th>
-                                        <th className="px-6 py-4 text-right">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                                    {players.map(player => (
-                                        <tr key={player.id} className="hover:bg-gray-50/50 dark:hover:bg-white/5 transition-colors">
-                                            <td className="px-6 py-4 font-mono font-bold text-tdf-orange">{player.number}</td>
-                                            <td className="px-6 py-4 font-medium">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-zinc-700 flex items-center justify-center text-xs overflow-hidden">
-                                                        {/* Avatar Placeholder */}
-                                                        {player.name.substring(0, 2).toUpperCase()}
-                                                    </div>
-                                                    {player.name}
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex gap-2">
-                                                    <span className="p-1 rounded bg-green-100 text-green-700" title="Apto Médico"><CheckCircle size={14} /></span>
-                                                    <span className="p-1 rounded bg-red-100 text-red-700" title="Pago Pendiente"><AlertCircle size={14} /></span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <button className="text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                        ))
+                    )}
                 </div>
 
                 {/* Right: Add Player Form */}
                 <div className="lg:col-span-1">
-                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg border border-gray-100 dark:border-white/5 p-6 sticky top-8">
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sticky top-24 shadow-2xl shadow-black/50">
                         {!settings?.registration_open ? (
                             <div className="text-center py-6">
-                                <AlertTriangle className="mx-auto text-red-400 mb-3" size={40} />
-                                <h3 className="font-bold text-lg text-red-500 mb-2">Inscripciones Cerradas</h3>
-                                <p className="text-sm text-gray-500 font-medium">
+                                <AlertTriangle className="mx-auto text-red-500 mb-3" size={40} />
+                                <h3 className="font-bold text-lg text-white mb-2">Inscripciones Cerradas</h3>
+                                <p className="text-sm text-zinc-400 font-medium">
                                     {settings?.registration_message || "El periodo de inscripción ha finalizado. No se pueden agregar nuevos jugadores."}
                                 </p>
                             </div>
                         ) : (
                             <>
-                                <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                                    <UserPlus className="text-tdf-orange" />
+                                <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-white">
+                                    <UserPlus className="text-orange-500" />
                                     Nuevo Jugador
                                 </h3>
 
                                 <form onSubmit={handleSavePlayer} className="space-y-4">
-                                    <div className="grid grid-cols-4 gap-4">
+                                    <div className="grid grid-cols-4 gap-3">
                                         <div className="col-span-1">
-                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dorsal</label>
+                                            <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Dorsal</label>
                                             <input
                                                 type="number"
                                                 required
-                                                className="w-full p-2 border rounded-lg bg-gray-50 text-center font-mono text-lg font-bold outline-none focus:ring-2 focus:ring-tdf-orange"
+                                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-center font-bold text-white outline-none focus:border-orange-500 transition-colors"
                                                 placeholder="#"
                                                 value={newPlayer.number}
                                                 onChange={e => setNewPlayer({ ...newPlayer, number: e.target.value })}
                                             />
                                         </div>
                                         <div className="col-span-3">
-                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre Completo</label>
+                                            <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Nombre Completo</label>
                                             <input
                                                 type="text"
                                                 required
-                                                className="w-full p-2 border rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-tdf-orange"
+                                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
                                                 placeholder="Apellido y Nombre"
                                                 value={newPlayer.name}
                                                 onChange={e => setNewPlayer({ ...newPlayer, name: e.target.value })}
@@ -300,51 +361,69 @@ export default function SquadPlayersPage() {
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">DNI</label>
-                                        <input
-                                            type="text"
-                                            className="w-full p-2 border rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-tdf-orange"
-                                            placeholder="Sin puntos"
-                                            value={newPlayer.dni}
-                                            onChange={e => setNewPlayer({ ...newPlayer, dni: e.target.value })}
-                                        />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">DNI (Sin puntos)</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
+                                                placeholder="Ej: 12345678"
+                                                value={newPlayer.dni}
+                                                onChange={e => setNewPlayer({ ...newPlayer, dni: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Nacimiento</label>
+                                            <input
+                                                type="date"
+                                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
+                                                value={newPlayer.birth_date}
+                                                onChange={e => setNewPlayer({ ...newPlayer, birth_date: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
 
-                                    <div className="space-y-3 pt-2">
-                                        <p className="text-xs font-bold text-gray-400 uppercase">Documentación</p>
+                                    <div className="pt-4 border-t border-zinc-800 space-y-3">
+                                        <p className="text-[10px] font-bold text-zinc-500 uppercase">Documentación</p>
 
-                                        <label className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50 block">
-                                            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Upload size={16} /></div>
-                                            <div className="overflow-hidden">
-                                                <div className="text-sm font-medium text-gray-700">Foto de Perfil</div>
-                                                <div className="text-xs text-gray-400 truncate">{newPlayer.photo ? newPlayer.photo.name : 'Subir JPG/PNG'}</div>
+                                        <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
+                                            <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><Camera size={16} /></div>
+                                            <div className="flex-1 overflow-hidden">
+                                                <div className="text-xs font-bold text-zinc-300">Foto de Perfil</div>
+                                                <div className="text-[10px] text-zinc-500 truncate">{newPlayer.photo ? newPlayer.photo.name : 'Subir JPG/PNG'}</div>
                                             </div>
-                                            <input type="file" className="hidden" accept="image/*" onChange={e => handleFileUpload(e, 'photo')} />
+                                            <input type="file" hidden accept="image/*" onChange={e => handleFileUpload(e, 'photo')} />
+                                            {newPlayer.photo && <CheckCircle size={14} className="text-green-500" />}
                                         </label>
 
-                                        <label className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50 block">
-                                            <div className="p-2 bg-green-50 text-green-600 rounded-lg"><FileText size={16} /></div>
-                                            <div>
-                                                <div className="text-sm font-medium text-gray-700">Ficha Médica</div>
-                                                <div className="text-xs text-gray-400">{newPlayer.medical ? newPlayer.medical.name : 'Subir PDF Requerido'}</div>
+                                        <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
+                                            <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><FileText size={16} /></div>
+                                            <div className="flex-1 overflow-hidden">
+                                                <div className="text-xs font-bold text-zinc-300">Ficha Médica</div>
+                                                <div className="text-[10px] text-zinc-500 truncate">{newPlayer.medical ? newPlayer.medical.name : 'Subir PDF'}</div>
                                             </div>
-                                            <input type="file" className="hidden" accept=".pdf,.jpg" onChange={e => handleFileUpload(e, 'medical')} />
+                                            <input type="file" hidden accept=".pdf,.jpg" onChange={e => handleFileUpload(e, 'medical')} />
+                                            {newPlayer.medical && <CheckCircle size={14} className="text-green-500" />}
                                         </label>
 
-                                        <label className="border hover:border-tdf-blue/50 border-dashed rounded-lg p-3 flex items-center gap-3 cursor-pointer transition-colors bg-gray-50/50 block">
-                                            <div className="p-2 bg-orange-50 text-orange-600 rounded-lg"><FileText size={16} /></div>
-                                            <div>
-                                                <div className="text-sm font-medium text-gray-700">Pago Inscripción</div>
-                                                <div className="text-xs text-gray-400">{newPlayer.payment ? newPlayer.payment.name : 'Subir Comprobante'}</div>
+                                        <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
+                                            <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><DollarSign size={16} /></div>
+                                            <div className="flex-1 overflow-hidden">
+                                                <div className="text-xs font-bold text-zinc-300">Pago Inscripción</div>
+                                                <div className="text-[10px] text-zinc-500 truncate">{newPlayer.payment ? newPlayer.payment.name : 'Subir Comprobante'}</div>
                                             </div>
-                                            <input type="file" className="hidden" accept=".pdf,.jpg" onChange={e => handleFileUpload(e, 'payment')} />
+                                            <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => handleFileUpload(e, 'payment')} />
+                                            {newPlayer.payment && <CheckCircle size={14} className="text-green-500" />}
                                         </label>
                                     </div>
 
-                                    <button type="submit" className="w-full py-3 bg-tdf-blue hover:bg-tdf-blue-dark text-white rounded-lg font-bold shadow-lg transition-colors flex items-center justify-center gap-2 mt-4">
-                                        <Save size={18} />
-                                        Inscribir Jugador
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
+                                        className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl mt-2 transition shadow-lg shadow-orange-900/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                                    >
+                                        {loading ? <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> : <Save size={18} />}
+                                        {loading ? 'Guardando...' : 'Inscribir Jugador'}
                                     </button>
                                 </form>
                             </>
