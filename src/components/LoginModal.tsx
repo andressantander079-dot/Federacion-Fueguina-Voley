@@ -67,7 +67,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
         <div className="bg-slate-900 p-6 text-center text-white">
           <h2 className="text-xl font-bold uppercase">Acceso Oficial</h2>
-          <p className="text-xs text-slate-400">Sistema de Gestión FVU</p>
+          <p className="text-xs text-slate-400">Sistema de Gestión FFV</p>
         </div>
 
         <form onSubmit={handleLogin} className="p-8 space-y-4">

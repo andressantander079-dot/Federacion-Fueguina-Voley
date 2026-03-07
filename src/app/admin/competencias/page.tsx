@@ -23,6 +23,7 @@ export default function AdminCompetenciasList() {
         gender: 'Masculino',
         season: new Date().getFullYear().toString(),
         point_system: 'fivb',
+        city: 'Todas',
         selected_teams: [] as string[]
     });
 
@@ -41,7 +42,7 @@ export default function AdminCompetenciasList() {
             setEquiposFiltrados([]);
             setNewTourney(prev => ({ ...prev, selected_teams: [] }));
         }
-    }, [newTourney.category_id, newTourney.gender]);
+    }, [newTourney.category_id, newTourney.gender, newTourney.city]);
 
     async function fetchTorneos() {
         try {
@@ -86,10 +87,11 @@ export default function AdminCompetenciasList() {
                 let teamsMap = new Map();
 
                 if (teamIds.length > 0) {
-                    const { data: teamsData, error: teamsError } = await supabase
-                        .from('teams')
-                        .select('id, name')
-                        .in('id', teamIds);
+                    let query = supabase.from('teams').select('id, name, city').in('id', teamIds);
+                    if (newTourney.city !== 'Todas') {
+                        query = query.eq('city', newTourney.city);
+                    }
+                    const { data: teamsData, error: teamsError } = await query;
 
                     if (teamsError) {
                         console.error("Error fetching teams details:", teamsError);
@@ -99,10 +101,12 @@ export default function AdminCompetenciasList() {
                 }
 
                 // STEP 3: Combine Data
-                const combinedData = squadsData.map((s: any) => ({
-                    ...s,
-                    teams: teamsMap.get(s.team_id) || { name: 'Club Desconocido' }
-                }));
+                const combinedData = squadsData
+                    .map((s: any) => ({
+                        ...s,
+                        teams: teamsMap.get(s.team_id) || null
+                    }))
+                    .filter((s: any) => s.teams !== null); // Discard squads if their team didn't match the city filter
 
                 // Sort by Club Name then Squad Name
                 const sortedSquads = combinedData.sort((a: any, b: any) => {
@@ -180,7 +184,7 @@ export default function AdminCompetenciasList() {
 
         setModalOpen(false);
         setNewTourney({
-            name: '', category_id: '', gender: 'Masculino', season: new Date().getFullYear().toString(), point_system: 'fivb', selected_teams: []
+            name: '', category_id: '', gender: 'Masculino', season: new Date().getFullYear().toString(), point_system: 'fivb', city: 'Todas', selected_teams: []
         });
         fetchTorneos();
     };
@@ -342,8 +346,8 @@ export default function AdminCompetenciasList() {
                                     </div>
                                 </div>
 
-                                {/* FILA 2: CATEGORIA Y GÉNERO (FILTROS) */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                {/* FILA 2: CATEGORIA, GÉNERO Y CIUDAD (FILTROS) */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                                     <div>
                                         <label className="block text-xs font-black text-zinc-400 uppercase mb-2 ml-1">Categoría</label>
                                         <select required className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 font-bold text-white outline-none focus:border-tdf-blue transition appearance-none cursor-pointer"
@@ -363,6 +367,17 @@ export default function AdminCompetenciasList() {
                                             <option value="Masculino">Masculino</option>
                                             <option value="Femenino">Femenino</option>
                                             <option value="Mixto">Mixto</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-zinc-400 uppercase mb-2 ml-1">Filtro de Ciudad</label>
+                                        <select className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 font-bold text-white outline-none focus:border-tdf-blue transition appearance-none cursor-pointer"
+                                            value={newTourney.city}
+                                            onChange={e => setNewTourney({ ...newTourney, city: e.target.value })}
+                                        >
+                                            <option value="Todas">Todas las ciudades</option>
+                                            <option value="Ushuaia">Ushuaia</option>
+                                            <option value="Río Grande">Río Grande</option>
                                         </select>
                                     </div>
                                 </div>

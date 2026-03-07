@@ -330,7 +330,7 @@ export default function ClubMensajesPage() {
                         </div>
                         <div>
                            <p className="text-xs font-bold uppercase tracking-wider">Destinatario</p>
-                           <p className="text-white font-bold text-lg">Administración FVU</p>
+                           <p className="text-white font-bold text-lg">Administración FFV</p>
                         </div>
                      </div>
 

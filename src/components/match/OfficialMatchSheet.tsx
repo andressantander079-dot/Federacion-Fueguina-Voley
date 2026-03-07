@@ -1463,10 +1463,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 {/* HEADER OFICIAL */}
                                 <div className="border-b-4 border-slate-900 pb-6 mb-8 flex items-center justify-between">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center text-white font-black text-2xl">FVU</div>
+                                        <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center text-white font-black text-2xl">FFV</div>
                                         <div>
                                             <h1 className="text-2xl font-black uppercase tracking-tight leading-none">Federación de Voley</h1>
-                                            <h2 className="text-xl font-bold text-slate-600 uppercase tracking-widest">Ushuaia</h2>
                                         </div>
                                     </div>
                                     <div className="text-right">

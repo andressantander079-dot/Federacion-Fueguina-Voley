@@ -223,7 +223,7 @@ export default function RefereeProfilePage() {
                                     onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                                 />
                             </div>
-                            <p className="text-[10px] text-zinc-500 font-bold mt-2 ml-1">Solo visible para la Coordinación Arbitral de FVU.</p>
+                            <p className="text-[10px] text-zinc-500 font-bold mt-2 ml-1">Solo visible para la Coordinación Arbitral de FFV.</p>
                         </div>
 
                         <div className="border-t border-zinc-800 pt-6 flex flex-col md:flex-row items-center justify-between gap-4">

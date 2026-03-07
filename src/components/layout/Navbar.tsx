@@ -43,16 +43,13 @@ export default function Navbar() {
                                 {settings?.logo_url ? (
                                     <img src={settings.logo_url} alt="FVU Logo" className="w-full h-full object-cover" />
                                 ) : (
-                                    "FVU"
+                                    "FFV"
                                 )}
                             </div>
                             <div className="hidden md:block">
                                 <h1 className="text-xl font-bold leading-none text-white shadow-black drop-shadow-sm">
                                     Federación de Voley
                                 </h1>
-                                <span className="text-sm font-medium text-white/90">
-                                    Ushuaia
-                                </span>
                             </div>
                         </div>
 

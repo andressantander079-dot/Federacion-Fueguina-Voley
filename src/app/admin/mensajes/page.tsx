@@ -43,10 +43,9 @@ export default function InboxPage() {
             return;
         }
         setSelectedMessage(msg)
-        if (!msg.read_at) {
-            const now = new Date().toISOString()
-            await supabase.from('messages').update({ read_at: now }).eq('id', msg.id)
-            setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, read_at: now } : m))
+        if (!msg.read) {
+            await supabase.from('messages').update({ read: true }).eq('id', msg.id)
+            setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, read: true } : m))
         }
     }
 
@@ -97,14 +96,14 @@ export default function InboxPage() {
                                 className={`p-4 rounded-xl cursor-pointer transition-all group border relative ${selectedMessage?.id === msg.id ? 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 shadow-sm' : 'border-transparent hover:bg-slate-50 dark:hover:bg-white/5 hover:border-slate-100 dark:hover:border-white/5'}`}
                             >
                                 <div className="flex justify-between mb-1">
-                                    <span className={`text-sm line-clamp-1 pr-6 ${!msg.read_at ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-700 dark:text-slate-300'}`}>{msg.sender?.full_name || 'Club Indefinido'}</span>
+                                    <span className={`text-sm line-clamp-1 pr-6 ${!msg.read ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-700 dark:text-slate-300'}`}>{msg.sender?.full_name || 'Club Indefinido'}</span>
                                     <span className="text-[10px] text-slate-400 font-mono shrink-0">{new Date(msg.created_at).toLocaleDateString()}</span>
                                 </div>
-                                <h4 className={`text-xs mb-1 truncate ${!msg.read_at ? 'font-black text-tdf-blue dark:text-tdf-orange' : 'font-bold text-slate-600 dark:text-slate-400'}`}>{msg.subject}</h4>
+                                <h4 className={`text-xs mb-1 truncate ${!msg.read ? 'font-black text-tdf-blue dark:text-tdf-orange' : 'font-bold text-slate-600 dark:text-slate-400'}`}>{msg.subject}</h4>
                                 <p className={`text-xs text-slate-500 transition-all ${selectedMessage?.id === msg.id ? 'line-clamp-none md:line-clamp-2 mt-2 leading-relaxed' : 'line-clamp-2'}`}>
                                     {msg.body}
                                 </p>
-                                {!msg.read_at && <div className="absolute right-4 top-4 w-2 h-2 bg-tdf-orange rounded-full animate-pulse"></div>}
+                                {!msg.read && <div className="absolute right-4 top-4 w-2 h-2 bg-tdf-orange rounded-full animate-pulse"></div>}
 
                                 {/* ACORDEÓN MÓVIL: Visible únicamente en pantallas pequeñas cuando el mensaje está expandido */}
                                 {selectedMessage?.id === msg.id && (

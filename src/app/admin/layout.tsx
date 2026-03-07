@@ -23,7 +23,7 @@ export default function AdminLayout({
                 .from('messages')
                 .select('*', { count: 'exact', head: true })
                 .eq('type', 'consulta')
-                .is('read_at', null)
+                .eq('read', false)
 
             if (count !== null) setUnreadMsgs(count)
         }
@@ -50,7 +50,7 @@ export default function AdminLayout({
             <aside className="w-64 bg-blue-600 text-white hidden md:flex flex-col fixed inset-y-0 shadow-xl border-r border-white/5">
                 <div className="p-4 border-b border-white/10 bg-blue-700">
                     <h2 className="text-xl font-bold flex items-center gap-2">
-                        <span className="w-8 h-8 bg-tdf-orange rounded-lg flex items-center justify-center text-xs shadow-lg">FVU</span>
+                        <span className="w-8 h-8 bg-tdf-orange rounded-lg flex items-center justify-center text-xs shadow-lg">FFV</span>
                         <span className="tracking-tight">Panel Admin</span>
                     </h2>
                 </div>

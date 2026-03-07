@@ -63,7 +63,7 @@ export default function Footer() {
 
                 <div className="border-t border-slate-200 dark:border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-widest text-center md:text-left">
-                        &copy; {new Date().getFullYear()} FVU • Todos los derechos reservados
+                        &copy; {new Date().getFullYear()} FFV • Todos los derechos reservados
                     </div>
                     <div className="text-[10px] text-slate-300 font-medium">
                         Hecho con pasión en Tierra del Fuego
