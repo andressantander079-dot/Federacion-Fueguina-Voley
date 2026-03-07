@@ -7,9 +7,10 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     FileText, Download, Filter,
-    ArrowLeft, Calendar, Trophy, XCircle, ChevronDown, Check
+    ArrowLeft, Calendar, Trophy, XCircle, ChevronDown, Check, Eye
 } from 'lucide-react';
 import { useClubAuth } from '@/hooks/useClubAuth';
+import MatchSheetViewer from '@/components/admin/MatchSheetViewer';
 
 export default function PlanillasClub() {
     const router = useRouter();
@@ -31,6 +32,7 @@ export default function PlanillasClub() {
     // Estado para el Dropdown Personalizado (Rivales)
     const [showRivalDropdown, setShowRivalDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
 
     useEffect(() => {
         if (clubId) loadData(clubId);
@@ -62,7 +64,7 @@ export default function PlanillasClub() {
           away_team:teams!away_team_id(id, name, logo_url)
         `)
                 .or(`home_team_id.eq.${effectiveClubId},away_team_id.eq.${effectiveClubId}`)
-                .eq('status', 'finished')
+                .in('status', ['finished', 'finalizado'])
                 .order('date_time', { ascending: false });
 
             setMatches(partidos || []);
@@ -287,9 +289,21 @@ export default function PlanillasClub() {
                                         </div>
                                     </div>
 
-                                    {/* BOTÓN DESCARGA */}
+                                    {/* BOTÓN DESCARGA / VISOR */}
                                     <div className="bg-slate-50 border-t md:border-t-0 md:border-l border-slate-100 p-6 w-full md:w-56 flex flex-col justify-center items-center gap-3">
-                                        {m.sheet_url ? (
+                                        {m.sheet_status === 'submitted' || m.sheet_data ? (
+                                            <>
+                                                <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-tdf-blue border border-slate-200">
+                                                    <FileText size={20} />
+                                                </div>
+                                                <button
+                                                    onClick={() => setSelectedSheetId(m.id)}
+                                                    className="w-full bg-slate-900 hover:bg-black text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-slate-200"
+                                                >
+                                                    <Eye size={16} /> Ver Planilla
+                                                </button>
+                                            </>
+                                        ) : m.sheet_url ? (
                                             <>
                                                 <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-red-500 border border-slate-200">
                                                     <FileText size={20} />
@@ -299,7 +313,7 @@ export default function PlanillasClub() {
                                                     target="_blank"
                                                     className="w-full bg-slate-900 hover:bg-black text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-slate-200"
                                                 >
-                                                    <Download size={16} /> Ver Planilla
+                                                    <Download size={16} /> Descargar PDF
                                                 </a>
                                             </>
                                         ) : (
@@ -308,7 +322,7 @@ export default function PlanillasClub() {
                                                     <FileText size={20} />
                                                 </div>
                                                 <div className="text-center px-2">
-                                                    <p className="text-xs font-bold text-slate-400">Sin Planilla</p>
+                                                    <p className="text-xs font-bold text-slate-400">En Proceso</p>
                                                 </div>
                                             </>
                                         )}
@@ -320,6 +334,11 @@ export default function PlanillasClub() {
                 </div>
 
             </div>
+
+            {/* MODAL VISOR PARA CLUBES */}
+            {selectedSheetId && (
+                <MatchSheetViewer matchId={selectedSheetId} onClose={() => setSelectedSheetId(null)} />
+            )}
         </div>
     );
 }

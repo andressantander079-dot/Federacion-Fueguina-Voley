@@ -6,10 +6,11 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     Calendar as CalendarIcon, MapPin, Clock, Users,
-    ChevronLeft, ChevronRight, AlertCircle, ArrowLeft, Trophy
+    ChevronLeft, ChevronRight, AlertCircle, ArrowLeft, Trophy, Calendar
 } from 'lucide-react';
 import { useClubAuth } from '@/hooks/useClubAuth';
 import CalendarSyncButton from '@/components/common/CalendarSyncButton';
+import EmptyState from '@/components/ui/EmptyState';
 
 export default function AgendaClub() {
     const router = useRouter();
@@ -208,58 +209,68 @@ export default function AgendaClub() {
                             </h3>
 
                             <div className="flex-1 space-y-4 overflow-y-auto custom-scrollbar pr-2">
-                                {!selectedDate && (
-                                    <div className="text-center py-10 text-zinc-500">
-                                        <CalendarIcon size={32} className="mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm">Toca un día para ver los detalles</p>
-                                    </div>
-                                )}
-
-                                {selectedDate && selectedDateEvents.length === 0 && (
-                                    <div className="text-center py-10 text-zinc-600">
-                                        <p className="text-sm">No hay actividades programadas.</p>
-                                    </div>
-                                )}
-
-                                {selectedDateEvents.map((ev, i) => {
-                                    if (ev.type === 'meeting') {
-                                        return (
-                                            <div key={i} className="bg-purple-500/10 border-l-4 border-purple-500 rounded-r-xl p-4">
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">{ev.event_type || 'Evento'}</span>
-                                                    <span className="text-white font-bold text-sm">{new Date(ev.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</span>
-                                                </div>
-                                                <h4 className="font-bold text-white text-lg leading-tight mb-2">{ev.title}</h4>
-                                                <p className="text-xs text-zinc-400 mb-2 flex items-center gap-1"><MapPin size={12} /> {ev.venue?.name}</p>
-                                                <p className="text-xs text-zinc-300 italic">"{ev.description}"</p>
+                                {matches.length === 0 ? (
+                                    <EmptyState
+                                        icon={<Calendar size={48} />}
+                                        title="Sin Partidos Próximos"
+                                        description="No tienes ningún partido programado para este mes escolar o torneo activo."
+                                    />
+                                ) : (
+                                    <>
+                                        {!selectedDate && (
+                                            <div className="text-center py-10 text-zinc-500">
+                                                <CalendarIcon size={32} className="mx-auto mb-2 opacity-50" />
+                                                <p className="text-sm">Toca un día para ver los detalles</p>
                                             </div>
-                                        );
-                                    } else {
-                                        // Es un partido
-                                        const isHome = ev.home_team_id === clubId;
-                                        const rival = isHome ? ev.away_team : ev.home_team;
-                                        return (
-                                            <div key={i} className="bg-blue-500/10 border-l-4 border-blue-500 rounded-r-xl p-4">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Partido</span>
-                                                    <span className="text-white font-bold text-sm">{new Date(ev.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</span>
-                                                </div>
+                                        )}
 
-                                                <div className="flex items-center gap-3 mb-3">
-                                                    <img src={rival?.shield_url || '/placeholder.png'} className="w-10 h-10 object-contain bg-white rounded-full p-1" />
-                                                    <div>
-                                                        <p className="text-xs text-zinc-400">vs Rival</p>
-                                                        <p className="font-bold text-white leading-tight">{rival?.name || 'A definir'}</p>
+                                        {selectedDate && selectedDateEvents.length === 0 && (
+                                            <div className="text-center py-10 text-zinc-600">
+                                                <p className="text-sm">No hay actividades programadas.</p>
+                                            </div>
+                                        )}
+
+                                        {selectedDateEvents.map((ev, i) => {
+                                            if (ev.type === 'meeting') {
+                                                return (
+                                                    <div key={i} className="bg-purple-500/10 border-l-4 border-purple-500 rounded-r-xl p-4">
+                                                        <div className="flex justify-between items-start mb-1">
+                                                            <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">{ev.event_type || 'Evento'}</span>
+                                                            <span className="text-white font-bold text-sm">{new Date(ev.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</span>
+                                                        </div>
+                                                        <h4 className="font-bold text-white text-lg leading-tight mb-2">{ev.title}</h4>
+                                                        <p className="text-xs text-zinc-400 mb-2 flex items-center gap-1"><MapPin size={12} /> {ev.venue?.name}</p>
+                                                        <p className="text-xs text-zinc-300 italic">"{ev.description}"</p>
                                                     </div>
-                                                </div>
+                                                );
+                                            } else {
+                                                // Es un partido
+                                                const isHome = ev.home_team_id === clubId;
+                                                const rival = isHome ? ev.away_team : ev.home_team;
+                                                return (
+                                                    <div key={i} className="bg-blue-500/10 border-l-4 border-blue-500 rounded-r-xl p-4">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Partido</span>
+                                                            <span className="text-white font-bold text-sm">{new Date(ev.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</span>
+                                                        </div>
 
-                                                <div className="flex items-center gap-2 text-xs text-zinc-400 bg-zinc-950/50 p-2 rounded-lg">
-                                                    <MapPin size={12} /> {ev.venue?.name || 'Cancha a confirmar'}
-                                                </div>
-                                            </div>
-                                        );
-                                    }
-                                })}
+                                                        <div className="flex items-center gap-3 mb-3">
+                                                            <img src={rival?.shield_url || '/placeholder.png'} className="w-10 h-10 object-contain bg-white rounded-full p-1" />
+                                                            <div>
+                                                                <p className="text-xs text-zinc-400">vs Rival</p>
+                                                                <p className="font-bold text-white leading-tight">{rival?.name || 'A definir'}</p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-2 text-xs text-zinc-400 bg-zinc-950/50 p-2 rounded-lg">
+                                                            <MapPin size={12} /> {ev.venue?.name || 'Cancha a confirmar'}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                        })}
+                                    </>
+                                )}
                             </div>
 
                             {/* Próximo Evento Global (Si no hay nada seleccionado) */}
@@ -285,8 +296,8 @@ export default function AgendaClub() {
                                 </div>
                             )}
                         </div>
-                    </div>
 
+                    </div>
                 </div>
             </div>
         </div>

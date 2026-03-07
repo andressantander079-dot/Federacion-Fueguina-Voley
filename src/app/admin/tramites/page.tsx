@@ -9,6 +9,7 @@ import {
    Search, ArrowLeft, Download, AlertTriangle,
    Info, AlertOctagon, TrendingUp, Keyboard, Users, Shield, UserCheck, Loader2
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 // Unified Type
 type DashboardItem = {
@@ -150,7 +151,34 @@ export default function AdminTramitesPage() {
                if (treasuryError) console.error("Error creating treasury movement for procedure:", treasuryError);
             }
             await supabase.from('procedures').update({ status: 'aprobado', updated_at: new Date() }).eq('id', selectedItem.id);
-            alert("Trámite aprobado y registrado en Tesorería.");
+
+            // Check if this procedure is related to yearly Club Inscription
+            const isClubInscription = selectedItem.originalData.title.toLowerCase().includes('inscripci') && selectedItem.originalData.title.toLowerCase().includes('club');
+            if (isClubInscription) {
+               const { error: teamUpdateError } = await supabase.from('teams').update({ has_paid_inscription: true }).eq('id', selectedItem.originalData.club_id);
+               if (teamUpdateError) console.error("Error updating team inscription status:", teamUpdateError);
+            }
+
+            // === FASE 3 MMP: IN-APP NOTIFICATION ===
+            // 1. Create the Message
+            const { data: newMessage, error: msgError } = await supabase.from('messages').insert([{
+               sender_id: (await supabase.auth.getUser()).data.user?.id,
+               sender_role: 'admin',
+               subject: `✅ Trámite Aprobado: ${selectedItem.title}`,
+               body: `Le informamos que su trámite "${selectedItem.title}" ha sido procesado exitosamente por la Tesorería de la Federación.\n\nEl mismo se encuentra ahora en estado APROBADO.\n\nEste es un mensaje automático del sistema.`,
+               priority: 'high'
+            }]).select().single();
+
+            // 2. Link recipient (Club ID)
+            if (newMessage && !msgError) {
+               await supabase.from('message_recipients').insert([{
+                  message_id: newMessage.id,
+                  recipient_id: selectedItem.originalData.club_id,
+                  recipient_role: 'club'
+               }]);
+            }
+
+            toast.success("Trámite aprobado y registrado en Tesorería." + (isClubInscription ? " El Club ahora está habilitado." : ""));
          } else {
             // == JUGADOR ==
             const playerFeeAmount = getFee('Inscripcion de Jugadoras/es') || getFee('Inscripción de Jugadoras/es');
@@ -167,13 +195,31 @@ export default function AdminTramitesPage() {
             }
             // Update Player Status
             await supabase.from('players').update({ status: 'active', rejection_reason: null }).eq('id', selectedItem.id);
-            alert(playerFeeAmount > 0 ? `Jugador validado. Se generó un ingreso de $${playerFeeAmount} en Tesorería.` : "Jugador validado correctamente.");
+
+            // === FASE 3 MMP: IN-APP NOTIFICATION === (Player)
+            const { data: newMessage, error: msgError } = await supabase.from('messages').insert([{
+               sender_id: (await supabase.auth.getUser()).data.user?.id,
+               sender_role: 'admin',
+               subject: `✅ Jugador Habilitado: ${selectedItem.originalData.name}`,
+               body: `La Federación ha validado los documentos y habilitado al jugador ${selectedItem.originalData.name} (DNI: ${selectedItem.originalData.dni}).\nYa se encuentra disponible para ser incluido en Planillas Oficiales.`,
+               priority: 'normal'
+            }]).select().single();
+
+            if (newMessage && !msgError) {
+               await supabase.from('message_recipients').insert([{
+                  message_id: newMessage.id,
+                  recipient_id: selectedItem.originalData.team_id,
+                  recipient_role: 'club'
+               }]);
+            }
+
+            toast.success(playerFeeAmount > 0 ? `Jugador validado. Se generó un ingreso de $${playerFeeAmount} en Tesorería.` : "Jugador validado correctamente.");
          }
 
          await fetchAll();
       } catch (error: any) {
          console.error(error);
-         alert("Error al aprobar: " + error.message);
+         toast.error("Error al aprobar: " + error.message);
       }
       finally { setProcessingAction(false); }
    };
@@ -183,20 +229,55 @@ export default function AdminTramitesPage() {
 
       const reason = prompt("Ingrese el motivo del rechazo (Visible para el Club):");
       if (reason === null) return; // Cancelled
-      if (!reason.trim()) return alert("Debe ingresar un motivo para rechazar.");
+      if (!reason.trim()) return toast.error("Debe ingresar un motivo para rechazar.");
 
       setProcessingAction(true);
       try {
          if (selectedItem.type === 'procedure') {
             await supabase.from('procedures').update({ status: 'rechazado', rejection_reason: reason, updated_at: new Date() }).eq('id', selectedItem.id);
+
+            // Rejection In-App message
+            const { data: newMessage } = await supabase.from('messages').insert([{
+               sender_id: (await supabase.auth.getUser()).data.user?.id,
+               sender_role: 'admin',
+               subject: `❌ Trámite Rechazado: ${selectedItem.title}`,
+               body: `Su trámite ha sido rechazado.\n\n📌 Motivo indicado por la Administración:\n"${reason}"\n\nPor favor, corrija la documentación y vuelva a iniciar una solicitud.`,
+               priority: 'high'
+            }]).select().single();
+
+            if (newMessage) {
+               await supabase.from('message_recipients').insert([{
+                  message_id: newMessage.id,
+                  recipient_id: selectedItem.originalData.club_id,
+                  recipient_role: 'club'
+               }]);
+            }
+
          } else {
             // Players use 'rejected' status
             await supabase.from('players').update({ status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
+
+            // Rejection In-App message
+            const { data: newMessage } = await supabase.from('messages').insert([{
+               sender_id: (await supabase.auth.getUser()).data.user?.id,
+               sender_role: 'admin',
+               subject: `❌ Jugador Observado: ${selectedItem.originalData.name}`,
+               body: `El registro del jugador ${selectedItem.originalData.name} (DNI: ${selectedItem.originalData.dni}) ha sido observado preventivamente por la Federación.\n\n📌 Motivo:\n"${reason}"\n\nPor favor, vaya al perfil del jugador para corregir estos datos o enviar un nuevo comprobante.`,
+               priority: 'high'
+            }]).select().single();
+
+            if (newMessage) {
+               await supabase.from('message_recipients').insert([{
+                  message_id: newMessage.id,
+                  recipient_id: selectedItem.originalData.team_id,
+                  recipient_role: 'club'
+               }]);
+            }
          }
 
-         alert("Rechazado correctamente.");
+         toast.success("Elemento rechazado y club notificado.");
          await fetchAll();
-      } catch (error) { alert("Error al rechazar"); }
+      } catch (error) { toast.error("Error al rechazar"); }
       finally { setProcessingAction(false); }
    };
 
@@ -245,10 +326,10 @@ export default function AdminTramitesPage() {
          </header>
 
          {/* SPLIT VIEW */}
-         <div className="flex flex-1 overflow-hidden">
+         <div className="flex flex-1 overflow-hidden relative">
 
             {/* --- IZQUIERDA: LISTA --- */}
-            <div className="w-full md:w-1/3 min-w-[320px] bg-zinc-900 border-r border-zinc-800 flex flex-col z-10 transition-all">
+            <div className={`w-full md:w-1/3 min-w-[320px] bg-zinc-900 border-r border-zinc-800 flex flex-col z-10 transition-all ${selectedItemId ? 'hidden md:flex' : 'flex'}`}>
                <div className="p-3 border-b border-zinc-800 bg-zinc-900">
                   <div className="relative">
                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -295,7 +376,7 @@ export default function AdminTramitesPage() {
             </div>
 
             {/* --- DERECHA: DETALLE --- */}
-            <div className="flex-1 bg-black flex flex-col h-full overflow-hidden relative">
+            <div className={`flex-1 bg-black h-full overflow-hidden relative flex-col ${selectedItemId ? 'flex w-full absolute md:relative z-20' : 'hidden md:flex'}`}>
                {selectedItem ? (
                   <>
                      {/* Render different content based on TYPE */}
@@ -303,6 +384,12 @@ export default function AdminTramitesPage() {
                         // --- VISTA TRAMITE NORMAL ---
                         <div className="flex-1 flex flex-col overflow-hidden">
                            <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4">
+                              <div className="flex items-center gap-3 mb-2 md:hidden">
+                                 <button onClick={() => setSelectedItemId(null)} className="p-2 -ml-2 hover:bg-zinc-800 rounded-full text-zinc-400">
+                                    <ArrowLeft size={20} />
+                                 </button>
+                                 <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Atrás</span>
+                              </div>
                               <h2 className="text-xl font-black text-white">{selectedItem.title}</h2>
                               <p className="text-zinc-400 text-sm">Trámite Administrativo - {selectedItem.team_name}</p>
                            </div>
@@ -317,18 +404,26 @@ export default function AdminTramitesPage() {
                      ) : (
                         // --- VISTA JUGADOR (VALIDATION) ---
                         <div className="flex-1 flex flex-col overflow-hidden">
-                           <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex gap-6 items-center flex-shrink-0">
-                              <div className="w-16 h-16 rounded-full bg-zinc-800 overflow-hidden border-2 border-zinc-700">
-                                 {selectedItem.originalData.photo_url ? (
-                                    <img src={selectedItem.originalData.photo_url} className="w-full h-full object-cover" />
-                                 ) : <Users className="w-full h-full p-4 text-zinc-600" />}
+                           <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col md:flex-row gap-4 md:gap-6 items-start md:items-center flex-shrink-0">
+                              <div className="flex items-center gap-3 w-full md:w-auto md:hidden border-b border-zinc-800/50 pb-3 mb-1">
+                                 <button onClick={() => setSelectedItemId(null)} className="p-2 -ml-2 hover:bg-zinc-800 rounded-full text-zinc-400">
+                                    <ArrowLeft size={20} />
+                                 </button>
+                                 <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Atrás a la lista</span>
                               </div>
-                              <div>
-                                 <h2 className="text-2xl font-black text-white">{selectedItem.originalData.name}</h2>
-                                 <div className="flex gap-4 text-sm text-zinc-400 font-bold mt-1">
-                                    <span className="bg-zinc-800 px-2 py-0.5 rounded text-white">DNI: {selectedItem.originalData.dni}</span>
-                                    <span>{selectedItem.originalData.gender}</span>
-                                    <span>F. Nac: {selectedItem.originalData.birth_date}</span>
+                              <div className="flex gap-4 items-center">
+                                 <div className="w-16 h-16 rounded-full bg-zinc-800 overflow-hidden border-2 border-zinc-700 shrink-0">
+                                    {selectedItem.originalData.photo_url ? (
+                                       <img src={selectedItem.originalData.photo_url} className="w-full h-full object-cover" />
+                                    ) : <Users className="w-full h-full p-4 text-zinc-600" />}
+                                 </div>
+                                 <div className="min-w-0">
+                                    <h2 className="text-xl md:text-2xl font-black text-white truncate">{selectedItem.originalData.name}</h2>
+                                    <div className="flex flex-wrap gap-2 text-xs md:text-sm text-zinc-400 font-bold mt-2">
+                                       <span className="bg-zinc-800 px-2 py-0.5 rounded text-white border border-zinc-700">DNI: {selectedItem.originalData.dni}</span>
+                                       <span className="bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">{selectedItem.originalData.gender}</span>
+                                       <span className="bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">F. Nac: {selectedItem.originalData.birth_date}</span>
+                                    </div>
                                  </div>
                               </div>
                            </div>

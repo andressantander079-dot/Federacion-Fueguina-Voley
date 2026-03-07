@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, Trash2, X, Loader2, User, Phone, BadgeCheck, Mail } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner';
 
 type Referee = {
     id: string
@@ -60,7 +61,7 @@ export default function RefereesAdminPage() {
 
     const handleCreateReferee = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.fullName || !formData.email || !formData.password) return alert("Completa los campos obligatorios");
+        if (!formData.fullName || !formData.email || !formData.password) return toast.error("Completa los campos obligatorios");
 
         setCreating(true);
         try {
@@ -86,11 +87,11 @@ export default function RefereesAdminPage() {
 
             setFormData({ fullName: '', email: '', password: '', phone: '', category: 'Provincial' });
             setShowCreateModal(false);
-            alert(`¡Árbitro Creado! Usuario: ${result.user.email}`);
+            toast.success(`¡Árbitro Creado! Usuario: ${result.user.email}`);
 
         } catch (error: any) {
             console.error("Error creating referee:", error);
-            alert("Error: " + error.message);
+            toast.error("Error: " + error.message);
         } finally {
             setCreating(false);
         }
@@ -113,10 +114,10 @@ export default function RefereesAdminPage() {
 
             // Update local state
             setReferees(referees.filter(r => r.id !== id));
-            alert("Árbitro eliminado correctamente.");
+            toast.success("Árbitro eliminado correctamente.");
 
         } catch (error: any) {
-            alert("Error al eliminar: " + error.message);
+            toast.error("Error al eliminar: " + error.message);
         }
     }
 

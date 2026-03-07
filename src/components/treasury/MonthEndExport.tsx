@@ -16,10 +16,11 @@ export default function MonthEndExport() {
         setLoading(true)
         try {
             const [year, monthNum] = month.split('-')
+            const lastDay = new Date(parseInt(year), parseInt(monthNum), 0).getDate()
 
             // 1. Fetch Data
             const startDate = `${month}-01`
-            const endDate = `${month}-31`
+            const endDate = `${month}-${lastDay}`
 
             const { data: movements, error } = await supabase
                 .from('treasury_movements')
@@ -48,9 +49,9 @@ export default function MonthEndExport() {
             ]
 
             movements.forEach(m => {
-                const total = m.amount
-                const neto = m.type === 'EGRESO' ? (total / 1.21).toFixed(2) : total
-                const iva = m.type === 'EGRESO' ? (total - (total / 1.21)).toFixed(2) : 0
+                const total = Number(m.amount || 0)
+                const neto = m.type === 'EGRESO' ? (total / 1.21).toFixed(2) : total.toFixed(2)
+                const iva = m.type === 'EGRESO' ? (total - (total / 1.21)).toFixed(2) : "0.00"
 
                 csvRows.push([
                     m.date.split('T')[0],
@@ -125,9 +126,9 @@ export default function MonthEndExport() {
             // 4. Generate TXT (Fiscal Export Flat File)
             let txtContent = ''
             movements.filter(m => m.type === 'EGRESO').forEach(m => {
-                const cuit = (m.tax_id || '00000000000').replace(/-/g, '').padEnd(11, '0').slice(0, 11)
+                const cuit = String(m.tax_id || '00000000000').replace(/-/g, '').padEnd(11, '0').slice(0, 11)
                 const fecha = m.date.slice(0, 10).replace(/-/g, '')
-                const monto = m.amount.toFixed(2).replace('.', '').padStart(15, '0')
+                const monto = Number(m.amount || 0).toFixed(2).replace('.', '').padStart(15, '0')
                 txtContent += `${cuit}${fecha}${monto}\n`
             })
             folder?.file('Exportacion_Impositiva.txt', txtContent)

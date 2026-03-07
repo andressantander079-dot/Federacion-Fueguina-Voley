@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign, Lock, Unlock, Plus, Trash, Search, Download, Eye, RefreshCw, X } from 'lucide-react';
+import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign, Lock, Unlock, Plus, Trash, Search, Download, Eye, RefreshCw, X, Pencil, MapPin, Tag, ShieldCheck, Mail, Award, Calendar } from 'lucide-react';
 import PinPadModal from '@/components/security/PinPadModal';
+import EmptyState from '@/components/ui/EmptyState';
 import { useClubAuth } from '@/hooks/useClubAuth';
+import { toast } from 'sonner';
 
 export default function PlantelPage() {
   const router = useRouter();
@@ -19,6 +21,7 @@ export default function PlantelPage() {
 
   const [clubName, setClubName] = useState('');
   const [clubCity, setClubCity] = useState('Ushuaia');
+  const [hasPaidInscription, setHasPaidInscription] = useState(false);
 
   // Estado de Vistas
   const [vista, setVista] = useState<'squads' | 'jugadores' | 'documentacion'>('squads');
@@ -89,10 +92,11 @@ export default function PlantelPage() {
       if (profile?.full_name) setClubName(profile.full_name);
 
       // Fetch Logo and City from Teams table
-      const { data: teamData } = await supabase.from('teams').select('shield_url, city').eq('id', id).single();
+      const { data: teamData } = await supabase.from('teams').select('shield_url, city, has_paid_inscription').eq('id', id).single();
       if (teamData) {
         if (teamData.shield_url) setClubLogo(teamData.shield_url);
         if (teamData.city) setClubCity(teamData.city);
+        setHasPaidInscription(!!teamData.has_paid_inscription);
       }
       await cargarSquads(id);
 
@@ -106,7 +110,7 @@ export default function PlantelPage() {
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files || e.target.files.length === 0) return;
-    if (!clubId) return alert("No se detectó el Club ID.");
+    if (!clubId) return toast.error("No se detectó el Club ID.");
 
     const file = e.target.files[0];
     setUploadingLogo(true);
@@ -131,7 +135,7 @@ export default function PlantelPage() {
 
     } catch (error: any) {
       console.error("Error uploading logo:", error);
-      alert("Error al subir el escudo: " + error.message);
+      toast.error("Error al subir el escudo: " + error.message);
     } finally {
       setUploadingLogo(false);
     }
@@ -153,9 +157,9 @@ export default function PlantelPage() {
 
   async function crearSquad(e: React.FormEvent) {
     e.preventDefault();
-    if (!nuevoSquad.name || !nuevoSquad.category_id) return alert("Completa todos los campos");
+    if (!nuevoSquad.name || !nuevoSquad.category_id) return toast.error("Completa todos los campos");
 
-    if (!clubId) return alert("Error: No se ha detectado el ID del Club.");
+    if (!clubId) return toast.error("Error: No se ha detectado el ID del Club.");
 
     setCreandoSquad(true);
     try {
@@ -172,10 +176,10 @@ export default function PlantelPage() {
       setNuevoSquad({ name: '', coach_name: '', category_id: '', gender: 'Femenino' });
       await cargarSquads(clubId);
       (document.getElementById('dialog-new-squad') as HTMLDialogElement)?.close();
-      alert("Plantel creado exitosamente.");
+      toast.success("Plantel creado exitosamente.");
 
     } catch (error: any) {
-      alert("Error: " + error.message);
+      toast.error("Error: " + error.message);
     } finally {
       setCreandoSquad(false);
     }
@@ -188,10 +192,10 @@ export default function PlantelPage() {
       const { error } = await supabase.from('squads').delete().eq('id', id);
       if (error) throw error;
 
-      alert("Plantel eliminado correctamente.");
+      toast.success("Plantel eliminado correctamente.");
       if (clubId) await cargarSquads(clubId);
     } catch (error: any) {
-      alert("Error al eliminar el plantel: " + error.message);
+      toast.error("Error al eliminar el plantel: " + error.message);
     }
   }
 
@@ -254,7 +258,7 @@ export default function PlantelPage() {
         // Si el modo era set/remove, el mensaje de éxito ya se mostró en el PinPadModal
       }
     } catch (err: any) {
-      alert("Error al actualizar PIN: " + err.message);
+      toast.error("Error al actualizar PIN: " + err.message);
     }
   }
 
@@ -269,7 +273,7 @@ export default function PlantelPage() {
 
   async function guardarJugador(e: React.FormEvent) {
     e.preventDefault();
-    if (!nuevoJugador.dni || !nuevoJugador.name || !nuevoJugador.birth_date) return alert("Completa Nombre, DNI y Fecha de Nacimiento.");
+    if (!nuevoJugador.dni || !nuevoJugador.name || !nuevoJugador.birth_date) return toast.error("Completa Nombre, DNI y Fecha de Nacimiento.");
 
     if (squadActual && squadActual.category_id) {
       const category = globalCategories.find(c => c.id === squadActual.category_id);
@@ -277,15 +281,15 @@ export default function PlantelPage() {
         const birthYear = parseInt(nuevoJugador.birth_date.split('-')[0]);
 
         if (category.min_year && birthYear < category.min_year) {
-          return alert(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es menor al permitido para la categoría ${category.name} (Min: ${category.min_year})`);
+          return toast.error(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es menor al permitido para la categoría ${category.name} (Min: ${category.min_year})`);
         }
         if (category.max_year && birthYear > category.max_year) {
-          return alert(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es mayor al permitido para la categoría ${category.name} (Max: ${category.max_year})`);
+          return toast.error(`JUGADOR NO HABILITADO: El año de nacimiento (${birthYear}) es mayor al permitido para la categoría ${category.name} (Max: ${category.max_year})`);
         }
       }
     }
 
-    if (!clubId) return alert("Error crítico: No hay Club ID.");
+    if (!clubId) return toast.error("Error crítico: No hay Club ID.");
 
     setUploading(true);
     try {
@@ -304,7 +308,7 @@ export default function PlantelPage() {
           setUploading(false);
           // @ts-ignore - Handle possible array/object return from join
           const conflictTeamName = conflict.teams ? (Array.isArray(conflict.teams) ? conflict.teams[0]?.name : conflict.teams.name) : 'otro club';
-          return alert(`REGISTRO BLOQUEADO: El jugador con DNI ${nuevoJugador.dni} ya se encuentra registrado activamente en "${conflictTeamName}". Por favor, contacte a la Federación si considera que es un error (Pase/Préstamo).`);
+          return toast.error(`REGISTRO BLOQUEADO: El jugador con DNI ${nuevoJugador.dni} ya se encuentra registrado activamente en "${conflictTeamName}". Por favor, contacte a la Federación si considera que es un error (Pase/Préstamo).`);
         }
       }
 
@@ -349,12 +353,16 @@ export default function PlantelPage() {
 
       if (error) throw error;
 
-      alert("Jugador inscripto.");
+      toast.success("Jugador inscripto.");
       setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', photo_file: null, medical_file: null, payment_file: null });
       cargarJugadores(squadActual.id);
 
     } catch (error: any) {
-      alert("Error guardando: " + error.message);
+      if (error.code === '23505') {
+        toast.error("El jugador con ese DNI ya existe en los registros de la federación.");
+      } else {
+        toast.error("Error guardando: " + error.message);
+      }
     } finally {
       setUploading(false);
     }
@@ -456,13 +464,26 @@ export default function PlantelPage() {
           </div>
 
           {vista === 'squads' && (
-            <button
-              onClick={() => (document.getElementById('dialog-new-squad') as HTMLDialogElement)?.showModal()}
-              className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-3 rounded-xl font-bold transition shadow-lg shadow-orange-900/20 flex items-center gap-2 group"
-            >
-              <FolderPlus size={20} className="group-hover:scale-110 transition-transform" />
-              Nuevo Plantel
-            </button>
+            <div className="relative">
+              {/* CARTEL FLOTANTE ANIMADO */}
+              {!hasPaidInscription && !loading && (
+                <div className="absolute -top-16 right-0 animate-bounce bg-yellow-400 text-yellow-900 px-4 py-2 rounded-xl font-bold text-sm shadow-xl flex items-center gap-2 whitespace-nowrap z-10 border border-yellow-500">
+                  <AlertCircle size={16} /> ¡Falta Pago de Inscripción!
+                  <div className="absolute -bottom-2 right-8 w-4 h-4 bg-yellow-400 rotate-45 border-r border-b border-yellow-500" />
+                </div>
+              )}
+
+              <button
+                disabled={!hasPaidInscription}
+                onClick={() => (document.getElementById('dialog-new-squad') as HTMLDialogElement)?.showModal()}
+                className={`px-6 py-3 rounded-xl font-bold transition shadow-lg flex items-center gap-2 group
+                  ${hasPaidInscription ? 'bg-orange-600 hover:bg-orange-500 text-white shadow-orange-900/20 cursor-pointer' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'}`}
+                title={!hasPaidInscription ? 'Debes abonar la inscripción anual desde Trámites.' : ''}
+              >
+                <FolderPlus size={20} className={hasPaidInscription ? "group-hover:scale-110 transition-transform" : ""} />
+                Nuevo Plantel
+              </button>
+            </div>
           )}
         </div>
 
@@ -547,11 +568,11 @@ export default function PlantelPage() {
 
         {vista === 'jugadores' && squadActual && (
           <div className="animate-in fade-in slide-in-from-right-8 duration-500">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-3xl font-black text-white flex items-center gap-3">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <h2 className="text-xl md:text-3xl font-black text-white flex flex-wrap items-center gap-2 md:gap-3 leading-tight">
                 <span className="text-orange-500">{squadActual.category_name}</span>
-                <span className="text-zinc-600">/</span>
-                {squadActual.name}
+                <span className="text-zinc-600 hidden md:inline">/</span>
+                <span className="w-full md:w-auto">{squadActual.name}</span>
               </h2>
               <button
                 onClick={() => setVista('squads')}
@@ -570,10 +591,11 @@ export default function PlantelPage() {
                 </div>
 
                 {jugadores.length === 0 ? (
-                  <div className="p-12 text-center bg-zinc-900/50 border border-dashed border-zinc-800 rounded-2xl">
-                    <p className="text-zinc-500 italic">No hay jugadores inscritos.</p>
-                    <p className="text-zinc-600 text-sm">Completa el formulario de la derecha para agregar.</p>
-                  </div>
+                  <EmptyState
+                    icon={<UserPlus size={48} />}
+                    title="Plantel Vacío"
+                    description={`No hay jugadores registrados en la categoría ${globalCategories.find((c: any) => c.id === squadActual.category_id)?.name || 'General'}. Añade el primer jugador para comenzar a competir.`}
+                  />
                 ) : (
                   jugadores.map((j) => (
                     <div
@@ -584,7 +606,7 @@ export default function PlantelPage() {
                         }
                       }}
                       className={`
-                        border p-4 rounded-xl flex items-center gap-4 transition group cursor-pointer relative overflow-hidden
+                        border p-3 md:p-4 rounded-xl flex items-center gap-3 md:gap-4 transition group cursor-pointer relative overflow-hidden
                         ${j.status === 'pending'
                           ? 'bg-yellow-500/10 border-yellow-500/50 hover:bg-yellow-500/20'
                           : 'bg-zinc-900 border-zinc-800/80 hover:border-zinc-700'
@@ -593,33 +615,33 @@ export default function PlantelPage() {
                     >
                       {j.status === 'pending' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500" />}
 
-                      <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center font-black text-zinc-500 text-sm">
+                      <div className="w-8 h-8 md:w-10 md:h-10 shrink-0 bg-zinc-800 rounded-full flex items-center justify-center font-black text-zinc-500 text-xs md:text-sm">
                         {j.number || '#'}
                       </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-white">{j.name}</h4>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-bold text-white text-sm md:text-base truncate leading-tight">{j.name}</h4>
                           {j.status === 'pending' && (
-                            <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
                               Pendiente
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-zinc-500">
+                        <div className="flex items-center gap-1 md:gap-2 text-[10px] md:text-xs text-zinc-500 flex-wrap mt-1">
                           <span>DNI {j.dni}</span>
-                          <span className="w-1 h-1 bg-zinc-700 rounded-full" />
-                          <span>{j.position}</span>
+                          <span className="w-1 h-1 bg-zinc-700 rounded-full hidden md:block" />
+                          <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400">{j.position}</span>
                           {j.birth_date && (
                             <span className="text-zinc-600">({j.birth_date.split('-')[0]})</span>
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1 md:gap-2 shrink-0">
                         {j.medical_url && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
                         {j.photo_url && <span title="Foto OK"><Camera size={16} className="text-blue-500" /></span>}
                       </div>
 
-                      <button onClick={(e) => { e.stopPropagation(); borrarJugador(j.id); }} className="p-2 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-0 group-hover:opacity-100 z-10">
+                      <button onClick={(e) => { e.stopPropagation(); borrarJugador(j.id); }} className="p-2 md:p-3 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-100 md:opacity-0 group-hover:opacity-100 z-10 shrink-0">
                         <Trash2 size={16} />
                       </button>
                     </div>

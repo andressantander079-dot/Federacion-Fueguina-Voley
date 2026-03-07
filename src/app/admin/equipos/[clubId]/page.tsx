@@ -19,6 +19,7 @@ type Club = {
     name: string
     city: string
     shield_url: string | null
+    has_paid_inscription?: boolean
 }
 
 type Category = {
@@ -39,6 +40,7 @@ export default function ClubDetailsPage() {
     // UI States
     const [loading, setLoading] = useState(true)
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+    const [togglingPayment, setTogglingPayment] = useState(false)
 
     // Form States
     const [newSquadCategory, setNewSquadCategory] = useState('')
@@ -124,6 +126,30 @@ export default function ClubDetailsPage() {
         }
     }
 
+    const toggleInscriptionPayment = async () => {
+        if (!club) return
+        if (!confirm(`¿Estás seguro de cambiar el estado de pago de inscripción de ${club.name}?`)) return
+
+        setTogglingPayment(true)
+        try {
+            const newValue = !club.has_paid_inscription
+            const { error } = await supabase
+                .from('teams')
+                .update({ has_paid_inscription: newValue })
+                .eq('id', club.id)
+
+            if (error) throw error
+
+            setClub({ ...club, has_paid_inscription: newValue })
+            alert(`Estado actualizado: ${newValue ? 'Inscripción Pagada' : 'No Registra Pago'}`)
+        } catch (error: any) {
+            console.error('Error toggling payment details:', error)
+            alert('Error al actualizar: Asegúrate de haber ejecutado el script SQL para agregar la columna has_paid_inscription en tu base de datos.')
+        } finally {
+            setTogglingPayment(false)
+        }
+    }
+
     if (loading) return <div className="p-12 text-center text-gray-500">Cargando club...</div>
     if (!club) return <div className="p-12 text-center text-red-500">Club no encontrado</div>
 
@@ -144,17 +170,41 @@ export default function ClubDetailsPage() {
                             )}
                         </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{club.name}</h1>
+                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                                {club.name}
+                                {club.has_paid_inscription ? (
+                                    <span className="bg-green-100 text-green-700 border border-green-200 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1">
+                                        <Shield size={12} /> Inscripción OK
+                                    </span>
+                                ) : (
+                                    <span className="bg-red-100 text-red-700 border border-red-200 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1">
+                                        <Shield size={12} /> Sin Pago Anual
+                                    </span>
+                                )}
+                            </h1>
                             <p className="text-gray-500">{club.city}</p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => setIsCreateModalOpen(true)}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
-                    >
-                        <Plus size={20} />
-                        Nuevo Plantel
-                    </button>
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={toggleInscriptionPayment}
+                            disabled={togglingPayment}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold shadow-md transition-all ${club.has_paid_inscription
+                                    ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                        >
+                            <Shield size={18} />
+                            {club.has_paid_inscription ? 'Revocar Inscripción' : 'Marcar Inscripción Pagada'}
+                        </button>
+                        <button
+                            onClick={() => setIsCreateModalOpen(true)}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
+                        >
+                            <Plus size={20} />
+                            Nuevo Plantel
+                        </button>
+                    </div>
                 </div>
             </div>
 

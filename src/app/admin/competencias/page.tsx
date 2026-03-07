@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { Trophy, Plus, Users, Calendar, Filter, CheckCircle, XCircle, Trash2, Archive, RefreshCcw } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function AdminCompetenciasList() {
     const [torneos, setTorneos] = useState<any[]>([]);
@@ -130,7 +131,7 @@ export default function AdminCompetenciasList() {
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newTourney.category_id) return alert("Selecciona una categoría");
+        if (!newTourney.category_id) return toast.error("Selecciona una categoría");
 
         // 1. Crear Torneo
         const { data: torneoCreado, error } = await supabase
@@ -146,7 +147,7 @@ export default function AdminCompetenciasList() {
             .select()
             .single();
 
-        if (error) return alert("Error al crear torneo: " + error.message);
+        if (error) return toast.error("Error al crear torneo: " + error.message);
 
         // 2. Inscribir Equipos (Planteles)
         if (newTourney.selected_teams.length > 0) {
@@ -169,8 +170,12 @@ export default function AdminCompetenciasList() {
 
             if (errorPivot) {
                 console.error("Error pivot:", errorPivot);
-                alert("Torneo creado pero hubo error al inscribir equipos (DB Schema?).\n" + errorPivot.message);
+                toast.error("Torneo creado pero hubo error al inscribir equipos (DB Schema?).\n" + errorPivot.message);
+            } else {
+                toast.success("Torneo creado y equipos inscritos correctamente.");
             }
+        } else {
+            toast.success("Torneo creado sin equipos inscritos.");
         }
 
         setModalOpen(false);
@@ -185,9 +190,10 @@ export default function AdminCompetenciasList() {
 
         const { error } = await supabase.from('tournaments').delete().eq('id', id);
         if (error) {
-            alert("Error al eliminar: " + error.message);
+            toast.error("Error al eliminar: " + error.message);
         } else {
             setTorneos(prev => prev.filter(t => t.id !== id));
+            toast.success("Torneo eliminado correctamente.");
         }
     }
 
@@ -271,8 +277,7 @@ export default function AdminCompetenciasList() {
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <span className={`px-3 py-1 text-xs font-bold rounded-lg border uppercase w-full text-center ${t.gender === 'Femenino' ? 'bg-pink-500/10 text-pink-500 border-pink-500/20' : t.gender === 'Masculino' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-purple-500/10 text-purple-500 border-purple-500/20'
-                                                    }`}>
+                                                <span className={`px-3 py-1 text-xs font-bold rounded-lg border uppercase w-full text-center ${t.gender === 'Femenino' ? 'bg-pink-500/10 text-pink-500 border-pink-500/20' : t.gender === 'Masculino' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' : 'bg-purple-500/10 text-purple-500 border-purple-500/20'}`}>
                                                     {t.gender || 'Mixto'}
                                                 </span>
                                             </div>
@@ -405,8 +410,7 @@ export default function AdminCompetenciasList() {
                                                     return (
                                                         <div key={team.id}
                                                             onClick={() => toggleTeamSelection(team.id)}
-                                                            className={`p-3 rounded-lg border flex justify-between items-center cursor-pointer transition select-none group ${isSelected ? 'bg-tdf-blue border-tdf-blue text-white shadow-md' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-tdf-blue'
-                                                                }`}
+                                                            className={`p-3 rounded-lg border flex justify-between items-center cursor-pointer transition select-none group ${isSelected ? 'bg-tdf-blue border-tdf-blue text-white shadow-md' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-tdf-blue'}`}
                                                         >
                                                             <div className="flex flex-col text-left">
                                                                 <span className="font-bold text-sm truncate text-white">{team.teams?.name || 'Club Desconocido'}</span>

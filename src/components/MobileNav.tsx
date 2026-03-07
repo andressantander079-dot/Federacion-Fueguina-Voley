@@ -21,6 +21,7 @@ type NavItemProp = {
 export default function MobileNav() {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
   const [role, setRole] = useState<'public' | 'club' | 'referee' | 'admin'>('public');
   const [loading, setLoading] = useState(true);
   const [supabase] = useState(() => createClient());
@@ -40,6 +41,50 @@ export default function MobileNav() {
     };
     checkRole();
   }, [supabase]);
+
+  useEffect(() => {
+    let lastScrollY = window.pageYOffset;
+    let ticking = false;
+
+    const updateScrollDir = () => {
+      const scrollY = window.pageYOffset;
+
+      // Ensure Nav is always visible at the absolute top of the page
+      if (scrollY < 20) {
+        setIsVisible(true);
+        lastScrollY = scrollY;
+        ticking = false;
+        return;
+      }
+
+      // Ignore very small scroll jumps (bounce effect on mobile)
+      if (Math.abs(scrollY - lastScrollY) < 15) {
+        ticking = false;
+        return;
+      }
+
+      // Hide only when scrolling down aggressively
+      if (scrollY > lastScrollY) {
+        setIsVisible(false);
+      } else {
+        // Show immediately when scrolling up
+        setIsVisible(true);
+      }
+
+      lastScrollY = scrollY > 0 ? scrollY : 0;
+      ticking = false;
+    };
+
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(updateScrollDir);
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Unified configuration (Exactly 4 items per role)
   const NAV_CONFIG: Record<string, NavItemProp[]> = {
@@ -62,10 +107,10 @@ export default function MobileNav() {
       { href: '/reglamento', label: 'Reglas', icon: BookOpen },
     ],
     admin: [
-      { href: '/admin', label: 'Panel', icon: LayoutDashboard },
-      { href: '/admin/competitions', label: 'Torneos', icon: Trophy },
+      { href: '/admin/treasury', label: 'Tesorería', icon: CircleDollarSign },
+      { href: '/admin/competencias', label: 'Competencias', icon: Trophy },
       { href: '/admin/tramites', label: 'Trámites', icon: FileText },
-      { href: '/admin/treasury', label: 'Pagos', icon: CircleDollarSign },
+      { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
     ]
   };
 
@@ -106,10 +151,10 @@ export default function MobileNav() {
               <button onClick={() => setIsMenuOpen(false)} className="text-zinc-500 hover:text-white transition"><X size={18} /></button>
             </div>
             <div className="flex flex-col gap-1">
-              <Link href="/reglamento" className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
+              <Link href="/reglamento" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
                 <BookOpen size={18} /> Reglamento Oficial
               </Link>
-              <Link href="/descargas" className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
+              <Link href="/descargas" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
                 <Download size={18} /> Centro de Descargas
               </Link>
               <div className="h-px bg-white/5 my-2"></div>
@@ -119,14 +164,20 @@ export default function MobileNav() {
               </div>
               {role === 'admin' && (
                 <>
-                  <Link href="/admin/configuracion" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
-                    <Settings size={18} /> Ajustes (Configuración)
-                  </Link>
                   <div className="h-px bg-white/5 my-2"></div>
+                  <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-tdf-orange hover:bg-orange-500/10 transition font-black text-sm">
+                    <LayoutDashboard size={18} /> Ir al Panel Principal
+                  </Link>
+                  <Link href="/admin/arbitros" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
+                    <Users size={18} /> Colegio de Árbitros
+                  </Link>
+                  <Link href="/admin/programar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
+                    <CalendarDays size={18} /> Designaciones de Partidos
+                  </Link>
                 </>
               )}
               {role !== 'public' && (
-                <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }} className="flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-500/10 transition font-bold text-sm mt-2">
+                <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }} className="w-full flex items-center justify-start gap-3 p-3 rounded-xl text-red-500 hover:bg-red-500/10 transition font-bold text-sm mt-2">
                   <LogOut size={18} /> Cerrar Sesión
                 </button>
               )}
@@ -136,10 +187,10 @@ export default function MobileNav() {
       )}
 
       {/* FIXED BOTTOM NAV WITH SAFE AREA FOR iOS/ANDROID */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 pointer-events-none pb-[env(safe-area-inset-bottom)]">
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 z-50 pointer-events-none pb-[calc(env(safe-area-inset-bottom)+8px)] px-2 transition-transform duration-300 ease-in-out ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}>
 
         {/* Main curved container */}
-        <div className="w-full max-w-lg mx-auto h-[88px] relative bg-zinc-900 rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] pointer-events-auto flex items-end">
+        <div className="w-full max-w-lg mx-auto h-[88px] relative bg-zinc-900 rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.6)] pointer-events-auto flex items-end">
 
           {/* Animated Top Indicator */}
           <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden rounded-t-[2.5rem]">

@@ -38,6 +38,10 @@ export default function InboxPage() {
     }
 
     const markAsRead = async (msg: any) => {
+        if (selectedMessage?.id === msg.id) {
+            setSelectedMessage(null); // Permite contraer el acordeón (Toggle)
+            return;
+        }
         setSelectedMessage(msg)
         if (!msg.read_at) {
             const now = new Date().toISOString()
@@ -90,17 +94,42 @@ export default function InboxPage() {
                             <div
                                 key={msg.id}
                                 onClick={() => markAsRead(msg)}
-                                className={`p-4 rounded-xl cursor-pointer transition-colors group border relative ${selectedMessage?.id === msg.id ? 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 shadow-sm' : 'border-transparent hover:bg-slate-50 dark:hover:bg-white/5 hover:border-slate-100 dark:hover:border-white/5'}`}
+                                className={`p-4 rounded-xl cursor-pointer transition-all group border relative ${selectedMessage?.id === msg.id ? 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 shadow-sm' : 'border-transparent hover:bg-slate-50 dark:hover:bg-white/5 hover:border-slate-100 dark:hover:border-white/5'}`}
                             >
                                 <div className="flex justify-between mb-1">
-                                    <span className={`text-sm line-clamp-1 ${!msg.read_at ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-700 dark:text-slate-300'}`}>{msg.sender?.full_name || 'Club Indefinido'}</span>
-                                    <span className="text-[10px] text-slate-400 font-mono">{new Date(msg.created_at).toLocaleDateString()}</span>
+                                    <span className={`text-sm line-clamp-1 pr-6 ${!msg.read_at ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-700 dark:text-slate-300'}`}>{msg.sender?.full_name || 'Club Indefinido'}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono shrink-0">{new Date(msg.created_at).toLocaleDateString()}</span>
                                 </div>
                                 <h4 className={`text-xs mb-1 truncate ${!msg.read_at ? 'font-black text-tdf-blue dark:text-tdf-orange' : 'font-bold text-slate-600 dark:text-slate-400'}`}>{msg.subject}</h4>
-                                <p className="text-xs text-slate-500 line-clamp-2">
+                                <p className={`text-xs text-slate-500 transition-all ${selectedMessage?.id === msg.id ? 'line-clamp-none md:line-clamp-2 mt-2 leading-relaxed' : 'line-clamp-2'}`}>
                                     {msg.body}
                                 </p>
-                                {!msg.read_at && <div className="absolute right-4 bottom-4 w-2 h-2 bg-tdf-orange rounded-full animate-pulse"></div>}
+                                {!msg.read_at && <div className="absolute right-4 top-4 w-2 h-2 bg-tdf-orange rounded-full animate-pulse"></div>}
+
+                                {/* ACORDEÓN MÓVIL: Visible únicamente en pantallas pequeñas cuando el mensaje está expandido */}
+                                {selectedMessage?.id === msg.id && (
+                                    <div className="md:hidden mt-4 pt-4 border-t border-slate-100 dark:border-zinc-700 animate-in slide-in-from-top-2 flex flex-col gap-3">
+                                        <div>{getPriorityBadge(selectedMessage.priority)}</div>
+
+                                        {msg.attachments && msg.attachments.length > 0 && (
+                                            <div className="p-3 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl flex flex-col gap-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-tdf-blue dark:text-blue-500">
+                                                        <FileText size={16} />
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-zinc-300 line-clamp-1">{msg.attachments[0].name || 'Documento'}</span>
+                                                    </div>
+                                                </div>
+                                                <a href={msg.attachments[0].url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 text-slate-800 dark:text-white border border-slate-200 dark:border-zinc-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-zinc-700">
+                                                    <Download size={14} /> Descargar Archivo
+                                                </a>
+                                            </div>
+                                        )}
+
+                                        <button onClick={(e) => { e.stopPropagation(); setSelectedMessage(null); }} className="mt-2 w-full py-2 bg-slate-100 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 rounded-lg text-xs font-bold text-center">
+                                            Contraer Mensaje
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         ))
                     )}

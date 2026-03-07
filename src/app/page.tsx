@@ -85,9 +85,6 @@ export default function HomePage() {
             <NewsFeed />
 
             {/* FOOTER */}
-            {/* FOOTER */}
-            <Footer />
-
             <Footer />
         </div>
     )

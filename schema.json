@@ -1,0 +1,87 @@
+[dotenv@17.2.3] injecting env (3) from .env.local -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+PROFILES: [
+  'id',
+  'email',
+  'full_name',
+  'role',
+  'club_id',
+  'created_at',
+  'phone'
+]
+MATCH_OFFICIALS: [
+  'id',
+  'match_id',
+  'user_id',
+  'role',
+  'status',
+  'fee_amount',
+  'created_at',
+  'updated_at'
+]
+MATCHES: {
+  id: '4076a538-12a4-4728-b4d6-cb5949e40781',
+  tournament_id: '0134fbf3-d2ce-44f0-a79a-9098defb136c',
+  category_id: 'd28a99dc-85ce-42f0-919b-6103d841a5dd',
+  home_team_id: '14b5d667-aaff-47ae-9512-b43907045622',
+  away_team_id: '9c3e6867-9bc4-426e-b97a-31bd5c565415',
+  round: 'Fecha 1',
+  scheduled_time: '2026-02-24T14:00:00+00:00',
+  court_name: 'Gimnasio Favale',
+  status: 'programado',
+  home_score: 0,
+  away_score: 0,
+  set_scores: null,
+  sheet_data: {
+    staff: { ref1: '', ref2: '', scorer: '' },
+    metadata: { category: 'Sub-14', competition: 'Torneo Oficial' },
+    pos_away: [ null, null, null, null, null, null ],
+    pos_home: [ null, null, null, null, null, null ],
+    bench_away: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object]
+    ],
+    bench_home: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object]
+    ],
+    signatures: {
+      ref1: null,
+      dtAway: null,
+      dtHome: null,
+      capAway: null,
+      capHome: null
+    },
+    final_score: { away: 0, home: 0 },
+    roster_away: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object]
+    ],
+    roster_home: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object]
+    ],
+    observations: '',
+    sanctionsLog: [],
+    serving_team: null,
+    sets_history: [ [Object] ],
+    blocked_players: [],
+    current_set_idx: 0
+  },
+  sheet_status: 'pending',
+  created_at: '2026-02-21T16:43:28.40269+00:00',
+  home_squad_id: null,
+  away_squad_id: null,
+  streaming_url: null,
+  mvp_player_id: null,
+  home: { name: 'Instituto' },
+  away: { name: 'River Plate' },
+  tournament: { name: 'Copa Cachete', category: { name: 'Sub-14' } }
+}

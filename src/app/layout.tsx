@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/context/ThemeContext';
 import MobileNav from '@/components/MobileNav';
+import { Toaster } from 'sonner';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -22,6 +23,7 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <MobileNav />
+          <Toaster position="bottom-center" richColors theme="system" />
         </ThemeProvider>
       </body>
     </html>

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { FileText, Upload, Copy, CheckCircle, AlertCircle, X, Loader2, DollarSign } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import { useClubAuth } from '@/hooks/useClubAuth';
+import EmptyState from '@/components/ui/EmptyState';
 
 export default function ClubTramitesPage() {
     const supabase = createClient();
@@ -156,7 +157,13 @@ export default function ClubTramitesPage() {
                     </h2>
                     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
                         {procedures.length === 0 ? (
-                            <div className="p-8 text-center text-zinc-500 italic">No tienes trámites realizados.</div>
+                            <EmptyState
+                                icon={<FileText size={48} />}
+                                title="No hay trámites activos"
+                                description="Esta sección te mostrará el historial de pagos de seguros, fichajes y pases solicitados por el club."
+                                actionLabel="Iniciar Nuevo Trámite"
+                                onAction={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                            />
                         ) : (
                             <div className="divide-y divide-zinc-800">
                                 {procedures.map(proc => (

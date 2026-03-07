@@ -45,7 +45,10 @@ export async function POST(request: Request) {
 
         if (createError) {
             console.error("API: Auth Create Failed", createError);
-            throw createError;
+            if (createError.message.includes('User already registered') || createError.code === 'user_already_exists') {
+                return NextResponse.json({ error: 'El correo electrónico ya está registrado en otro club o usuario.' }, { status: 409 });
+            }
+            return NextResponse.json({ error: 'Fallo al crear credenciales de acceso: ' + createError.message }, { status: 500 });
         }
 
         const newUserId = userData.user.id;

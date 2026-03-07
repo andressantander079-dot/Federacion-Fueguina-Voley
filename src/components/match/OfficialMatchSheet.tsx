@@ -15,13 +15,14 @@ import Link from 'next/link';
 interface OfficialMatchSheetProps {
     redirectAfterSubmit: string;
     readOnly?: boolean;
+    matchIdOverride?: string;
 }
 
-export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = false }: OfficialMatchSheetProps) {
+export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = false, matchIdOverride }: OfficialMatchSheetProps) {
     const [supabase] = useState(() => createClient());
     const router = useRouter();
     const params = useParams();
-    const matchId = params.id as string;
+    const matchId = matchIdOverride || (params.id as string);
 
     const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
         moveToCourt, removeFromCourt, removePlayerFromMatch,
@@ -347,6 +348,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             // Ensures data freshness even if Realtime events are missed
             const intervalId = setInterval(fetchState, 4000);
 
+            // Forza que apenas se monte en modo ReadOnly salte a la pantalla Final (A4)
+            setTimeout(() => {
+                setClosingFlow(true);
+                setClosingStep(4);
+            }, 500);
+
             // Realtime Subscription
             const channel = supabase
                 .channel(`match:${matchId}`)
@@ -393,10 +400,16 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             benchHome: data.bench_home || data.benchHome,
             benchAway: data.bench_away || data.benchAway,
             servingTeam: data.serving_team || data.servingTeam,
-            blockedPlayers: data.blocked_players || []
+            blockedPlayers: data.blocked_players || [],
+            sanctionsLog: data.sanctionsLog || []
         };
 
         setAllState(normalizedState);
+
+        // Restaurar variables de estado locales (Vital para el PDF Resumen)
+        if (data.staff) setStaff(data.staff);
+        if (data.signatures) setSignatures(data.signatures);
+        if (data.observations) setObservations(data.observations);
     };
 
     // Handle Status Change (UI)
@@ -817,6 +830,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 staff: staff,
                 signatures: signatures,
                 observations: observations,
+                sanctionsLog: sanctionsLog,
                 metadata: {
                     category: 'Mayores',
                     gender: 'Masculino',
@@ -962,11 +976,11 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             </header>
 
             {/* ÁREA DE JUEGO */}
-            <div className={`flex-1 flex overflow-hidden p-4 gap-4 ${closingStep === 4 ? 'hidden' : ''}`}>
+            <div className={`flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden p-2 md:p-4 gap-4 ${closingStep === 4 ? 'hidden' : ''}`}>
 
                 {/* LOCAL SIDEBAR */}
-                <aside className="w-64 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                    <div className="p-4 bg-blue-600 flex flex-col items-center gap-2 relative overflow-hidden">
+                <aside className="w-full md:w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden order-2 md:order-1 h-[500px] md:h-auto">
+                    <div className="p-4 bg-blue-600 flex flex-col items-center gap-2 relative overflow-hidden shrink-0">
                         {/* Header Logo Local */}
                         <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
                             <span className="font-black text-2xl text-blue-600 absolute inset-0 flex items-center justify-center">{teamsInfo?.home.name?.charAt(0) || 'L'}</span>
@@ -1019,8 +1033,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 </aside>
 
                 {/* CENTRAL */}
-                <main className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
-                    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-4 flex flex-col items-center">
+                <main className="flex-1 flex flex-col gap-4 overflow-y-visible md:overflow-y-auto custom-scrollbar order-1 md:order-2">
+                    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-2 md:p-4 flex flex-col items-center">
                         <div className="flex items-center justify-between w-full max-w-4xl">
                             <div className="flex flex-col items-center gap-2">
                                 <div className="text-6xl font-black text-blue-600">{sets[currentSetIdx].home}</div>
@@ -1109,8 +1123,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 </main>
 
                 {/* VISITA SIDEBAR */}
-                <aside className="w-64 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                    <div className="p-4 bg-red-600 flex flex-col items-center gap-2 relative overflow-hidden">
+                <aside className="w-full md:w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden order-3 md:order-3 h-[500px] md:h-auto">
+                    <div className="p-4 bg-red-600 flex flex-col items-center gap-2 relative overflow-hidden shrink-0">
                         {/* Header Logo Visita */}
                         <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
                             <span className="font-black text-2xl text-red-600 absolute inset-0 flex items-center justify-center">{teamsInfo?.away.name?.charAt(0) || 'V'}</span>
@@ -1404,8 +1418,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             {closingFlow && (
                 <div className="fixed inset-0 bg-slate-100 z-[70] flex flex-col animate-in fade-in overflow-y-auto">
                     <div className="p-4 border-b bg-white flex justify-between items-center shadow-sm sticky top-0 z-50">
-                        <h2 className="font-black text-slate-800 text-lg">Cierre de Encuentro - Paso {closingStep + 1}/5</h2>
-                        <button onClick={() => setClosingFlow(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={18} /></button>
+                        <h2 className="font-black text-slate-800 text-lg">
+                            {readOnly ? 'Visualización de Planilla Oficial' : `Cierre de Encuentro - Paso ${closingStep + 1}/5`}
+                        </h2>
+                        {!readOnly && (
+                            <button onClick={() => setClosingFlow(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={18} /></button>
+                        )}
                     </div>
 
                     {/* 0. OBS */}
@@ -1613,7 +1631,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                             {/* BOTONES ACCIÓN FLOTANTES */}
                             <div className="fixed bottom-8 right-8 flex gap-4 z-50 print:hidden">
                                 <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-black transition"><Download size={16} /> Imprimir</button>
-                                <button onClick={submitMatchSheet} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-green-700 transition"><Check size={16} /> Finalizar y Enviar</button>
+                                {!readOnly && (
+                                    <button onClick={submitMatchSheet} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-green-700 transition"><Check size={16} /> Finalizar y Enviar</button>
+                                )}
                             </div>
                         </div>
                     )}

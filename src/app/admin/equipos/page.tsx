@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Search, Plus, MapPin, Users, ChevronRight, Shield, Trash2, X, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 
 // Mock Data incase DB is empty
@@ -72,7 +73,7 @@ export default function TeamsListPage() {
 
   const handleCreateClub = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.email || !formData.password) return alert("Completa los campos obligatorios");
+    if (!formData.name.trim() || !formData.email || !formData.password) return toast.error("Completa los campos obligatorios");
 
     setCreating(true);
     try {
@@ -103,11 +104,11 @@ export default function TeamsListPage() {
       setFormData({ name: '', city: 'Ushuaia', email: '', password: '' });
       setStaff([]);
       setShowCreateModal(false);
-      alert(`¡Club Creado! Usuario: ${result.user.email}`);
+      toast.success(`¡Club Creado! Usuario: ${result.user.email}`);
 
     } catch (error: any) {
       console.error("Error creating club:", error);
-      alert("Error: " + error.message);
+      toast.error("Error: " + error.message);
     } finally {
       setCreating(false);
     }
@@ -162,11 +163,23 @@ export default function TeamsListPage() {
                 onClick={async (e) => {
                   e.preventDefault();
                   if (!confirm('¿Estás seguro de eliminar este club? Se borrarán todos sus planteles y jugadores.')) return;
-                  const { error } = await supabase.from('teams').delete().eq('id', team.id);
-                  if (!error) {
+
+                  try {
+                    const response = await fetch('/api/admin/delete-club', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ teamId: team.id })
+                    });
+
+                    if (!response.ok) {
+                      const errorData = await response.json();
+                      throw new Error(errorData.error || 'Error desconocido');
+                    }
+
                     setTeams(teams.filter(t => t.id !== team.id));
-                  } else {
-                    alert('Error al eliminar');
+                    toast.success('Club eliminado correctamente.');
+                  } catch (err: any) {
+                    toast.error('Error al eliminar: ' + err.message);
                   }
                 }}
                 className="absolute top-2 right-2 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 hover:bg-red-600 hover:text-white"
@@ -211,9 +224,9 @@ export default function TeamsListPage() {
       {/* CREATE MODAL - EXPANDED */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 max-w-2xl w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 uppercase-headings max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-black text-slate-800 dark:text-white">Alta de Club</h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 md:p-8 max-w-2xl w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 uppercase-headings max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white dark:bg-zinc-900 pb-2 z-10 border-b border-gray-100 dark:border-white/5">
+              <h2 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white">Alta de Club</h2>
               <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors">
                 <X size={24} className="text-slate-500" />
               </button>

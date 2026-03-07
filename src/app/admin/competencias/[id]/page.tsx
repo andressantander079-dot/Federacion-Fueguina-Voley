@@ -244,25 +244,25 @@ export default function DetalleTorneoPage() {
                         <table className="w-full text-left text-sm">
                            <thead className="bg-zinc-950 text-zinc-500 font-bold uppercase text-xs border-b border-zinc-800">
                               <tr>
-                                 <th className="p-4 w-12 text-center">#</th>
-                                 <th className="p-4 min-w-[200px]">Equipo</th>
-                                 <th className="p-4 text-center">PTS</th>
-                                 <th className="p-4 text-center">PG</th>
-                                 <th className="p-4 text-center">PP</th>
-                                 <th className="p-4 text-center">DIF</th>
-                                 {showMetrics && <><th className="p-4 text-center bg-blue-900/10 text-tdf-blue">Sets G</th><th className="p-4 text-center bg-blue-900/10 text-tdf-blue">Sets P</th><th className="p-4 text-center bg-blue-900/10 text-tdf-blue">Tantos G</th><th className="p-4 text-center bg-blue-900/10 text-tdf-blue">Tantos P</th></>}
+                                 <th className="px-2 py-3 md:p-4 w-8 md:w-12 text-center text-xs">#</th>
+                                 <th className="px-2 py-3 md:p-4 min-w-[140px] md:min-w-[200px] text-xs">Equipo</th>
+                                 <th className="px-2 py-3 md:p-4 text-center text-xs">PTS</th>
+                                 <th className="px-2 py-3 md:p-4 text-center text-xs">PG</th>
+                                 <th className="px-2 py-3 md:p-4 text-center text-xs">PP</th>
+                                 <th className="px-2 py-3 md:p-4 text-center text-xs">DIF</th>
+                                 {showMetrics && <><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Sets G</th><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Sets P</th><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Tantos G</th><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Tantos P</th></>}
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-zinc-800">
                               {tablaPosiciones.map((fila: any, i: number) => (
                                  <tr key={fila.id} className="hover:bg-zinc-800/50 transition">
-                                    <td className={`p-4 text-center font-bold ${i < 4 ? 'text-tdf-blue' : 'text-zinc-600'}`}>{i + 1}</td>
-                                    <td className="p-4 font-bold text-white">{fila.name}</td>
-                                    <td className="p-4 text-center font-black text-lg bg-zinc-950/30 text-white">{fila.pts}</td>
-                                    <td className="p-4 text-center text-green-500 font-bold">{fila.pg}</td>
-                                    <td className="p-4 text-center text-red-500 font-bold">{fila.pp}</td>
-                                    <td className="p-4 text-center font-mono text-zinc-400">{fila.pL === 0 ? fila.pW : (fila.pL === 0 ? 0 : (fila.pW / fila.pL).toFixed(3))}</td>
-                                    {showMetrics && <><td className="p-4 text-center bg-blue-900/5 font-mono text-xs text-zinc-500">{fila.setsW}</td><td className="p-4 text-center bg-blue-900/5 font-mono text-xs text-zinc-500">{fila.setsL}</td><td className="p-4 text-center bg-blue-900/5 font-mono text-xs text-zinc-500">{fila.pW}</td><td className="p-4 text-center bg-blue-900/5 font-mono text-xs text-zinc-500">{fila.pL}</td></>}
+                                    <td className={`px-2 py-3 md:p-4 text-center font-bold text-xs md:text-sm ${i < 4 ? 'text-tdf-blue' : 'text-zinc-600'}`}>{i + 1}</td>
+                                    <td className="px-2 py-3 md:p-4 font-bold text-white text-xs md:text-sm leading-tight">{fila.name}</td>
+                                    <td className="px-2 py-3 md:p-4 text-center font-black text-sm md:text-lg bg-zinc-950/30 text-white">{fila.pts}</td>
+                                    <td className="px-2 py-3 md:p-4 text-center text-green-500 font-bold text-xs md:text-sm">{fila.pg}</td>
+                                    <td className="px-2 py-3 md:p-4 text-center text-red-500 font-bold text-xs md:text-sm">{fila.pp}</td>
+                                    <td className="px-2 py-3 md:p-4 text-center font-mono text-zinc-400 text-[10px] md:text-xs">{fila.pL === 0 ? fila.pW : (fila.pL === 0 ? 0 : (fila.pW / fila.pL).toFixed(3))}</td>
+                                    {showMetrics && <><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.setsW}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.setsL}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.pW}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.pL}</td></>}
                                  </tr>
                               ))}
                               {tablaPosiciones.length === 0 && <tr><td colSpan={10} className="p-12 text-center text-zinc-600">Aún no hay partidos jugados.</td></tr>}
@@ -296,10 +296,10 @@ export default function DetalleTorneoPage() {
                                     <span className="text-[10px] font-bold bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">{p.round}</span>
                                     <button onClick={(e) => eliminarPartido(e, p.id)} className="text-zinc-600 hover:text-red-500 transition"><Trash2 size={14} /></button>
                                  </div>
-                                 <div className="flex items-center justify-between text-sm font-bold text-white">
-                                    <span>{p.home_team?.name}</span>
-                                    <span className="text-zinc-600 text-xs px-2">VS</span>
-                                    <span>{p.away_team?.name}</span>
+                                 <div className="flex items-center justify-between text-sm md:text-base font-bold text-white leading-tight">
+                                    <span className="flex-1 truncate">{p.home_team?.name}</span>
+                                    <span className="text-zinc-600 text-[10px] md:text-xs px-2 shrink-0">VS</span>
+                                    <span className="flex-1 text-right truncate">{p.away_team?.name}</span>
                                  </div>
                                  <div className="text-xs text-zinc-500 flex items-center gap-1">
                                     <Clock size={12} /> {formatArgentinaDateLiteral(p.scheduled_time)} {formatArgentinaTimeLiteral(p.scheduled_time)}
@@ -349,10 +349,10 @@ export default function DetalleTorneoPage() {
                                        </div>
 
                                        {/* Equipos y Resultado */}
-                                       <div className="flex flex-1 items-center justify-center gap-4 w-full md:w-auto">
-                                          <span className={`flex-1 text-right font-bold truncate ${p.home_score > p.away_score ? 'text-white' : 'text-zinc-500'}`}>{p.home_team?.name}</span>
+                                       <div className="flex flex-1 items-center justify-center gap-2 md:gap-4 w-full md:w-auto">
+                                          <span className={`flex-1 text-right font-bold truncate text-sm md:text-base ${p.home_score > p.away_score ? 'text-white' : 'text-zinc-500'}`}>{p.home_team?.name}</span>
 
-                                          <div className={`px-3 py-1 rounded text-sm font-mono font-bold whitespace-nowrap ${p.status === 'finalizado' ? 'bg-zinc-800 text-white' : 'bg-blue-500/10 text-tdf-blue border border-blue-500/20'}`}>
+                                          <div className={`px-2 py-1 md:px-3 rounded text-xs md:text-sm font-mono font-bold whitespace-nowrap shrink-0 ${p.status === 'finalizado' ? 'bg-zinc-800 text-white' : 'bg-blue-500/10 text-tdf-blue border border-blue-500/20'}`}>
                                              {p.status === 'finalizado' ? `${p.home_score} - ${p.away_score}` : 'VS'}
                                           </div>
 
@@ -360,9 +360,11 @@ export default function DetalleTorneoPage() {
                                        </div>
 
                                        {/* Acciones */}
-                                       <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-                                          <button onClick={(e) => eliminarPartido(e, p.id)} className="p-2 text-zinc-600 hover:text-red-500 transition hover:bg-red-500/10 rounded-lg" title="Eliminar"><Trash2 size={16} /></button>
-                                          <Link href={`/admin/partido/${p.id}`} className="p-2 bg-blue-500/10 text-tdf-blue rounded-lg hover:bg-blue-500/20 transition" title="Editar / Cargar Planilla"><Edit3 size={16} /></Link>
+                                       <div className="flex gap-2 w-full md:w-auto justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition mt-2 md:mt-0 pt-3 md:pt-0 border-t border-zinc-800/50 md:border-t-0">
+                                          {p.status !== 'finalizado' && (
+                                             <Link href={`/admin/partido/${p.id}`} className="px-4 py-2 bg-blue-500/10 text-tdf-blue rounded-lg hover:bg-blue-500/20 transition flex items-center justify-center flex-1 md:flex-none" title="Editar / Cargar Planilla"><Edit3 size={16} /><span className="ml-2 font-bold text-xs md:hidden">Gestionar</span></Link>
+                                          )}
+                                          <button onClick={(e) => eliminarPartido(e, p.id)} className="px-4 py-2 text-zinc-500 bg-zinc-900 border border-zinc-800 hover:text-red-500 hover:border-red-500/50 transition hover:bg-red-500/10 rounded-lg flex items-center justify-center flex-1 md:flex-none" title="Eliminar"><Trash2 size={16} /><span className="ml-2 font-bold text-xs md:hidden">Eliminar</span></button>
                                        </div>
 
                                     </div>
@@ -407,7 +409,7 @@ export default function DetalleTorneoPage() {
          {/* MODAL: NUEVO PARTIDO */}
          {modalPartido && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-               <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-lg shadow-2xl scale-100 border border-zinc-800">
+               <div className="bg-zinc-900 rounded-2xl p-5 md:p-6 w-full max-w-lg shadow-2xl scale-100 border border-zinc-800 max-h-[90vh] overflow-y-auto">
                   <h3 className="text-xl font-black text-white mb-6">Programar Encuentro</h3>
                   <form onSubmit={agregarPartido} className="space-y-4">
                      <div>

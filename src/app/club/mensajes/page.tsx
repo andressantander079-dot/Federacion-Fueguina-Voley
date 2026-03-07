@@ -4,11 +4,14 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
+import EmptyState from '@/components/ui/EmptyState';
 import {
    Mail, Send, Inbox, Plus, Search,
    ChevronRight, ArrowLeft, Clock,
    AlertCircle, CheckCircle, FileText,
-   User, Shield, Paperclip, Download
+   User, Shield, Paperclip, Download, Loader2
 } from 'lucide-react';
 import { useClubAuth } from '@/hooks/useClubAuth';
 
@@ -139,6 +142,10 @@ export default function ClubMensajesPage() {
    }
 
    async function markAsRead(msg: any) {
+      if (selectedMessage?.id === msg.id) {
+         setSelectedMessage(null); // Permite contraer (Acordeón mode)
+         return;
+      }
       if (activeTab === 'inbox' && !msg.read_at && msg.recipient_row_id) {
          await supabase.from('message_recipients')
             .update({ read_at: new Date().toISOString() })
@@ -174,8 +181,8 @@ export default function ClubMensajesPage() {
    return (
       <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col md:flex-row overflow-hidden">
 
-         {/* SIDEBAR / LISTA */}
-         <div className={`${selectedMessage || activeTab === 'compose' ? 'hidden md:flex' : 'flex'} w-full md:w-[400px] flex-col border-r border-zinc-800 bg-zinc-900/50`}>
+         {/* SIDEBAR / LISTA (En móviles nunca se esconde salvo al redactar) */}
+         <div className={`${activeTab === 'compose' ? 'hidden md:flex' : 'flex'} w-full md:w-[400px] flex-col border-r border-zinc-800 bg-zinc-900/50`}>
 
             {/* Header Sidebar */}
             <div className="p-4 border-b border-zinc-800">
@@ -224,11 +231,16 @@ export default function ClubMensajesPage() {
 
             {/* List */}
             <div className="flex-1 overflow-y-auto px-2 space-y-1 pb-20">
-               {filteredList.length === 0 ? (
-                  <div className="text-center py-12 text-zinc-600">
-                     <Mail size={32} className="mx-auto mb-2 opacity-20" />
-                     <p className="text-sm">No hay mensajes.</p>
-                  </div>
+               {loading ? (
+                  <div className="flex justify-center p-8"><Loader2 className="animate-spin text-orange-600" /></div>
+               ) : filteredList.length === 0 ? (
+                  <EmptyState
+                     icon={<Mail size={48} />}
+                     title={activeTab === 'inbox' ? 'Bandeja de Entrada Vacía' : 'Sin Mensajes Enviados'}
+                     description={activeTab === 'inbox' ? 'Aún no has recibido comunicaciones ni notificaciones de la Federación.' : 'No has enviado ninguna consulta a la mesa de entrada de la administración.'}
+                     actionLabel={activeTab === 'inbox' ? undefined : 'Redactar Consulta'}
+                     onAction={activeTab === 'inbox' ? undefined : () => setActiveTab('compose')}
+                  />
                ) : (
                   filteredList.map(msg => (
                      <div
@@ -247,7 +259,7 @@ export default function ClubMensajesPage() {
                         <h3 className={`text-sm font-bold mb-1 truncate ${activeTab === 'inbox' && !msg.read_at ? 'text-white' : 'text-zinc-300'}`}>
                            {msg.subject}
                         </h3>
-                        <p className="text-xs text-zinc-500 line-clamp-2">
+                        <p className={`text-xs text-zinc-500 transition-all ${selectedMessage?.id === msg.id ? 'line-clamp-none md:line-clamp-2 mt-2 leading-relaxed text-zinc-400' : 'line-clamp-2'}`}>
                            {msg.body}
                         </p>
 
@@ -260,24 +272,53 @@ export default function ClubMensajesPage() {
                         {activeTab === 'inbox' && !msg.read_at && (
                            <div className="absolute right-4 bottom-4 w-2 h-2 bg-orange-600 rounded-full animate-pulse" />
                         )}
+
+                        {/* ACORDEÓN MÓVIL: Visible únicamente en pantallas pequeñas cuando el mensaje está expandido */}
+                        {selectedMessage?.id === msg.id && (
+                           <div className="md:hidden mt-4 pt-4 border-t border-zinc-800 animate-in slide-in-from-top-2 flex flex-col gap-3">
+                              {msg.priority !== 'normal' && (
+                                 <div>{getPriorityBadge(msg.priority)}</div>
+                              )}
+
+                              {msg.attachment_url && (
+                                 <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl flex flex-col gap-2">
+                                    <div className="flex items-center justify-between">
+                                       <div className="flex items-center gap-2 text-blue-500">
+                                          <FileText size={16} />
+                                          <span className="text-xs font-bold text-zinc-300 line-clamp-1">Archivo Adjunto</span>
+                                       </div>
+                                    </div>
+                                    <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="flex items-center justify-center gap-2 bg-zinc-800 text-white border border-zinc-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-zinc-700 transition">
+                                       <Download size={14} /> Descargar Archivo
+                                    </a>
+                                 </div>
+                              )}
+
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedMessage(null); }} className="mt-2 w-full py-2 bg-zinc-800 text-zinc-300 rounded-lg text-xs font-bold text-center">
+                                 Contraer Mensaje
+                              </button>
+                           </div>
+                        )}
                      </div>
                   ))
                )}
             </div>
          </div>
 
-         {/* MAIN CONTENT / READING / COMPOSING */}
-         <div className={`flex-1 flex flex-col bg-zinc-950 ${!selectedMessage && activeTab !== 'compose' ? 'hidden md:flex' : 'flex'}`}>
+         {/* MAIN CONTENT / READING / COMPOSING: Oculto en móviles si está en Inbox/Sent, visible si es Compose. En escritorio siempre visible */}
+         <div className={`flex-1 flex flex-col bg-zinc-950 ${activeTab === 'compose' ? 'flex' : 'hidden md:flex'}`}>
 
-            {/* HEADER MOVIL PARA VOLVER */}
-            <div className="md:hidden p-4 border-b border-zinc-800 flex items-center gap-3">
-               <button onClick={() => { setSelectedMessage(null); if (activeTab === 'compose') setActiveTab('inbox'); }} className="text-zinc-400">
-                  <ArrowLeft size={20} />
-               </button>
-               <h2 className="font-bold text-white">
-                  {activeTab === 'compose' ? 'Redactar' : 'Lectura'}
-               </h2>
-            </div>
+            {/* HEADER MÓVIL PARA VOLVER A LA LISTA DESDE REDACTAR */}
+            {activeTab === 'compose' && (
+               <div className="md:hidden p-4 border-b border-zinc-800 flex items-center gap-3">
+                  <button onClick={() => { setActiveTab('inbox'); }} className="text-zinc-400">
+                     <ArrowLeft size={20} />
+                  </button>
+                  <h2 className="font-bold text-white">
+                     Redactar Consulta
+                  </h2>
+               </div>
+            )}
 
             {/* VISTA: REDACTAR */}
             {activeTab === 'compose' && (

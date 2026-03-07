@@ -141,6 +141,7 @@ export default function AdminDashboardPage() {
         torneos: 0,
         jugadores: 0
     });
+    const [topClubs, setTopClubs] = useState<{ name: string, count: number, logo: string | null }[]>([]);
     const [exporting, setExporting] = useState(false);
     const [loading, setLoading] = useState(true);
 
@@ -178,6 +179,27 @@ export default function AdminDashboardPage() {
                 .from('players')
                 .select('*', { count: 'exact', head: true });
 
+
+            // 6. Top 5 Clubes con mayor retención
+            const { data: allP } = await supabase.from('players').select('team_id');
+            const { data: allC } = await supabase.from('teams').select('id, name, logo_url');
+
+            if (allP && allC) {
+                const freqMap: Record<string, number> = {};
+                allP.forEach(p => {
+                    if (p.team_id) freqMap[p.team_id] = (freqMap[p.team_id] || 0) + 1;
+                });
+
+                const ranked = allC.map(c => ({
+                    name: c.name,
+                    logo: c.logo_url,
+                    count: freqMap[c.id] || 0
+                }))
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 5);
+
+                setTopClubs(ranked);
+            }
 
             setCounts({
                 mensajes: msgCount || 0,
@@ -351,15 +373,48 @@ export default function AdminDashboardPage() {
     return (
         <div className="p-4 md:p-8 min-h-screen transition-colors duration-500">
 
-            {/* Header */}
-            <header className="mb-10 animate-in fade-in slide-in-from-top-4 duration-700">
-                <h1 className="text-3xl md:text-4xl font-black text-orange-900 dark:text-white tracking-tight mb-2">
-                    Panel de Control <span className="text-tdf-orange">FVU</span>
-                </h1>
-                <p className="text-slate-500 dark:text-slate-400 text-lg">
-                    Bienvenido al sistema de gestión centralizada.
-                </p>
-            </header>
+            {/* Header / Top Metric Bar */}
+            <div className="flex flex-col lg:flex-row gap-8 mb-10 animate-in fade-in slide-in-from-top-4 duration-700">
+                <header className="flex-1">
+                    <h1 className="text-3xl md:text-4xl font-black text-orange-900 dark:text-white tracking-tight mb-2">
+                        Panel de Control <span className="text-tdf-orange">FVU</span>
+                    </h1>
+                    <p className="text-slate-500 dark:text-slate-400 text-lg">
+                        Bienvenido al sistema de gestión centralizada.
+                    </p>
+                </header>
+
+                {/* KPI: Top Club Retention */}
+                {!loading && topClubs.length > 0 && (
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-3xl shadow-lg border border-gray-100 dark:border-zinc-800 lg:min-w-[400px]">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-sm text-slate-700 dark:text-gray-200 flex items-center gap-2">
+                                <Trophy size={16} className="text-tdf-orange" />
+                                Top Retención (Atletas)
+                            </h3>
+                            <Link href="/admin/equipos" className="text-xs font-bold text-tdf-blue hover:underline">Ver Todos</Link>
+                        </div>
+                        <div className="space-y-3">
+                            {topClubs.map((c, i) => (
+                                <div key={i} className="flex items-center justify-between group">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-slate-500 text-xs overflow-hidden">
+                                            {c.logo ? <img src={c.logo} className="w-full h-full object-cover" /> : i + 1}
+                                        </div>
+                                        <span className="text-sm font-bold text-slate-800 dark:text-slate-300 truncate max-w-[150px]">{c.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-2 w-16 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                            <div className="h-full bg-tdf-blue" style={{ width: `${Math.min((c.count / (topClubs[0]?.count || 1)) * 100, 100)}%` }}></div>
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-400 w-6 text-right">{c.count}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* Recent Matches & Agenda */}
             <RecentMatches />

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ClipboardList, Calendar, DollarSign, MessageSquare, LogOut } from 'lucide-react';
+import { Home, ClipboardList, Calendar, DollarSign, MessageSquare, LogOut, User } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
@@ -21,6 +21,7 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
         { href: '/referee/agenda', label: 'Agenda', icon: Calendar },
         { href: '/referee/mensajes', label: 'Mensajes', icon: MessageSquare },
         { href: '/referee/reportes', label: 'Reportes', icon: DollarSign },
+        { href: '/referee/perfil', label: 'Mi Perfil', icon: User },
     ];
 
     return (
@@ -48,8 +49,8 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
                                     key={item.href}
                                     href={item.href}
                                     className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold ${isActive
-                                            ? 'bg-tdf-orange text-white shadow-lg shadow-orange-900/20'
-                                            : 'text-zinc-400 hover:bg-white/5 hover:text-white'
+                                        ? 'bg-tdf-orange text-white shadow-lg shadow-orange-900/20'
+                                        : 'text-zinc-400 hover:bg-white/5 hover:text-white'
                                         }`}
                                 >
                                     <Icon size={20} />
