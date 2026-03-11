@@ -24,16 +24,27 @@ export default function RefereeMessagesPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
+        // Fetch from message_recipients for broadcasts/messages directed to this referee
         const { data } = await supabase
-            .from('messages')
+            .from('message_recipients')
             .select(`
                 *,
-                sender:profiles!sender_id (full_name, role)
+                message:messages (
+                    id, subject, body, created_at, priority, type, sender_id, attachments,
+                    sender:profiles!sender_id (full_name, role)
+                )
             `)
-            .or(`receiver_id.eq.${user.id},receiver_id.is.null`) // Received private or broadcast
+            .eq('recipient_user_id', user.id)
             .order('created_at', { ascending: false })
 
-        if (data) setMessages(data)
+        // Format to match the expected structure
+        const formattedMessages = data?.map((item: any) => ({
+            ...item.message,
+            read_at: item.read_at,
+            recipient_row_id: item.id
+        })) || [];
+
+        setMessages(formattedMessages)
         setLoading(false)
     }
 
@@ -46,20 +57,13 @@ export default function RefereeMessagesPage() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) throw new Error("No autenticado")
 
-            // Find an admin to send to (Simplification: Send to first admin found or specific logic)
-            // For now, let's try to find an admin.
-            const { data: admins } = await supabase.from('profiles').select('id').eq('role', 'admin').limit(1)
-
-            if (!admins || admins.length === 0) throw new Error("No hay administradores disponibles para recibir mensajes.")
-
-            const adminId = admins[0].id
-
+            // Referees send 'consulta' type messages to the admin. No need for receiver_id or read column.
             const { error } = await supabase.from('messages').insert({
                 sender_id: user.id,
-                receiver_id: adminId,
                 subject,
                 body,
-                read: false
+                type: 'consulta',
+                priority: 'normal'
             })
 
             if (error) throw error
@@ -76,12 +80,12 @@ export default function RefereeMessagesPage() {
         }
     }
 
-    const markAsRead = async (msgId: string, currentRead: boolean) => {
-        if (currentRead) return
+    const markAsRead = async (msgId: string, currentReadAt: string | null, recipientRowId: string | undefined) => {
+        if (currentReadAt || !recipientRowId) return
 
         // Optimistic update
-        setMessages(messages.map(m => m.id === msgId ? { ...m, read: true } : m))
-        await supabase.from('messages').update({ read: true }).eq('id', msgId)
+        setMessages(messages.map(m => m.id === msgId ? { ...m, read_at: new Date().toISOString() } : m))
+        await supabase.from('message_recipients').update({ read_at: new Date().toISOString() }).eq('id', recipientRowId)
     }
 
     return (
@@ -122,14 +126,14 @@ export default function RefereeMessagesPage() {
                         messages.map(msg => (
                             <div
                                 key={msg.id}
-                                onClick={() => markAsRead(msg.id, msg.read)}
-                                className={`p-4 rounded-xl border transition cursor-pointer ${msg.read
+                                onClick={() => markAsRead(msg.id, msg.read_at, msg.recipient_row_id)}
+                                className={`p-4 rounded-xl border transition cursor-pointer ${msg.read_at
                                         ? 'bg-black border-zinc-800 text-zinc-400'
                                         : 'bg-zinc-900 border-zinc-700 text-white shadow-md shadow-orange-900/10 border-l-4 border-l-tdf-orange'
                                     }`}
                             >
                                 <div className="flex justify-between items-start mb-2">
-                                    <h4 className={`font-bold text-lg ${msg.read ? 'text-zinc-300' : 'text-white'}`}>{msg.subject}</h4>
+                                    <h4 className={`font-bold text-lg ${msg.read_at ? 'text-zinc-300' : 'text-white'}`}>{msg.subject}</h4>
                                     <span className="text-[10px] text-zinc-500 bg-zinc-950 px-2 py-1 rounded">
                                         {new Date(msg.created_at).toLocaleDateString()}
                                     </span>

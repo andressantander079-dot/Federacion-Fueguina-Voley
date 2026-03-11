@@ -125,6 +125,12 @@ export default function MobileNav() {
 
   if (loading) return null;
 
+  // No mostrar la navegación móvil en los paneles de roles autenticados (admin, club, referee)
+  // Ocultar *sincrónicamente* en base a la URL para que no dependa exclusivamente del Auth (lo cual genera un flash o fallo visual)
+  if (role !== 'public' || pathname.startsWith('/admin') || pathname.startsWith('/club') || pathname.startsWith('/referee')) {
+    return null;
+  }
+
   // Calculate sliding indicator multiplier based on 5 theoretical columns (20vw each)
   const getIndicatorIndex = (idx: number) => {
     if (idx === -1) return -1;
@@ -147,7 +153,7 @@ export default function MobileNav() {
         <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsMenuOpen(false)}>
           <div className="absolute bottom-32 left-0 right-0 mx-auto w-64 bg-zinc-900 border border-zinc-800 rounded-3xl p-2 shadow-2xl animate-in slide-in-from-bottom-5" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-white/5 mb-2 flex items-center justify-between">
-              <span className="text-xs font-black text-tdf-orange uppercase tracking-widest">Opciones {role === 'public' ? 'FFV' : role}</span>
+              <span className="text-xs font-black text-tdf-orange uppercase tracking-widest">Opciones FFV</span>
               <button onClick={() => setIsMenuOpen(false)} className="text-zinc-500 hover:text-white transition"><X size={18} /></button>
             </div>
             <div className="flex flex-col gap-1">
@@ -162,25 +168,6 @@ export default function MobileNav() {
                 <span className="text-sm font-bold text-zinc-500">Apariencia</span>
                 <ThemeToggle />
               </div>
-              {role === 'admin' && (
-                <>
-                  <div className="h-px bg-white/5 my-2"></div>
-                  <Link href="/admin" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-tdf-orange hover:bg-orange-500/10 transition font-black text-sm">
-                    <LayoutDashboard size={18} /> Ir al Panel Principal
-                  </Link>
-                  <Link href="/admin/arbitros" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
-                    <Users size={18} /> Colegio de Árbitros
-                  </Link>
-                  <Link href="/admin/programar" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition font-bold text-sm">
-                    <CalendarDays size={18} /> Designaciones de Partidos
-                  </Link>
-                </>
-              )}
-              {role !== 'public' && (
-                <button onClick={async () => { await supabase.auth.signOut(); window.location.href = '/'; }} className="w-full flex items-center justify-start gap-3 p-3 rounded-xl text-red-500 hover:bg-red-500/10 transition font-bold text-sm mt-2">
-                  <LogOut size={18} /> Cerrar Sesión
-                </button>
-              )}
             </div>
           </div>
         </div>
