@@ -14,6 +14,9 @@ export default function InboxPage() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [selectedMessage, setSelectedMessage] = useState<any | null>(null)
+    const [replying, setReplying] = useState(false)
+    const [replyBody, setReplyBody] = useState('')
+    const [sendingReply, setSendingReply] = useState(false)
     const supabase = createClient()
 
     useEffect(() => {
@@ -28,7 +31,7 @@ export default function InboxPage() {
             .from('messages')
             .select(`
                 *,
-                sender:profiles(email, club_id, full_name)
+                sender:profiles(id, email, club_id, full_name, role)
             `)
             .eq('type', 'consulta') // Mensajes entrantes
             .order('created_at', { ascending: false })
@@ -40,12 +43,55 @@ export default function InboxPage() {
     const markAsRead = async (msg: any) => {
         if (selectedMessage?.id === msg.id) {
             setSelectedMessage(null); // Permite contraer el acordeón (Toggle)
+            setReplying(false);
+            setReplyBody('');
             return;
         }
         setSelectedMessage(msg)
-        if (!msg.read) {
-            await supabase.from('messages').update({ read: true }).eq('id', msg.id)
-            setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, read: true } : m))
+    }
+
+    const handleReply = async () => {
+        if (!replyBody.trim() || !selectedMessage) return
+
+        setSendingReply(true)
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) throw new Error("No autenticado")
+
+            // 1. Insert reply message
+            const { data: newMsg, error: msgError } = await supabase.from('messages').insert({
+                sender_id: user.id,
+                subject: `RE: ${selectedMessage.subject}`,
+                body: replyBody,
+                priority: selectedMessage.priority,
+                type: 'comunicado', // Reply acts like a broadcast to the user/club
+            }).select().single()
+
+            if (msgError) throw msgError
+
+            // 2. Determine recipient (club or referee)
+            const isClub = selectedMessage.sender?.club_id != null
+            
+            const recipientData = {
+                message_id: newMsg.id,
+                recipient_club_id: isClub ? selectedMessage.sender.club_id : null,
+                recipient_user_id: !isClub ? selectedMessage.sender.id : null,
+            }
+
+            const { error: recError } = await supabase.from('message_recipients').insert([recipientData])
+            if (recError) throw recError
+
+            alert("Respuesta enviada correctamente.")
+            setReplyBody('')
+            setReplying(false)
+            
+            // Optionally, refresh inbox here if needed
+            fetchInbox()
+        } catch (error: any) {
+            console.error(error)
+            alert('Error al enviar respuesta: ' + error.message)
+        } finally {
+            setSendingReply(false)
         }
     }
 
@@ -184,12 +230,43 @@ export default function InboxPage() {
                         )}
 
                         {/* Fake reply placeholder / info box for next phase */}
-                        <div className="mt-8 bg-blue-50 dark:bg-blue-500/10 p-4 rounded-xl border border-blue-100 dark:border-blue-500/20 flex gap-3">
-                            <AlertCircle size={18} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                            <div>
-                                <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300">Respuesta Oficial</h4>
-                                <p className="text-xs text-blue-800 dark:text-blue-400 mt-1">Próximamente la administración podrá responder directamente a este hilo por correo electrónico o desde este panel.</p>
-                            </div>
+                        <div className="mt-8 pt-6 border-t border-slate-100 dark:border-zinc-800">
+                            {!replying ? (
+                                <button
+                                    onClick={() => setReplying(true)}
+                                    className="w-full flex items-center justify-center gap-2 py-3 bg-tdf-blue hover:bg-tdf-blue-dark text-white rounded-xl shadow-lg transition font-bold"
+                                >
+                                    Responder Comunicado
+                                </button>
+                            ) : (
+                                <div className="space-y-4 animate-in fade-in zoom-in-95">
+                                    <h4 className="text-sm font-bold text-slate-800 dark:text-zinc-300 mb-2">Respuesta Oficial</h4>
+                                    <textarea
+                                        className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl p-4 text-slate-800 dark:text-white outline-none focus:border-tdf-blue transition resize-none"
+                                        rows={5}
+                                        placeholder="Escribe la respuesta aquí..."
+                                        value={replyBody}
+                                        onChange={e => setReplyBody(e.target.value)}
+                                        disabled={sendingReply}
+                                    />
+                                    <div className="flex gap-2 justify-end">
+                                        <button
+                                            onClick={() => setReplying(false)}
+                                            disabled={sendingReply}
+                                            className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white transition"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            onClick={handleReply}
+                                            disabled={sendingReply}
+                                            className="px-6 py-2 bg-tdf-blue hover:bg-tdf-blue-dark text-white rounded-lg shadow-md transition font-bold disabled:opacity-50"
+                                        >
+                                            {sendingReply ? 'Enviando...' : 'Enviar Respuesta'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (

@@ -50,6 +50,16 @@ const getMosaicCards = (counts: any) => [
         badge: 0
     },
     {
+        title: 'Noticias',
+        description: 'Gestión de novedades y comunicados.',
+        href: '/admin/noticias',
+        icon: <Megaphone className="w-8 h-8" />,
+        color: '',
+        tdfColor: 'from-amber-400 to-orange-600',
+        delay: 'delay-250',
+        badge: 0
+    },
+    {
         title: 'Equipos',
         description: 'Clubes, planteles y jugadores.',
         href: '/admin/equipos',
@@ -144,6 +154,7 @@ export default function AdminDashboardPage() {
     const [topClubs, setTopClubs] = useState<{ name: string, count: number, logo: string | null }[]>([]);
     const [exporting, setExporting] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [showClubsList, setShowClubsList] = useState(false);
 
     useEffect(() => {
         fetchCounts();
@@ -387,31 +398,42 @@ export default function AdminDashboardPage() {
                 {/* KPI: Top Club Retention */}
                 {!loading && topClubs.length > 0 && (
                     <div className="bg-white dark:bg-zinc-900 p-4 rounded-3xl shadow-lg border border-gray-100 dark:border-zinc-800 lg:min-w-[400px]">
-                        <div className="flex justify-between items-center mb-4">
+                        <div className="flex justify-between items-center cursor-pointer" onClick={() => setShowClubsList(!showClubsList)}>
                             <h3 className="font-bold text-sm text-slate-700 dark:text-gray-200 flex items-center gap-2">
                                 <Trophy size={16} className="text-tdf-orange" />
-                                Top Retención (Atletas)
+                                Clubes e Integrantes
                             </h3>
-                            <Link href="/admin/equipos" className="text-xs font-bold text-tdf-blue hover:underline">Ver Todos</Link>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-tdf-blue hover:underline">Ver Todos</span>
+                                <svg
+                                    className={`w-4 h-4 text-slate-400 transition-transform ${showClubsList ? 'rotate-180' : ''}`}
+                                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </div>
                         </div>
-                        <div className="space-y-3">
-                            {topClubs.map((c, i) => (
-                                <div key={i} className="flex items-center justify-between group">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-slate-500 text-xs overflow-hidden">
-                                            {c.logo ? <img src={c.logo} className="w-full h-full object-cover" /> : i + 1}
+
+                        {showClubsList && (
+                            <div className="space-y-3 mt-4 animate-in slide-in-from-top-2">
+                                {topClubs.map((c, i) => (
+                                    <div key={i} className="flex items-center justify-between group">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-slate-500 text-xs overflow-hidden">
+                                                {c.logo ? <img src={c.logo} className="w-full h-full object-cover" /> : i + 1}
+                                            </div>
+                                            <span className="text-sm font-bold text-slate-800 dark:text-slate-300 truncate max-w-[150px]">{c.name}</span>
                                         </div>
-                                        <span className="text-sm font-bold text-slate-800 dark:text-slate-300 truncate max-w-[150px]">{c.name}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <div className="h-2 w-16 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                                            <div className="h-full bg-tdf-blue" style={{ width: `${Math.min((c.count / (topClubs[0]?.count || 1)) * 100, 100)}%` }}></div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="h-2 w-16 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                                <div className="h-full bg-tdf-blue" style={{ width: `${Math.min((c.count / (topClubs[0]?.count || 1)) * 100, 100)}%` }}></div>
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-400 w-6 text-right">{c.count}</span>
                                         </div>
-                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-400 w-6 text-right">{c.count}</span>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

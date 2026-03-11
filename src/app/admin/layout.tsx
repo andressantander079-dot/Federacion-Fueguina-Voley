@@ -18,25 +18,7 @@ export default function AdminLayout({
     const [unreadMsgs, setUnreadMsgs] = useState(0)
 
     useEffect(() => {
-        const fetchUnread = async () => {
-            const { count } = await supabase
-                .from('messages')
-                .select('*', { count: 'exact', head: true })
-                .eq('type', 'consulta')
-                .eq('read', false)
-
-            if (count !== null) setUnreadMsgs(count)
-        }
-
-        // Initial fetch
-        fetchUnread()
-
-        // Realtime subscription
-        const channel = supabase.channel('admin-msgs-badge')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: "type=eq.consulta" }, fetchUnread)
-            .subscribe()
-
-        return () => { supabase.removeChannel(channel) }
+        setUnreadMsgs(0)
     }, [supabase])
 
     const handleLogout = async () => {
