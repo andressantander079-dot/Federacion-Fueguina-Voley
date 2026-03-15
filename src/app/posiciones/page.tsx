@@ -72,6 +72,7 @@ export default function PosicionesPage() {
                     home_team_id, away_team_id,
                     home_score, away_score,
                     set_scores,
+                    sheet_data,
                     status,
                     home_team:teams!home_team_id(id, name, shield_url),
                     away_team:teams!away_team_id(id, name, shield_url)
@@ -101,6 +102,8 @@ export default function PosicionesPage() {
               pp: 0,
               sf: 0,
               sc: 0,
+              pf: 0,
+              pc: 0,
               coef_sets: 0,
               coef_points: 0 // Si tuviéramos puntos por set, aquí simplificado
             });
@@ -125,10 +128,24 @@ export default function PosicionesPage() {
             const setsHome = m.home_score;
             const setsAway = m.away_score;
 
+            let pfHome = 0;
+            let pcHome = 0;
+            if (m.sheet_data && m.sheet_data.sets_history) {
+              m.sheet_data.sets_history.forEach((set: any) => {
+                pfHome += set.home || 0;
+                pcHome += set.away || 0;
+              });
+            }
+
             home.sf += setsHome;
             home.sc += setsAway;
+            home.pf += pfHome;
+            home.pc += pcHome;
+            
             away.sf += setsAway;
             away.sc += setsHome;
+            away.pf += pcHome;
+            away.pc += pfHome;
 
             if (setsHome > setsAway) {
               home.pg++;
@@ -258,6 +275,7 @@ export default function PosicionesPage() {
                       <th className="px-4 py-3 font-bold text-center hidden sm:table-cell">PG</th>
                       <th className="px-4 py-3 font-bold text-center hidden sm:table-cell">PP</th>
                       <th className="px-4 py-3 font-bold text-center text-slate-400">Sets</th>
+                      <th className="px-4 py-3 font-bold text-center text-slate-400">Puntos (PF-PC)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -285,14 +303,17 @@ export default function PosicionesPage() {
                         <td className="px-4 py-4 text-center text-red-500 dark:text-red-400 font-medium hidden sm:table-cell">
                           {row.pp}
                         </td>
-                        <td className="px-4 py-4 text-center text-slate-400 text-xs">
+                        <td className="px-4 py-4 text-center text-slate-400 text-xs font-bold">
                           {row.sf}-{row.sc}
+                        </td>
+                        <td className="px-4 py-4 text-center text-xs font-semibold whitespace-nowrap">
+                          <span className="text-green-600 dark:text-green-500">{row.pf}</span> - <span className="text-red-500 dark:text-red-400">{row.pc}</span>
                         </td>
                       </tr>
                     ))}
                     {standings.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="text-center py-10 text-slate-400 font-medium">Aún no hay partidos jugados.</td>
+                        <td colSpan={8} className="text-center py-10 text-slate-400 font-medium">Aún no hay partidos jugados.</td>
                       </tr>
                     )}
                   </tbody>

@@ -25,9 +25,15 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     setErrorMsg('');
 
     try {
+      // INTERCEPCIÓN DNI
+      let loginEmail = formData.email.trim();
+      if (/^\d{7,9}$/.test(loginEmail)) {
+          loginEmail = `${loginEmail}@federacion.com`;
+      }
+
       // 1. Autenticación
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
+        email: loginEmail,
         password: formData.password,
       });
 
@@ -50,6 +56,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       switch (profile.role) {
         case 'admin': router.push('/admin/dashboard'); break;
         case 'club': router.push('/club'); break;
+        case 'temp_pase': router.push('/pases'); break;
         default: router.push('/');
       }
 
@@ -67,17 +74,17 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
         <div className="bg-slate-900 p-6 text-center text-white">
           <h2 className="text-xl font-bold uppercase">Acceso Oficial</h2>
-          <p className="text-xs text-slate-400">Sistema de Gestión FFV</p>
+          <p className="text-xs text-slate-400">Sistema de Gestión FVF</p>
         </div>
 
         <form onSubmit={handleLogin} className="p-8 space-y-4">
           {errorMsg && <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded">{errorMsg}</div>}
 
           <div>
-            <label className="text-xs font-bold text-slate-400 uppercase">Email</label>
+            <label className="text-xs font-bold text-slate-400 uppercase">Email o DNI</label>
             <div className="relative">
               <Mail className="absolute left-3 top-3 text-slate-400" size={16} />
-              <input type="email" required className="w-full pl-10 p-2 border rounded-lg font-bold text-slate-700"
+              <input type="text" required className="w-full pl-10 p-2 border rounded-lg font-bold text-slate-700"
                 onChange={e => setFormData({ ...formData, email: e.target.value })} />
             </div>
           </div>

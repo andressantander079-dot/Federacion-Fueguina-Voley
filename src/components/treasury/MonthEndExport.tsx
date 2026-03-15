@@ -78,7 +78,7 @@ export default function MonthEndExport() {
             worksheet.columns = [
                 { header: 'Fecha', key: 'fecha', width: 12 },
                 { header: 'Tipo', key: 'tipo', width: 10 },
-                { header: 'Monto', key: 'monto', width: 15 },
+                { header: 'Monto (ARS)', key: 'monto', width: 15 },
                 { header: 'Entidad', key: 'entidad', width: 25 },
                 { header: 'CUIT', key: 'cuit', width: 15 },
                 { header: 'Cuenta', key: 'cuenta', width: 25 },
@@ -137,7 +137,7 @@ export default function MonthEndExport() {
             let readmeContent = `REPORTE DE COMPROBANTES - PERIODO ${month}\n\n`
             movements.forEach(m => {
                 if (m.proof_url) {
-                    readmeContent += `[${m.date.slice(0, 10)}] $${m.amount} - ${m.entity_name}: ${m.proof_url}\n`
+                    readmeContent += `[${m.date.slice(0, 10)}] ARS $${m.amount} - ${m.entity_name}: ${m.proof_url}\n`
                 }
             })
             folder?.file('Indice_Comprobantes.txt', readmeContent)

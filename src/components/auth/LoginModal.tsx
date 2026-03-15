@@ -27,9 +27,15 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         setError(null)
 
         try {
+            // INTERCEPCIÓN DNI
+            let loginEmail = email.trim();
+            if (/^\d{7,9}$/.test(loginEmail)) {
+                loginEmail = `${loginEmail}@federacion.com`;
+            }
+
             const { data, error: authError } = await supabase.auth.signInWithPassword({
-                email,
-                password,
+                email: loginEmail,
+                password: password.trim(),
             })
 
             if (authError) throw authError
@@ -48,15 +54,6 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     return
                 }
 
-                // Verificar estado de solicitud si es club pendiente (opcional, también se maneja en landing pero bueno tenerlo aqui)
-                // Para simplificar, redirigimos y dejamos que la pagina de destino maneje o el middleware (si hubiera).
-                // Pero usuario pidió Bloquear pending. Si es pending, normalmente no tiene role='club' asignado aún, 
-                // porque mi lógica de aprobación asigna el rol 'club' AL APROBAR.
-                // Antes de aprobar, el usuario tiene rol 'user' (default) o null?
-                // En mi codigo de registro /registro, creé el usuario pero no le asigne rol en profiles (trigger default 'user'?).
-                // Si es default user, irá a '/'. 
-                // Podemos hacer un chequeo extra acá si queremos ser muy "pro", pero con dirigirlos al home está bien por ahora.
-
                 onClose()
 
                 switch (profile.role) {
@@ -72,12 +69,14 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     case 'referee':
                         router.push('/referee')
                         break
+                    case 'temp_pase':
+                        router.push('/pases')
+                        break
                     default:
                         // Si es usuario normal, revisamos si tiene solicitud pendiente
                         const { data: req } = await supabase.from('club_requests').select('status').eq('user_id', data.user.id).single()
                         if (req?.status === 'pending') {
                             alert("Tu cuenta está pendiente de aprobación.")
-                            // Opcional: logout?
                         }
                         router.push('/')
                 }
@@ -123,13 +122,13 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Correo Electrónico
+                                Correo Electrónico o DNI
                             </label>
                             <input
-                                type="email"
+                                type="text"
                                 required
                                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-tdf-orange outline-none bg-white dark:bg-zinc-800"
-                                placeholder="usuario@fvu.com"
+                                placeholder="usuario@fvu.com o DNI"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                             />

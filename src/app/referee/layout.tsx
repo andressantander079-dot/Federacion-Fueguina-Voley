@@ -28,7 +28,7 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
         <div className="min-h-screen bg-black text-white pb-20 md:pb-0">
             {/* Mobile Header */}
             <div className="md:hidden p-4 border-b border-white/10 flex justify-between items-center bg-black/50 backdrop-blur-md sticky top-0 z-50">
-                <h1 className="font-black text-lg tracking-tight">ÁRBITROS <span className="text-tdf-orange">FFV</span></h1>
+                <h1 className="font-black text-lg tracking-tight">ÁRBITROS <span className="text-tdf-orange">FVF</span></h1>
                 <button onClick={handleLogout} className="text-zinc-500 hover:text-white"><LogOut size={20} /></button>
             </div>
 
@@ -36,7 +36,7 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
                 {/* Sidebar (Desktop) */}
                 <aside className="hidden md:flex flex-col w-64 border-r border-white/10 h-screen sticky top-0 bg-zinc-950 p-6">
                     <div className="mb-10">
-                        <h1 className="text-2xl font-black tracking-tighter">ÁRBITROS <span className="text-tdf-orange">FFV</span></h1>
+                        <h1 className="text-2xl font-black tracking-tighter">ÁRBITROS <span className="text-tdf-orange">FVF</span></h1>
                         <p className="text-xs text-zinc-500 font-bold mt-1 uppercase tracking-widest">Panel de Control</p>
                     </div>
 

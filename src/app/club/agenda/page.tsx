@@ -11,6 +11,7 @@ import {
 import { useClubAuth } from '@/hooks/useClubAuth';
 import CalendarSyncButton from '@/components/common/CalendarSyncButton';
 import EmptyState from '@/components/ui/EmptyState';
+import { formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 export default function AgendaClub() {
     const router = useRouter();
@@ -48,13 +49,14 @@ export default function AgendaClub() {
             // 3. Cargar Eventos de Calendario (Reuniones, Fechas Límite)
             const { data: eventos } = await supabase
                 .from('calendar_events')
-                .select('*');
+                .select('*')
+                .or(`target_role.eq.all,target_role.eq.club,target_club_id.eq.${id}`);
 
             // 4. Normalizar y Combinar
             const matchesFormatted = (partidos || []).map((p: any) => ({
                 ...p,
                 type: 'match',
-                date_time: p.date_time,
+                date_time: p.scheduled_time,
                 title: p.home_team_id === id
                     ? `vs ${p.away_team?.name || 'Rival'}`
                     : `vs ${p.home_team?.name || 'Rival'}`
@@ -62,7 +64,7 @@ export default function AgendaClub() {
 
             const eventsFormatted = (eventos || []).map((e: any) => ({
                 ...e,
-                type: 'meeting',
+                type: e.event_type || 'meeting',
                 date_time: e.start_time,
                 venue: { name: 'Administración' },
                 title: e.title,
@@ -113,10 +115,14 @@ export default function AgendaClub() {
 
     const getEventsForDate = (date: Date) => {
         return matches.filter(m => {
-            const mDate = new Date(m.date_time);
-            return mDate.getDate() === date.getDate() &&
-                mDate.getMonth() === date.getMonth() &&
-                mDate.getFullYear() === date.getFullYear();
+            if (!m.date_time) return false;
+            // Use literal date comparison to prevent timezone shift causing events to appear on wrong day
+            const isoDatePart = m.date_time.split('T')[0];
+            const cellY = date.getFullYear();
+            const cellM = String(date.getMonth() + 1).padStart(2, '0');
+            const cellD = String(date.getDate()).padStart(2, '0');
+            const cellIso = `${cellY}-${cellM}-${cellD}`;
+            return isoDatePart === cellIso;
         });
     };
 
@@ -172,8 +178,8 @@ export default function AgendaClub() {
                                 if (!date) return <div key={idx} className="aspect-square"></div>;
 
                                 const events = getEventsForDate(date);
-                                const hasMeeting = events.some(e => e.type === 'meeting');
-                                const hasMatch = events.some(e => !e.type); // Matches don't have 'type' property yet or are default
+                                const hasMeeting = events.some(e => e.type !== 'match');
+                                const hasMatch = events.some(e => e.type === 'match');
                                 const isToday = new Date().toDateString() === date.toDateString();
                                 const isSelected = selectedDate?.toDateString() === date.toDateString();
 
@@ -231,12 +237,12 @@ export default function AgendaClub() {
                                         )}
 
                                         {selectedDateEvents.map((ev, i) => {
-                                            if (ev.type === 'meeting') {
+                                            if (ev.type !== 'match') {
                                                 return (
                                                     <div key={i} className="bg-purple-500/10 border-l-4 border-purple-500 rounded-r-xl p-4">
                                                         <div className="flex justify-between items-start mb-1">
-                                                            <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">{ev.event_type || 'Evento'}</span>
-                                                            <span className="text-white font-bold text-sm">{new Date(ev.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</span>
+                                                            <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">{ev.event_type || ev.type || 'Evento'}</span>
+                                                            <span className="text-white font-bold text-sm">{formatArgentinaTimeLiteral(ev.date_time)} hs</span>
                                                         </div>
                                                         <h4 className="font-bold text-white text-lg leading-tight mb-2">{ev.title}</h4>
                                                         <p className="text-xs text-zinc-400 mb-2 flex items-center gap-1"><MapPin size={12} /> {ev.venue?.name}</p>
@@ -251,7 +257,7 @@ export default function AgendaClub() {
                                                     <div key={i} className="bg-blue-500/10 border-l-4 border-blue-500 rounded-r-xl p-4">
                                                         <div className="flex justify-between items-start mb-2">
                                                             <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Partido</span>
-                                                            <span className="text-white font-bold text-sm">{new Date(ev.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</span>
+                                                            <span className="text-white font-bold text-sm">{formatArgentinaTimeLiteral(ev.date_time)} hs</span>
                                                         </div>
 
                                                         <div className="flex items-center gap-3 mb-3">
@@ -288,7 +294,7 @@ export default function AgendaClub() {
                                                 </div>
                                                 <div>
                                                     <p className="font-bold text-white text-sm line-clamp-1">{next.title || (next.home_team_id === clubId ? `vs ${next.away_team?.name}` : `vs ${next.home_team?.name}`)}</p>
-                                                    <p className="text-xs text-zinc-500">{new Date(next.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs</p>
+                                                    <p className="text-xs text-zinc-500">{formatArgentinaTimeLiteral(next.date_time)} hs</p>
                                                 </div>
                                             </div>
                                         )

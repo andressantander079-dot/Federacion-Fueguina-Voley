@@ -19,7 +19,8 @@ export default function AdminAgendaPage() {
         date: '',
         time: '',
         type: 'institucional',
-        target_club_id: '' // Empty string = Todos
+        target_role: 'all', // 'all', 'club', 'referee', 'specific_club'
+        target_club_id: '' 
     });
 
     // Calendar State
@@ -47,13 +48,13 @@ export default function AdminAgendaPage() {
         const { data: matches } = await supabase
             .from('matches')
             .select(`*, home_team:teams!home_team_id(name), away_team:teams!away_team_id(name)`)
-            .order('date_time', { ascending: true });
+            .order('scheduled_time', { ascending: true });
 
         // Merge
         const formattedMatches = (matches || []).map((m: any) => ({
             id: m.id,
             title: `Partido: ${m.home_team.name} vs ${m.away_team.name}`,
-            start_time: m.date_time,
+            start_time: m.scheduled_time,
             type: 'partido',
             is_match: true,
             target_team: null
@@ -76,7 +77,8 @@ export default function AdminAgendaPage() {
                 description: newEvent.description,
                 start_time: startDateTime.toISOString(),
                 event_type: newEvent.type,
-                target_club_id: newEvent.target_club_id || null // Handle 'All'
+                target_role: newEvent.target_role,
+                target_club_id: newEvent.target_role === 'specific_club' ? newEvent.target_club_id : null
             };
 
             const { error } = await supabase.from('calendar_events').insert(payload);
@@ -84,7 +86,7 @@ export default function AdminAgendaPage() {
 
             alert("Evento creado exitosamente");
             setShowModal(false);
-            setNewEvent({ title: '', description: '', date: '', time: '', type: 'institucional', target_club_id: '' });
+            setNewEvent({ title: '', description: '', date: '', time: '', type: 'institucional', target_role: 'all', target_club_id: '' });
             fetchData();
 
         } catch (error: any) {
@@ -254,13 +256,22 @@ export default function AdminAgendaPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1">Destinatario (Club)</label>
-                                <select className="w-full border p-2 rounded-lg bg-slate-50 dark:bg-zinc-950 dark:border-zinc-800" value={newEvent.target_club_id} onChange={e => setNewEvent({ ...newEvent, target_club_id: e.target.value })}>
-                                    <option value="">-- Todos los Clubes --</option>
-                                    {teams.map(t => (
-                                        <option key={t.id} value={t.id}>{t.name}</option>
-                                    ))}
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Destinatario</label>
+                                <select className="w-full border p-2 rounded-lg bg-slate-50 dark:bg-zinc-950 dark:border-zinc-800 mb-2" value={newEvent.target_role} onChange={e => setNewEvent({ ...newEvent, target_role: e.target.value })}>
+                                    <option value="all">-- Todos --</option>
+                                    <option value="club">Todos los Clubes</option>
+                                    <option value="referee">Todos los Árbitros</option>
+                                    <option value="specific_club">Un Club Específico...</option>
                                 </select>
+                                
+                                {newEvent.target_role === 'specific_club' && (
+                                    <select required className="w-full border p-2 rounded-lg bg-slate-50 dark:bg-zinc-950 dark:border-zinc-800" value={newEvent.target_club_id} onChange={e => setNewEvent({ ...newEvent, target_club_id: e.target.value })}>
+                                        <option value="">-- Seleccionar Club --</option>
+                                        {teams.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 mb-1">Descripción</label>
