@@ -197,11 +197,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         }
                     }
 
-                    // Sort by Number
-                    homeRoster.sort((a, b) => a.number - b.number);
-                    awayRoster.sort((a, b) => a.number - b.number);
+                    // Ensure unique IDs before sorting and storing
+                    const uniqueHome = homeRoster.filter((p, i, arr) => arr.findIndex(t => t.id === p.id) === i);
+                    const uniqueAway = awayRoster.filter((p, i, arr) => arr.findIndex(t => t.id === p.id) === i);
+                    
+                    uniqueHome.sort((a, b) => a.number - b.number);
+                    uniqueAway.sort((a, b) => a.number - b.number);
 
-                    setFullRosters({ home: homeRoster, away: awayRoster });
+                    setFullRosters({ home: uniqueHome, away: uniqueAway });
 
                     // AUTO-POPULATE BENCH IF EMPTY (And not hydrate)
                     // We check if we have "hydrated" data.
@@ -211,12 +214,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     // We can use the setter.
                     setBenchHome(prev => {
                         const activePos = posHome.filter(p => p !== null);
-                        if (prev.length === 0 && activePos.length === 0) return homeRoster;
+                        if (prev.length === 0 && activePos.length === 0) return uniqueHome;
                         return prev;
                     });
                     setBenchAway(prev => {
                         const activePos = posAway.filter(p => p !== null);
-                        if (prev.length === 0 && activePos.length === 0) return awayRoster;
+                        if (prev.length === 0 && activePos.length === 0) return uniqueAway;
                         return prev;
                     });
                 }
@@ -890,9 +893,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const activeBench = selectedPlayer?.team === 'home' ? benchHome : benchAway;
 
     // @ts-ignore
-    const fullRosterHome = [...posHome, ...benchHome].filter(p => p !== null).sort((a, b) => a.number - b.number);
+    const fullRosterHome = [...posHome, ...benchHome]
+        .filter(p => p !== null)
+        .filter((p, index, self) => index === self.findIndex(t => t.id === p.id))
+        .sort((a, b) => a.number - b.number);
     // @ts-ignore
-    const fullRosterAway = [...posAway, ...benchAway].filter(p => p !== null).sort((a, b) => a.number - b.number);
+    const fullRosterAway = [...posAway, ...benchAway]
+        .filter(p => p !== null)
+        .filter((p, index, self) => index === self.findIndex(t => t.id === p.id))
+        .sort((a, b) => a.number - b.number);
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
@@ -1463,9 +1472,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 {/* HEADER OFICIAL */}
                                 <div className="border-b-4 border-slate-900 pb-6 mb-8 flex items-center justify-between">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center text-white font-black text-2xl">FFV</div>
+                                        <img src="/logo-fvf.png" alt="FVF" className="w-16 h-16 object-contain" />
                                         <div>
-                                            <h1 className="text-2xl font-black uppercase tracking-tight leading-none">Federación de Voley</h1>
+                                            <h1 className="text-2xl font-black uppercase tracking-tight leading-none text-blue-900">Federación de Voley Fueguina</h1>
                                         </div>
                                     </div>
                                     <div className="text-right">

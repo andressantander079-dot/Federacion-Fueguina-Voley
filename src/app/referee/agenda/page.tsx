@@ -44,7 +44,7 @@ export default function RefereeAgendaPage() {
         const { data: eventsData } = await supabase
             .from('calendar_events')
             .select('*')
-            .is('target_club_id', null)
+            .or('target_role.eq.all,target_role.eq.referee')
 
         // 3. Normalize & Merge
 

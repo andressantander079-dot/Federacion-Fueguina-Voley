@@ -41,7 +41,7 @@ export default function RefereeDashboard() {
                     const m = Array.isArray(item.match) ? item.match[0] : item.match;
                     return { ...item, match: m };
                 })
-                .filter(item => item.match && item.match.id);
+                .filter(item => item.match && item.match.id && item.match.status !== 'finalizado');
 
             // Sort by date ASC
             validMatches.sort((a, b) => {
@@ -62,82 +62,79 @@ export default function RefereeDashboard() {
         </div>
     )
 
-    const nextMatch = matches.length > 0 ? matches[0] : null;
-
     return (
         <div className="max-w-xl mx-auto space-y-8 pb-20">
 
-            {/* HERO: NEXT MATCH */}
+            {/* HERO: MATCHES LIST */}
             <section>
                 <div className="flex items-center justify-between mb-4 px-1">
                     <h2 className="text-lg font-black text-white uppercase flex items-center gap-2">
                         <span className="w-1.5 h-6 bg-tdf-orange rounded-full"></span>
-                        Próximo Partido
+                        Mis Partidos Asignados
                     </h2>
-                    {nextMatch && (
-                        <div className="text-xs font-bold text-zinc-500 bg-zinc-900 border border-zinc-800 px-3 py-1 rounded-full uppercase tracking-wider">
-                            {formatArgentinaDateLiteral(nextMatch.match.scheduled_time, { weekday: 'short', day: 'numeric' }).split(',')[0]}
-                        </div>
-                    )}
                 </div>
 
-                {nextMatch ? (
-                    <Link href={`/referee/partido/${nextMatch.match.id}`} className="group relative block bg-gradient-to-br from-zinc-900 via-zinc-900 to-black rounded-3xl border border-zinc-800 overflow-hidden shadow-2xl hover:shadow-orange-900/10 hover:border-zinc-700 transition-all duration-300">
-                        {/* Status Label */}
-                        <div className="absolute top-4 right-4 z-10">
-                            {nextMatch.status === 'assigned' && <span className="bg-orange-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg animate-pulse">Pendiente</span>}
-                            {nextMatch.status === 'confirmed' && <span className="bg-emerald-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg">Confirmado</span>}
-                        </div>
+                {matches.length > 0 ? (
+                    <div className="space-y-4">
+                        {matches.map(matchItem => (
+                            <Link key={matchItem.id} href={`/referee/partido/${matchItem.match.id}`} className="group relative block bg-gradient-to-br from-zinc-900 via-zinc-900 to-black rounded-3xl border border-zinc-800 overflow-hidden shadow-2xl hover:shadow-orange-900/10 hover:border-zinc-700 transition-all duration-300">
+                                {/* Status Label */}
+                                <div className="absolute top-4 right-4 z-10">
+                                    {matchItem.status === 'assigned' && <span className="bg-orange-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg animate-pulse">Pendiente</span>}
+                                    {matchItem.status === 'confirmed' && <span className="bg-emerald-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg">Confirmado</span>}
+                                </div>
 
-                        <div className="p-6 relative z-0">
-                            {/* Header Info */}
-                            <div className="flex items-center gap-2 mb-6 text-zinc-400 text-xs font-bold uppercase tracking-widest">
-                                <span className="text-tdf-orange"><Clock size={12} /></span>
-                                <span>{formatArgentinaTimeLiteral(nextMatch.match.scheduled_time)} HS</span>
-                                <span className="w-1 h-1 bg-zinc-700 rounded-full"></span>
-                                <span>{nextMatch.match.court_name || 'A Confirmar'}</span>
-                            </div>
-
-                            {/* Teams Face-off */}
-                            <div className="flex items-center justify-between mb-6">
-                                <div className="flex flex-col items-center gap-2 w-1/3">
-                                    <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center p-2 border border-zinc-700 shadow-inner group-hover:scale-110 transition-transform">
-                                        {nextMatch.match.home_team.shield_url
-                                            ? <img src={nextMatch.match.home_team.shield_url} className="w-full h-full object-contain" />
-                                            : <span className="font-black text-2xl text-zinc-600">{nextMatch.match.home_team.name.charAt(0)}</span>
-                                        }
+                                <div className="p-6 relative z-0">
+                                    {/* Header Info */}
+                                    <div className="flex items-center gap-2 mb-6 text-zinc-400 text-xs font-bold uppercase tracking-widest">
+                                        <span className="text-tdf-orange"><Clock size={12} /></span>
+                                        <span>{formatArgentinaDateLiteral(matchItem.match.scheduled_time, { weekday: 'short', day: 'numeric' }).split(',')[0]} - {formatArgentinaTimeLiteral(matchItem.match.scheduled_time)} HS</span>
+                                        <span className="w-1 h-1 bg-zinc-700 rounded-full"></span>
+                                        <span>{matchItem.match.court_name || 'A Confirmar'}</span>
                                     </div>
-                                    <span className="text-xs font-bold text-white text-center leading-tight">{nextMatch.match.home_team.name}</span>
-                                </div>
 
-                                <div className="flex flex-col items-center gap-1">
-                                    <span className="text-3xl font-black text-zinc-700 italic">VS</span>
-                                    <span className="text-[10px] font-bold text-zinc-500 uppercase bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">{nextMatch.match.category.name}</span>
-                                </div>
+                                    {/* Teams Face-off */}
+                                    <div className="flex items-center justify-between mb-6">
+                                        <div className="flex flex-col items-center gap-2 w-1/3">
+                                            <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center p-2 border border-zinc-700 shadow-inner group-hover:scale-110 transition-transform">
+                                                {matchItem.match.home_team.shield_url
+                                                    ? <img src={matchItem.match.home_team.shield_url} className="w-full h-full object-contain" />
+                                                    : <span className="font-black text-2xl text-zinc-600">{matchItem.match.home_team.name.charAt(0)}</span>
+                                                }
+                                            </div>
+                                            <span className="text-xs font-bold text-white text-center leading-tight">{matchItem.match.home_team.name}</span>
+                                        </div>
 
-                                <div className="flex flex-col items-center gap-2 w-1/3">
-                                    <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center p-2 border border-zinc-700 shadow-inner group-hover:scale-110 transition-transform">
-                                        {nextMatch.match.away_team.shield_url
-                                            ? <img src={nextMatch.match.away_team.shield_url} className="w-full h-full object-contain" />
-                                            : <span className="font-black text-2xl text-zinc-600">{nextMatch.match.away_team.name.charAt(0)}</span>
-                                        }
+                                        <div className="flex flex-col items-center gap-1">
+                                            <span className="text-3xl font-black text-zinc-700 italic">VS</span>
+                                            <span className="text-[10px] font-bold text-zinc-500 uppercase bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">{matchItem.match.category.name}</span>
+                                        </div>
+
+                                        <div className="flex flex-col items-center gap-2 w-1/3">
+                                            <div className="w-16 h-16 bg-zinc-800 rounded-full flex items-center justify-center p-2 border border-zinc-700 shadow-inner group-hover:scale-110 transition-transform">
+                                                {matchItem.match.away_team.shield_url
+                                                    ? <img src={matchItem.match.away_team.shield_url} className="w-full h-full object-contain" />
+                                                    : <span className="font-black text-2xl text-zinc-600">{matchItem.match.away_team.name.charAt(0)}</span>
+                                                }
+                                            </div>
+                                            <span className="text-xs font-bold text-white text-center leading-tight">{matchItem.match.away_team.name}</span>
+                                        </div>
                                     </div>
-                                    <span className="text-xs font-bold text-white text-center leading-tight">{nextMatch.match.away_team.name}</span>
-                                </div>
-                            </div>
 
-                            {/* Footer Action */}
-                            <div className="flex items-center justify-between border-t border-zinc-800 pt-4">
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-bold text-zinc-500 uppercase">Tu Rol</span>
-                                    <span className="text-xs font-bold text-white capitalize">{nextMatch.role.replace('_', ' ')}</span>
+                                    {/* Footer Action */}
+                                    <div className="flex items-center justify-between border-t border-zinc-800 pt-4">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-bold text-zinc-500 uppercase">Tu Rol</span>
+                                            <span className="text-xs font-bold text-white capitalize">{matchItem.role.replace('_', ' ')}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-tdf-orange text-xs font-bold group-hover:translate-x-1 transition-transform">
+                                            Ver Detalles <ChevronRight size={14} />
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-1 text-tdf-orange text-xs font-bold group-hover:translate-x-1 transition-transform">
-                                    Ver Detalles <ChevronRight size={14} />
-                                </div>
-                            </div>
-                        </div>
-                    </Link>
+                            </Link>
+                        ))}
+                    </div>
                 ) : (
                     <div className="bg-zinc-900/50 border border-dashed border-zinc-800 rounded-3xl p-8 text-center">
                         <Calendar size={32} className="mx-auto text-zinc-700 mb-3" />

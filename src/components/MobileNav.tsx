@@ -153,7 +153,7 @@ export default function MobileNav() {
         <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsMenuOpen(false)}>
           <div className="absolute bottom-32 left-0 right-0 mx-auto w-64 bg-zinc-900 border border-zinc-800 rounded-3xl p-2 shadow-2xl animate-in slide-in-from-bottom-5" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-white/5 mb-2 flex items-center justify-between">
-              <span className="text-xs font-black text-tdf-orange uppercase tracking-widest">Opciones FFV</span>
+              <span className="text-xs font-black text-tdf-orange uppercase tracking-widest">Opciones FVF</span>
               <button onClick={() => setIsMenuOpen(false)} className="text-zinc-500 hover:text-white transition"><X size={18} /></button>
             </div>
             <div className="flex flex-col gap-1">

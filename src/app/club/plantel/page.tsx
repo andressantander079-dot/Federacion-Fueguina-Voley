@@ -67,8 +67,21 @@ export default function PlantelPage() {
     license_type: 'Jugador',
     photo_file: null as File | null,
     medical_file: null as File | null,
-    payment_file: null as File | null
+    payment_file: null as File | null,
+    authorization_file: null as File | null
   });
+
+  const isMinor = () => {
+    if (!nuevoJugador.birth_date) return false;
+    const today = new Date();
+    const birthDate = new Date(nuevoJugador.birth_date);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    return age < 18;
+  };
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [clubLogo, setClubLogo] = useState<string | null>(null);
@@ -291,25 +304,27 @@ export default function PlantelPage() {
 
     if (!clubId) return toast.error("Error crítico: No hay Club ID.");
 
+    if (isMinor() && !nuevoJugador.authorization_file) {
+      return toast.error("El jugador es menor de edad. Debe adjuntar la Autorización de la Familia obligatoriamente.");
+    }
+
     setUploading(true);
     try {
       // 1. DUPLICATE REGISTRATION CHECK
+      const dniLimpio = nuevoJugador.dni.trim().replace(/\./g, '');
       const { data: existingPlayers, error: dupErr } = await supabase
         .from('players')
         .select('team_id, teams(name)')
-        .eq('dni', nuevoJugador.dni)
-        .eq('birth_date', nuevoJugador.birth_date);
+        .eq('dni', dniLimpio);
 
       if (dupErr) throw dupErr;
 
       if (existingPlayers && existingPlayers.length > 0) {
-        const conflict = existingPlayers.find(p => p.team_id !== clubId);
-        if (conflict) {
-          setUploading(false);
-          // @ts-ignore - Handle possible array/object return from join
-          const conflictTeamName = conflict.teams ? (Array.isArray(conflict.teams) ? conflict.teams[0]?.name : conflict.teams.name) : 'otro club';
-          return toast.error(`REGISTRO BLOQUEADO: El jugador con DNI ${nuevoJugador.dni} ya se encuentra registrado activamente en "${conflictTeamName}". Por favor, contacte a la Federación si considera que es un error (Pase/Préstamo).`);
-        }
+        setUploading(false);
+        const conflict = existingPlayers[0];
+        // @ts-ignore
+        const conflictTeamName = conflict.teams ? (Array.isArray(conflict.teams) ? conflict.teams[0]?.name : conflict.teams.name) : 'la Federación';
+        return toast.error(`ALERTA DE SISTEMA: El DNI ${dniLimpio} ya se encuentra registrado activamente en "${conflictTeamName}". NO PUEDE HABER DOS JUGADORES/AS CON EL MISMO DNI.`);
       }
 
       let photoUrl = null;
@@ -336,25 +351,34 @@ export default function PlantelPage() {
         medicalUrl = supabase.storage.from('procedure-files').getPublicUrl(medFileName).data.publicUrl;
       }
 
+      let authorizationUrl = null;
+      if (nuevoJugador.authorization_file) {
+        const fileExt = nuevoJugador.authorization_file.name.split('.').pop();
+        const authFileName = `autorizacion-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
+        await supabase.storage.from('procedure-files').upload(authFileName, nuevoJugador.authorization_file);
+        authorizationUrl = supabase.storage.from('procedure-files').getPublicUrl(authFileName).data.publicUrl;
+      }
+
       const { error } = await supabase.from('players').insert([{
         team_id: clubId,
         squad_id: squadActual.id,
         category_id: squadActual.category_id,
         name: nuevoJugador.name,
-        dni: nuevoJugador.dni,
+        dni: dniLimpio,
         birth_date: nuevoJugador.birth_date,
         number: nuevoJugador.number ? parseInt(nuevoJugador.number) : null,
         position: nuevoJugador.position,
         photo_url: photoUrl,
         payment_url: paymentUrl,
         medical_url: medicalUrl,
+        family_authorization_url: authorizationUrl,
         status: 'pending' // Added pending status here, matching Plan.
       }]);
 
       if (error) throw error;
 
       toast.success("Jugador inscripto.");
-      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', photo_file: null, medical_file: null, payment_file: null });
+      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
       cargarJugadores(squadActual.id);
 
     } catch (error: any) {
@@ -731,6 +755,18 @@ export default function PlantelPage() {
                         <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => setNuevoJugador({ ...nuevoJugador, payment_file: e.target.files?.[0] || null })} />
                         {nuevoJugador.payment_file && <CheckCircle size={14} className="text-green-500" />}
                       </label>
+
+                      {isMinor() && (
+                        <label className="flex items-center gap-3 p-3 bg-yellow-950/20 hover:bg-yellow-900/40 border border-dashed border-yellow-700/50 rounded-xl cursor-pointer transition group">
+                          <div className="p-2 bg-yellow-900/50 rounded-lg text-yellow-500"><ShieldCheck size={16} /></div>
+                          <div className="flex-1 overflow-hidden">
+                            <div className="text-xs font-bold text-yellow-500">Autorización Familia (Obligatorio)</div>
+                            <div className="text-[10px] text-zinc-400 truncate">{nuevoJugador.authorization_file ? nuevoJugador.authorization_file.name : 'Subir PDF firmado'}</div>
+                          </div>
+                          <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => setNuevoJugador({ ...nuevoJugador, authorization_file: e.target.files?.[0] || null })} />
+                          {nuevoJugador.authorization_file && <CheckCircle size={14} className="text-green-500" />}
+                        </label>
+                      )}
                     </div>
 
                     <button

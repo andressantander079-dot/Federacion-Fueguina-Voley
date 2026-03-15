@@ -182,7 +182,7 @@ export default function TreasuryPage() {
                     </div>
                     <div className="text-xs font-bold uppercase text-slate-400 mb-1">Saldo en Caja</div>
                     <div className={`text-4xl font-black tracking-tight ${stats.balance >= 0 ? '' : 'text-red-500'}`}>
-                        $ {stats.balance.toLocaleString('es-AR')}
+                        ARS $ {stats.balance.toLocaleString('es-AR')}
                     </div>
                 </div>
 
@@ -206,7 +206,7 @@ export default function TreasuryPage() {
                         )}
                     </div>
                     <div className="text-4xl font-black tracking-tight text-emerald-600 dark:text-emerald-400">
-                        $ {stats.monthIncome.toLocaleString('es-AR')}
+                        ARS $ {stats.monthIncome.toLocaleString('es-AR')}
                     </div>
                 </div>
 
@@ -229,7 +229,7 @@ export default function TreasuryPage() {
                         )}
                     </div>
                     <div className="text-4xl font-black tracking-tight text-red-600 dark:text-red-400">
-                        $ {stats.monthExpense.toLocaleString('es-AR')}
+                        ARS $ {stats.monthExpense.toLocaleString('es-AR')}
                     </div>
                 </div>
             </div>
@@ -261,7 +261,7 @@ export default function TreasuryPage() {
                                         ))}
                                     </Pie>
                                     <RechartsTooltip
-                                        formatter={(value: any) => [`$ ${value.toLocaleString('es-AR')}`, 'Monto']}
+                                        formatter={(value: any) => [`ARS $ ${value.toLocaleString('es-AR')}`, 'Monto']}
                                         contentStyle={{ borderRadius: '12px', borderColor: '#27272a', backgroundColor: '#18181b', color: '#fff', fontWeight: 'bold' }}
                                         itemStyle={{ color: '#fff' }}
                                     />

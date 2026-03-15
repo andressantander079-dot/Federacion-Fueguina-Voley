@@ -150,7 +150,48 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         }));
     };
 
+    const unrotateTeamArray = (arr: (Player | null)[]) => {
+        if (arr.length < 6) return arr;
+        const newArr = [...arr];
+        const last = newArr.pop(); // Remove Last
+        // @ts-ignore
+        newArr.unshift(last); // Add to Front
+        return newArr;
+    };
+
     const subtractPoint = (team: TeamSide) => {
+        if (history.length > 0) {
+            // Find the state right before this team got their current score
+            const currentScore = sets[currentSetIdx][team];
+            let previousServer: TeamSide | null = null;
+            let didRotateToGetPoint = false;
+
+            for (let i = history.length - 1; i >= 0; i--) {
+                const pastState = JSON.parse(history[i]);
+                const pastScore = pastState.sets[currentSetIdx]?.[team];
+                
+                if (pastScore !== undefined && pastScore < currentScore) {
+                    // This is the state before they won the point
+                    const serverBeforePoint = pastState.servingTeam;
+                    if (serverBeforePoint && serverBeforePoint !== team) {
+                        // They won the serve with this point! Meaning they rotated.
+                        didRotateToGetPoint = true;
+                        previousServer = serverBeforePoint;
+                    }
+                    break;
+                }
+            }
+
+            if (didRotateToGetPoint && previousServer) {
+                // Reverse the rotation
+                if (team === 'home') setPosHome(prev => unrotateTeamArray(prev));
+                else setPosAway(prev => unrotateTeamArray(prev));
+                
+                // Return serve back to the other team
+                setServingTeam(previousServer);
+            }
+        }
+
         snapshot();
         setSets(prev => prev.map((s, i) => {
             if (i === currentSetIdx) {

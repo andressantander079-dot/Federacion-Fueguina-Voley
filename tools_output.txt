@@ -1,0 +1,200 @@
+Total tools: 32
+Tools: ['refresh_auth', 'notebook_list', 'notebook_create', 'notebook_get', 'notebook_describe', 'source_describe', 'source_get_content', 'notebook_add_url', 'notebook_add_text', 'notebook_add_drive', 'notebook_query', 'notebook_delete', 'notebook_rename', 'chat_configure', 'source_list_drive', 'source_sync_drive', 'source_delete', 'research_start', 'research_status', 'research_import', 'audio_overview_create', 'video_overview_create', 'studio_status', 'studio_delete', 'infographic_create', 'slide_deck_create', 'report_create', 'flashcards_create', 'quiz_create', 'data_table_create', 'mind_map_create', 'save_auth_tokens']
+Smoke Test Result: {
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"status\":\"success\",\"count\":18,\"owned_count\":18,\"shared_count\":0,\"shared_by_me_count\":0,\"notebooks\":[{\"id\":\"44f7563c-448f-40af-8ca5-ea32bca67fb7\",\"title\":\"Estudios contables\",\"source_count\":0,\"url\":\"https://notebooklm.google.com/notebook/44f7563c-448f-40af-8ca5-ea32bca67fb7\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-03-12T18:58:25Z\",\"modified_at\":\"2026-03-12T18:58:27Z\"},{\"id\":\"869b286f-3400-4ff2-9243-404c1316e5e9\",\"title\":\"Antigravity\",\"source_count\":127,\"url\":\"https://notebooklm.google.com/notebook/869b286f-3400-4ff2-9243-404c1316e5e9\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-16T14:23:41Z\",\"modified_at\":\"2026-03-12T18:44:59Z\"},{\"id\":\"9f4c1c80-f798-4211-9733-3e7a3e1af68b\",\"title\":\"Gesti\u00c3\u00b3n Digital de Inscripciones y Control de Clubes Deportivos\",\"source_count\":27,\"url\":\"https://notebooklm.google.com/notebook/9f4c1c80-f798-4211-9733-3e7a3e1af68b\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-03-10T17:48:01Z\",\"modified_at\":\"2026-03-12T18:44:19Z\"},{\"id\":\"6792ce61-98c6-48ba-8c57-68ceb400a15c\",\"title\":\"Principios, Patrones y Arquitectura de Software\",\"source_count\":104,\"url\":\"https://notebooklm.google.com/notebook/6792ce61-98c6-48ba-8c57-68ceb400a15c\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-12-16T00:25:19Z\",\"modified_at\":\"2026-03-10T21:24:23Z\"},{\"id\":\"8f878edb-e4d3-49ec-90bb-fc637dd4b328\",\"title\":\"Ventas: Experto en Soluciones Tecnol\u00c3\u00b3gicas\",\"source_count\":29,\"url\":\"https://notebooklm.google.com/notebook/8f878edb-e4d3-49ec-90bb-fc637dd4b328\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-16T15:09:29Z\",\"modified_at\":\"2026-03-10T21:24:22Z\"},{\"id\":\"6d3eecbf-c902-49ee-99c5-76ceadb753c5\",\"title\":\"Marketing: Generaci\u00c3\u00b3n y Cualificaci\u00c3\u00b3n de Leads\",\"source_count\":40,\"url\":\"https://notebooklm.google.com/notebook/6d3eecbf-c902-49ee-99c5-76ceadb753c5\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-16T15:09:30Z\",\"modified_at\":\"2026-03-10T21:24:22Z\"},{\"id\":\"ae459233-b2a6-4b79-8932-efadeb72539f\",\"title\":\"Benchmark: Software de Control de Stock\",\"source_count\":28,\"url\":\"https://notebooklm.google.com/notebook/ae459233-b2a6-4b79-8932-efadeb72539f\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-16T15:09:31Z\",\"modified_at\":\"2026-03-10T21:24:22Z\"},{\"id\":\"1e4d7950-b686-46b0-9eac-aedbf77aa98a\",\"title\":\"Pedagog\u00c3\u00ada de la Comunicaci\u00c3\u00b3n \",\"source_count\":1,\"url\":\"https://notebooklm.google.com/notebook/1e4d7950-b686-46b0-9eac-aedbf77aa98a\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-07-02T19:10:17Z\",\"modified_at\":\"2026-02-26T21:29:37Z\"},{\"id\":\"c033a7e9-c40c-491d-9b37-0e00141edb76\",\"title\":\"Automatizaci\u00c3\u00b3n: Agentes IA con n8n\",\"source_count\":30,\"url\":\"https://notebooklm.google.com/notebook/c033a7e9-c40c-491d-9b37-0e00141edb76\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-16T15:09:28Z\",\"modified_at\":\"2026-02-16T15:33:06Z\"},{\"id\":\"5b985b6a-ae9e-42f0-8111-e32dfeb2b80d\",\"title\":\"Dise\u00c3\u00b1o Web: Landing Pages y Flujos WhatsApp\",\"source_count\":40,\"url\":\"https://notebooklm.google.com/notebook/5b985b6a-ae9e-42f0-8111-e32dfeb2b80d\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-16T15:09:29Z\",\"modified_at\":\"2026-02-16T15:33:03Z\"},{\"id\":\"1a69a6e7-9519-4941-9e63-465400644e98\",\"title\":\"Investigaci\u00c3\u00b3n: Gastronom\u00c3\u00ada Argentina y Stock\",\"source_count\":30,\"url\":\"https://notebooklm.google.com/notebook/1a69a6e7-9519-4941-9e63-465400644e98\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-16T15:09:27Z\",\"modified_at\":\"2026-02-16T15:27:15Z\"},{\"id\":\"d7d8b3a4-dee5-43a3-ad4d-e979cbd24808\",\"title\":\"\",\"source_count\":0,\"url\":\"https://notebooklm.google.com/notebook/d7d8b3a4-dee5-43a3-ad4d-e979cbd24808\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-08T15:16:18Z\",\"modified_at\":\"2026-02-16T15:08:46Z\"},{\"id\":\"15fbb23e-e362-49d7-a664-55f0c6ae5226\",\"title\":\"Presupuesto de Saas\",\"source_count\":100,\"url\":\"https://notebooklm.google.com/notebook/15fbb23e-e362-49d7-a664-55f0c6ae5226\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-02-08T15:18:56Z\",\"modified_at\":\"2026-02-09T17:50:43Z\"},{\"id\":\"76638094-0e23-47d6-afcb-3c7c5420335b\",\"title\":\"Aprendizaje Basado en Proyectos y Competencias\",\"source_count\":10,\"url\":\"https://notebooklm.google.com/notebook/76638094-0e23-47d6-afcb-3c7c5420335b\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-12-16T18:08:50Z\",\"modified_at\":\"2026-01-05T12:53:48Z\"},{\"id\":\"35b2d88a-1054-4d3f-b8ea-656c7530cb85\",\"title\":\"Impacto de la COVID-19 y el Clima en el Turismo Europeo\",\"source_count\":18,\"url\":\"https://notebooklm.google.com/notebook/35b2d88a-1054-4d3f-b8ea-656c7530cb85\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-11-18T21:18:38Z\",\"modified_at\":\"2025-11-18T21:21:06Z\"},{\"id\":\"6900f48e-3562-4948-a7ac-d78fa842cc49\",\"title\":\"Gu\u00c3\u00ada Completa para Invertir en 2025\",\"source_count\":25,\"url\":\"https://notebooklm.google.com/notebook/6900f48e-3562-4948-a7ac-d78fa842cc49\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-09-09T14:59:39Z\",\"modified_at\":\"2025-09-09T16:46:32Z\"},{\"id\":\"44f433ae-e6c6-4431-93ae-dc799d06174b\",\"title\":\"Entrenamiento Cognitivo y Memoria: Avances y Desaf\u00c3\u00ados\",\"source_count\":19,\"url\":\"https://notebooklm.google.com/notebook/44f433ae-e6c6-4431-93ae-dc799d06174b\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-09-09T15:47:59Z\",\"modified_at\":\"2025-09-09T15:48:00Z\"},{\"id\":\"71d6bb69-53a1-4e4c-859d-1459be29f97b\",\"title\":\"Creaci\u00c3\u00b3n y Venta de Productos Digitales\",\"source_count\":10,\"url\":\"https://notebooklm.google.com/notebook/71d6bb69-53a1-4e4c-859d-1459be29f97b\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-09-09T15:33:00Z\",\"modified_at\":\"2025-09-09T15:33:00Z\"}]}"
+    }
+  ],
+  "structuredContent": {
+    "status": "success",
+    "count": 18,
+    "owned_count": 18,
+    "shared_count": 0,
+    "shared_by_me_count": 0,
+    "notebooks": [
+      {
+        "id": "44f7563c-448f-40af-8ca5-ea32bca67fb7",
+        "title": "Estudios contables",
+        "source_count": 0,
+        "url": "https://notebooklm.google.com/notebook/44f7563c-448f-40af-8ca5-ea32bca67fb7",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-03-12T18:58:25Z",
+        "modified_at": "2026-03-12T18:58:27Z"
+      },
+      {
+        "id": "869b286f-3400-4ff2-9243-404c1316e5e9",
+        "title": "Antigravity",
+        "source_count": 127,
+        "url": "https://notebooklm.google.com/notebook/869b286f-3400-4ff2-9243-404c1316e5e9",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-16T14:23:41Z",
+        "modified_at": "2026-03-12T18:44:59Z"
+      },
+      {
+        "id": "9f4c1c80-f798-4211-9733-3e7a3e1af68b",
+        "title": "Gesti\u00c3\u00b3n Digital de Inscripciones y Control de Clubes Deportivos",
+        "source_count": 27,
+        "url": "https://notebooklm.google.com/notebook/9f4c1c80-f798-4211-9733-3e7a3e1af68b",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-03-10T17:48:01Z",
+        "modified_at": "2026-03-12T18:44:19Z"
+      },
+      {
+        "id": "6792ce61-98c6-48ba-8c57-68ceb400a15c",
+        "title": "Principios, Patrones y Arquitectura de Software",
+        "source_count": 104,
+        "url": "https://notebooklm.google.com/notebook/6792ce61-98c6-48ba-8c57-68ceb400a15c",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-12-16T00:25:19Z",
+        "modified_at": "2026-03-10T21:24:23Z"
+      },
+      {
+        "id": "8f878edb-e4d3-49ec-90bb-fc637dd4b328",
+        "title": "Ventas: Experto en Soluciones Tecnol\u00c3\u00b3gicas",
+        "source_count": 29,
+        "url": "https://notebooklm.google.com/notebook/8f878edb-e4d3-49ec-90bb-fc637dd4b328",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-16T15:09:29Z",
+        "modified_at": "2026-03-10T21:24:22Z"
+      },
+      {
+        "id": "6d3eecbf-c902-49ee-99c5-76ceadb753c5",
+        "title": "Marketing: Generaci\u00c3\u00b3n y Cualificaci\u00c3\u00b3n de Leads",
+        "source_count": 40,
+        "url": "https://notebooklm.google.com/notebook/6d3eecbf-c902-49ee-99c5-76ceadb753c5",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-16T15:09:30Z",
+        "modified_at": "2026-03-10T21:24:22Z"
+      },
+      {
+        "id": "ae459233-b2a6-4b79-8932-efadeb72539f",
+        "title": "Benchmark: Software de Control de Stock",
+        "source_count": 28,
+        "url": "https://notebooklm.google.com/notebook/ae459233-b2a6-4b79-8932-efadeb72539f",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-16T15:09:31Z",
+        "modified_at": "2026-03-10T21:24:22Z"
+      },
+      {
+        "id": "1e4d7950-b686-46b0-9eac-aedbf77aa98a",
+        "title": "Pedagog\u00c3\u00ada de la Comunicaci\u00c3\u00b3n ",
+        "source_count": 1,
+        "url": "https://notebooklm.google.com/notebook/1e4d7950-b686-46b0-9eac-aedbf77aa98a",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-07-02T19:10:17Z",
+        "modified_at": "2026-02-26T21:29:37Z"
+      },
+      {
+        "id": "c033a7e9-c40c-491d-9b37-0e00141edb76",
+        "title": "Automatizaci\u00c3\u00b3n: Agentes IA con n8n",
+        "source_count": 30,
+        "url": "https://notebooklm.google.com/notebook/c033a7e9-c40c-491d-9b37-0e00141edb76",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-16T15:09:28Z",
+        "modified_at": "2026-02-16T15:33:06Z"
+      },
+      {
+        "id": "5b985b6a-ae9e-42f0-8111-e32dfeb2b80d",
+        "title": "Dise\u00c3\u00b1o Web: Landing Pages y Flujos WhatsApp",
+        "source_count": 40,
+        "url": "https://notebooklm.google.com/notebook/5b985b6a-ae9e-42f0-8111-e32dfeb2b80d",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-16T15:09:29Z",
+        "modified_at": "2026-02-16T15:33:03Z"
+      },
+      {
+        "id": "1a69a6e7-9519-4941-9e63-465400644e98",
+        "title": "Investigaci\u00c3\u00b3n: Gastronom\u00c3\u00ada Argentina y Stock",
+        "source_count": 30,
+        "url": "https://notebooklm.google.com/notebook/1a69a6e7-9519-4941-9e63-465400644e98",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-16T15:09:27Z",
+        "modified_at": "2026-02-16T15:27:15Z"
+      },
+      {
+        "id": "d7d8b3a4-dee5-43a3-ad4d-e979cbd24808",
+        "title": "",
+        "source_count": 0,
+        "url": "https://notebooklm.google.com/notebook/d7d8b3a4-dee5-43a3-ad4d-e979cbd24808",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-08T15:16:18Z",
+        "modified_at": "2026-02-16T15:08:46Z"
+      },
+      {
+        "id": "15fbb23e-e362-49d7-a664-55f0c6ae5226",
+        "title": "Presupuesto de Saas",
+        "source_count": 100,
+        "url": "https://notebooklm.google.com/notebook/15fbb23e-e362-49d7-a664-55f0c6ae5226",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-02-08T15:18:56Z",
+        "modified_at": "2026-02-09T17:50:43Z"
+      },
+      {
+        "id": "76638094-0e23-47d6-afcb-3c7c5420335b",
+        "title": "Aprendizaje Basado en Proyectos y Competencias",
+        "source_count": 10,
+        "url": "https://notebooklm.google.com/notebook/76638094-0e23-47d6-afcb-3c7c5420335b",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-12-16T18:08:50Z",
+        "modified_at": "2026-01-05T12:53:48Z"
+      },
+      {
+        "id": "35b2d88a-1054-4d3f-b8ea-656c7530cb85",
+        "title": "Impacto de la COVID-19 y el Clima en el Turismo Europeo",
+        "source_count": 18,
+        "url": "https://notebooklm.google.com/notebook/35b2d88a-1054-4d3f-b8ea-656c7530cb85",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-11-18T21:18:38Z",
+        "modified_at": "2025-11-18T21:21:06Z"
+      },
+      {
+        "id": "6900f48e-3562-4948-a7ac-d78fa842cc49",
+        "title": "Gu\u00c3\u00ada Completa para Invertir en 2025",
+        "source_count": 25,
+        "url": "https://notebooklm.google.com/notebook/6900f48e-3562-4948-a7ac-d78fa842cc49",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-09-09T14:59:39Z",
+        "modified_at": "2025-09-09T16:46:32Z"
+      },
+      {
+        "id": "44f433ae-e6c6-4431-93ae-dc799d06174b",
+        "title": "Entrenamiento Cognitivo y Memoria: Avances y Desaf\u00c3\u00ados",
+        "source_count": 19,
+        "url": "https://notebooklm.google.com/notebook/44f433ae-e6c6-4431-93ae-dc799d06174b",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-09-09T15:47:59Z",
+        "modified_at": "2025-09-09T15:48:00Z"
+      },
+      {
+        "id": "71d6bb69-53a1-4e4c-859d-1459be29f97b",
+        "title": "Creaci\u00c3\u00b3n y Venta de Productos Digitales",
+        "source_count": 10,
+        "url": "https://notebooklm.google.com/notebook/71d6bb69-53a1-4e4c-859d-1459be29f97b",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-09-09T15:33:00Z",
+        "modified_at": "2025-09-09T15:33:00Z"
+      }
+    ]
+  },
+  "isError": false
+}

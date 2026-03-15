@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { FileText, Upload, Copy, CheckCircle, AlertCircle, X, Loader2, DollarSign } from 'lucide-react';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
+import { FileText, Inbox, Upload, Copy, CheckCircle, AlertCircle, X, Loader2, DollarSign } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import { useClubAuth } from '@/hooks/useClubAuth';
 import EmptyState from '@/components/ui/EmptyState';
@@ -47,8 +48,13 @@ export default function ClubTramitesPage() {
     };
 
     const openTramite = (fee: any) => {
-        setSelectedFee(fee);
-        setIsModalOpen(true);
+        if (fee.title.toLowerCase().includes('pase')) {
+            router.push('/club/tramites/pases/solicitar');
+            return;
+        }
+        
+        // Block other tramites from opening modal, just show the price
+        // No action needed for inscriptions as they are handled elsewhere
     };
 
     const handleCopy = (text: string) => {
@@ -118,6 +124,12 @@ export default function ClubTramitesPage() {
                     <h1 className="text-4xl font-black tracking-tight mb-2">Trámites Administrativos</h1>
                     <p className="text-zinc-400 font-medium text-lg">Gestiona pagos, inscripciones y solicitudes ante la Federación.</p>
                 </div>
+                {/* Inbox for Passes */}
+                <Link href="/club/tramites/pases/recibidos" className="bg-tdf-blue hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-2xl flex items-center gap-3 transition shadow-lg shrink-0">
+                    <Inbox size={20} />
+                    Bandeja de Pases
+                    {/* Optionally fetch dynamic count here */}
+                </Link>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -141,7 +153,15 @@ export default function ClubTramitesPage() {
                                 </div>
                                 <div className="relative z-10 flex items-end justify-between w-full mt-4">
                                     <div className="text-2xl font-black text-white">$ {parseInt(fee.price).toLocaleString('es-AR')}</div>
-                                    <span className="bg-white text-black text-xs font-black px-3 py-1.5 rounded-lg group-hover:scale-105 transition-transform">INICIAR &rarr;</span>
+                                    {fee.title.toLowerCase().includes('pase') ? (
+                                        <span className="bg-white text-black text-xs font-black px-3 py-1.5 rounded-lg group-hover:scale-105 transition-transform">
+                                            INICIAR &rarr;
+                                        </span>
+                                    ) : (
+                                        <span className="bg-zinc-800 text-zinc-500 text-xs font-black px-3 py-1.5 rounded-lg border border-zinc-700">
+                                            SOLO INFO
+                                        </span>
+                                    )}
                                 </div>
                                 {/* Decoracion */}
                                 <div className="absolute -right-4 -bottom-4 text-zinc-800 opacity-20 group-hover:opacity-40 transition-opacity">

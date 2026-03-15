@@ -16,9 +16,26 @@ export default function AdminLayout({
     const router = useRouter()
     const supabase = createClient()
     const [unreadMsgs, setUnreadMsgs] = useState(0)
+    const [pendingPases, setPendingPases] = useState(0)
 
     useEffect(() => {
         setUnreadMsgs(0)
+        
+        const fetchPendingPases = async () => {
+            const { count } = await supabase
+                .from('tramites_pases')
+                .select('*', { count: 'exact', head: true })
+                .eq('estado', 'esperando_federacion');
+            setPendingPases(count || 0);
+        };
+        fetchPendingPases();
+
+        const channel = supabase.channel('pases_admin_sidebar')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases', filter: `estado=eq.esperando_federacion` }, () => {
+                 fetchPendingPases();
+            }).subscribe();
+            
+        return () => { supabase.removeChannel(channel); };
     }, [supabase])
 
     const handleLogout = async () => {
@@ -32,7 +49,9 @@ export default function AdminLayout({
             <aside className="w-64 bg-blue-600 text-white hidden md:flex flex-col fixed inset-y-0 shadow-xl border-r border-white/5">
                 <div className="p-4 border-b border-white/10 bg-blue-700">
                     <h2 className="text-xl font-bold flex items-center gap-2">
-                        <span className="w-8 h-8 bg-tdf-orange rounded-lg flex items-center justify-center text-xs shadow-lg">FFV</span>
+                        <span className="w-8 h-8 rounded-lg flex items-center justify-center shadow-lg bg-white overflow-hidden p-1">
+                            <img src="/logo-fvf.png" alt="FVF" className="object-contain w-full h-full" />
+                        </span>
                         <span className="tracking-tight">Panel Admin</span>
                     </h2>
                 </div>
@@ -49,7 +68,7 @@ export default function AdminLayout({
                     <AdminNavLink href="/admin/equipos" icon={<Users size={18} />} label="Equipos" />
 
                     <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3 mt-4">Institucional</div>
-                    <AdminNavLink href="/admin/tramites" icon={<ClipboardList size={18} />} label="Trámites" />
+                    <AdminNavLink href="/admin/tramites" icon={<ClipboardList size={18} />} label="Trámites" badge={pendingPases} />
                     <AdminNavLink href="/admin/reglamentos" icon={<FileText size={18} />} label="Reglamentos" />
                     <AdminNavLink href="/admin/configuracion" icon={<Settings size={18} />} label="Configuración" />
                 </nav>

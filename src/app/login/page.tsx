@@ -31,6 +31,7 @@ export default function LoginPage() {
                 if (profile?.role === 'admin') router.push('/admin')
                 else if (profile?.role === 'club' && profile.club_id) router.push('/club')
                 else if (profile?.role === 'referee') router.push('/referee')
+                else if (profile?.role === 'temp_pase') router.push('/pases')
                 else router.push('/')
             }
         }
@@ -44,9 +45,16 @@ export default function LoginPage() {
         setMessage(null)
 
         try {
+            // INTERCEPCIÓN DNI: Si el input es puramente numérico (ej. "12345678"), lo tratamos como login de Pase 
+            // transformándolo en el email esperado por Supabase Auth
+            let loginEmail = email.trim()
+            if (/^\d{7,9}$/.test(loginEmail)) {
+                loginEmail = `${loginEmail}@federacion.com`
+            }
+
             // LOGIN
             const { data, error: authError } = await supabase.auth.signInWithPassword({
-                email,
+                email: loginEmail,
                 password,
             })
 
@@ -80,6 +88,9 @@ export default function LoginPage() {
                     case 'referee':
                         router.push('/referee')
                         break
+                    case 'temp_pase':
+                        router.push('/pases')
+                        break
                     default:
                         router.push('/')
                 }
@@ -104,7 +115,7 @@ export default function LoginPage() {
                 <div className="bg-white dark:bg-zinc-800 px-8 py-6 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
                     <div>
                         <h2 className="text-2xl font-black text-tdf-blue dark:text-white uppercase tracking-tight">Acceso Oficial</h2>
-                        <p className="text-sm text-gray-400">Federación de Voley Ushuaia</p>
+                        <p className="text-sm text-gray-400">Federación de Voley Fueguina</p>
                     </div>
                     <Link href="/" className="p-2 bg-gray-100 dark:bg-white/10 rounded-full hover:bg-gray-200 transition-colors">
                         <X size={20} className="text-gray-500" />
@@ -129,14 +140,14 @@ export default function LoginPage() {
 
                         <div className="space-y-2">
                             <label htmlFor="email" className="block text-xs font-bold uppercase text-gray-500 tracking-wider">
-                                Correo Electrónico
+                                Correo Electrónico o DNI
                             </label>
                             <input
                                 id="email"
-                                type="email"
+                                type="text"
                                 required
                                 className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-tdf-orange focus:border-transparent outline-none bg-gray-50 dark:bg-zinc-800 transition-all font-medium text-gray-900 dark:text-white"
-                                placeholder="usuario@fvu.com"
+                                placeholder="usuario@fvu.com o DNI"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                             />
@@ -178,7 +189,7 @@ export default function LoginPage() {
                 </div>
             </div>
             <div className="absolute bottom-6 text-white/40 text-xs font-medium">
-                &copy; 2026 Federación de Voley Ushuaia
+                &copy; 2026 Federación de Voley Fueguina
             </div>
         </div>
     );

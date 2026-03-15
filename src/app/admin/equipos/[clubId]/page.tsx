@@ -133,6 +133,49 @@ export default function ClubDetailsPage() {
         setTogglingPayment(true)
         try {
             const newValue = !club.has_paid_inscription
+
+            // FASE DE TESORERÍA (Solo si se está marcando como pagado, no al revocar)
+            if (newValue) {
+                const amountStr = prompt(`Ingrese el monto abonado por el club para la inscripción (Ej: 150000) o deje en 0 si está bonificado:`, "0");
+                if (amountStr === null) {
+                    setTogglingPayment(false);
+                    return; // Cancelado
+                }
+                const amount = parseFloat(amountStr.replace(/\./g, '').replace(',', '.') || '0');
+                
+                if (amount > 0) {
+                    // Buscar una cuenta para asentar el INGRESO
+                    let { data: accounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'INGRESO').limit(1);
+                    if (!accounts || accounts.length === 0) {
+                        // Fallback: buscar cuenta tipo ACTIVO si no hay INGRESO puras
+                        const { data: fallbackAccounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'ACTIVO').limit(1);
+                        accounts = fallbackAccounts;
+                    }
+
+                    const accountId = accounts && accounts.length > 0 ? accounts[0].id : null;
+
+                    if (accountId) {
+                        const { data: userData } = await supabase.auth.getUser();
+                        const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
+                            type: 'INGRESO',
+                            amount: amount,
+                            description: `Inscripción Anual Pagada vía Ficha Club`,
+                            entity_name: club.name,
+                            date: new Date().toISOString().split('T')[0],
+                            account_id: accountId,
+                            created_by: userData.user?.id
+                        }]);
+
+                        if (treasuryError) {
+                            console.error("Error creating treasury movement:", treasuryError);
+                            throw new Error("No se pudo registrar el ingreso en Tesorería.");
+                        }
+                    } else {
+                        throw new Error('No se puede cobrar: No hay una cuenta de INGRESO configurada en Tesorería.');
+                    }
+                }
+            }
+
             const { error } = await supabase
                 .from('teams')
                 .update({ has_paid_inscription: newValue })
@@ -141,10 +184,10 @@ export default function ClubDetailsPage() {
             if (error) throw error
 
             setClub({ ...club, has_paid_inscription: newValue })
-            alert(`Estado actualizado: ${newValue ? 'Inscripción Pagada' : 'No Registra Pago'}`)
+            alert(`Estado actualizado: ${newValue ? 'Inscripción Pagada y Registrada' : 'No Registra Pago'}`)
         } catch (error: any) {
             console.error('Error toggling payment details:', error)
-            alert('Error al actualizar: Asegúrate de haber ejecutado el script SQL para agregar la columna has_paid_inscription en tu base de datos.')
+            alert('Error al actualizar: ' + (error.message || 'Asegúrate de haber ejecutado el script SQL.'))
         } finally {
             setTogglingPayment(false)
         }

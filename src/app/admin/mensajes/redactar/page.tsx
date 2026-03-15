@@ -385,9 +385,9 @@ export default function ComposeMessagePage() {
                                 {body || '[Cuerpo del mensaje...]'}
                             </div>
                             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/10 flex items-center gap-4">
-                                <img src="/logo-fvu.png" className="w-12 h-12 grayscale opacity-50" />
+                                <img src="/logo-fvf.png" className="w-12 h-12 object-contain" />
                                 <div className="text-xs text-slate-400">
-                                    <p className="font-bold uppercase">Federación de Voley Ushuaia</p>
+                                    <p className="font-bold uppercase">Federación de Voley Fueguina</p>
                                     <p>Comunicado Oficial</p>
                                 </div>
                             </div>

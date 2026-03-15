@@ -7,7 +7,7 @@ import Link from 'next/link';
 import {
    FileText, CheckCircle, XCircle, Clock,
    Search, ArrowLeft, Download, AlertTriangle,
-   Info, AlertOctagon, TrendingUp, Keyboard, Users, Shield, UserCheck, Loader2
+   Info, AlertOctagon, TrendingUp, Keyboard, Users, Shield, UserCheck, Loader2, FileSignature, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -145,6 +145,7 @@ export default function AdminTramitesPage() {
                   amount: procedureFee,
                   description: `Trámite: ${selectedItem.title} - Op: ${selectedItem.originalData.code || 'S/N'}`,
                   entity_name: selectedItem.team_name,
+                  club_id: selectedItem.originalData.club_id,
                   date: new Date(),
                   account_id: accountId
                }]);
@@ -188,6 +189,7 @@ export default function AdminTramitesPage() {
                   amount: playerFeeAmount,
                   description: `Inscripción Jugador: ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
                   entity_name: selectedItem.team_name,
+                  club_id: selectedItem.originalData.team_id,
                   date: new Date(),
                   account_id: accountId
                }]);
@@ -322,6 +324,11 @@ export default function AdminTramitesPage() {
                      <XCircle size={14} /> Rechazados
                   </button>
                </div>
+
+               {/* Pases Shortcut */}
+               <Link href="/admin/tramites/pases" className="ml-2 px-4 py-1.5 bg-tdf-blue hover:bg-blue-600 text-white rounded-md text-xs font-bold transition flex items-center gap-2 shadow-sm whitespace-nowrap">
+                  <FileSignature size={14} /> Auditoría Pases
+               </Link>
             </div>
          </header>
 
@@ -428,9 +435,9 @@ export default function AdminTramitesPage() {
                               </div>
                            </div>
 
-                           {/* 3-COLUMN DOCUMENT GRID */}
-                           <div className="flex-1 p-8 overflow-y-auto bg-black pb-32">
-                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-6xl mx-auto h-full items-center">
+                           <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-zinc-950 pb-32">
+                              <h3 className="text-zinc-400 font-bold uppercase tracking-widest text-xs mb-6 border-b border-zinc-800 pb-2">Documentación Adjunta</h3>
+                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 w-full max-w-6xl items-start">
 
                                  {/* 1. FOTO */}
                                  <DocumentCard
@@ -498,37 +505,74 @@ export default function AdminTramitesPage() {
 }
 
 function DocumentCard({ title, url, type, missingText }: { title: string, url: string | null, type: 'image' | 'document', missingText: string }) {
+   const [isModalOpen, setIsModalOpen] = useState(false);
+   
    return (
-      <div className="bg-zinc-900 border-2 border-zinc-800 rounded-2xl overflow-hidden flex flex-col h-[400px] group hover:border-zinc-700 transition relative">
-         <div className="bg-zinc-950/50 p-3 border-b border-zinc-800 flex justify-between items-center">
-            <h4 className="font-bold text-zinc-300 text-sm">{title}</h4>
+      <>
+      <div 
+         onClick={() => url && setIsModalOpen(true)}
+         className={`bg-zinc-900 border-2 border-zinc-800 rounded-2xl overflow-hidden flex flex-col h-40 md:h-48 group transition relative ${url ? 'cursor-pointer hover:border-tdf-blue hover:shadow-[0_0_20px_rgba(43,99,217,0.2)]' : ''}`}>
+         <div className="bg-zinc-950 p-3 border-b border-zinc-800 flex justify-between items-center z-10">
+            <h4 className="font-bold text-zinc-300 text-[11px] uppercase tracking-wider">{title}</h4>
             {url && (
-               <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1">
-                  <Download size={12} /> Abrir
-               </a>
+               <span className="text-[10px] font-bold text-blue-400 group-hover:text-blue-300 flex items-center gap-1 transition-colors uppercase bg-blue-500/10 px-2 py-0.5 rounded">
+                  <Search size={10} /> Ampliar
+               </span>
             )}
          </div>
 
-         <div className="flex-1 relative flex items-center justify-center bg-zinc-950 p-4">
+         <div className="flex-1 relative flex items-center justify-center bg-black p-2 overflow-hidden">
             {url ? (
                type === 'image' ? (
-                  <img src={url} className="max-w-full max-h-full object-contain rounded-lg shadow-lg" />
+                  <img src={url} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-110 transition duration-500 rounded-lg filter grayscale group-hover:grayscale-0" alt={title} />
                ) : (
-                  <div className="text-center">
-                     <FileText size={48} className="text-zinc-600 mb-2 mx-auto" />
-                     <p className="text-sm font-bold text-zinc-400">Documento PDF/IMG</p>
-                     <a href={url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-block px-4 py-2 bg-zinc-800 rounded-lg text-white hover:bg-zinc-700 text-sm font-bold">
-                        Vista Previa
-                     </a>
+                  <div className="text-center group-hover:scale-110 transition-transform duration-300">
+                     <FileText size={36} className="text-tdf-blue mb-2 mx-auto filter drop-shadow-[0_0_8px_rgba(43,99,217,0.5)]" />
+                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Ver PDF Documento</p>
                   </div>
                )
             ) : (
-               <div className="text-center opacity-40">
-                  <AlertOctagon size={48} className="mx-auto mb-2" />
-                  <p className="font-bold">{missingText}</p>
+               <div className="text-center opacity-30">
+                  <AlertOctagon size={28} className="mx-auto mb-2 text-red-500" />
+                  <p className="font-bold text-[10px] uppercase">{missingText}</p>
                </div>
             )}
          </div>
       </div>
+
+      {/* DOCUMENT MODAL FULLSCREEN */}
+      {isModalOpen && url && (
+         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/90 backdrop-blur-md p-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="absolute top-4 right-4 md:top-8 md:right-8 flex gap-4 z-50">
+               <a 
+                  href={url} target="_blank" rel="noopener noreferrer" 
+                  className="bg-zinc-800/80 hover:bg-zinc-700 text-white p-3 rounded-xl transition flex items-center justify-center backdrop-blur"
+                  title="Descargar o Abrir en Pestaña Nueva"
+               >
+                  <Download size={20} />
+               </a>
+               <button 
+                  onClick={() => setIsModalOpen(false)}
+                  className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/50 p-3 rounded-xl transition backdrop-blur"
+               >
+                  <X size={20} />
+               </button>
+            </div>
+            
+            <div className="w-full h-full max-w-5xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col relative mt-16 md:mt-0 max-h-[90vh]">
+               <div className="bg-zinc-950 px-6 py-4 border-b border-zinc-800 flex justify-between items-center z-10">
+                  <h3 className="text-lg font-black text-white">{title}</h3>
+               </div>
+               <div className="flex-1 overflow-hidden bg-zinc-950 p-2 md:p-6 flex justify-center items-center">
+                  {type === 'image' ? (
+                     <img src={url} className="max-w-full max-h-full object-contain rounded-xl shadow-lg" alt={title} />
+                  ) : (
+                     <iframe src={url} className="w-full h-full rounded-xl bg-white shadow-lg" />
+                  )}
+               </div>
+            </div>
+         </div>
+      )}
+      </>
    );
 }

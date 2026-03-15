@@ -97,7 +97,7 @@ export default function TreasuryMovementsPage() {
                                     <th className="p-4">Tipo</th>
                                     <th className="p-4">Descripción</th>
                                     <th className="p-4">Entidad</th>
-                                    <th className="p-4 text-right">Monto</th>
+                                    <th className="p-4 text-right">Monto (ARS)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
@@ -122,7 +122,7 @@ export default function TreasuryMovementsPage() {
                                         </td>
                                         <td className={`p-4 text-right font-bold font-mono ${mov.type === 'INGRESO' ? 'text-emerald-500' : 'text-red-500'
                                             }`}>
-                                            {mov.type === 'EGRESO' ? '-' : '+'} $ {mov.amount.toLocaleString('es-AR')}
+                                            {mov.type === 'EGRESO' ? '-' : '+'} ARS $ {mov.amount.toLocaleString('es-AR')}
                                         </td>
                                     </tr>
                                 ))}

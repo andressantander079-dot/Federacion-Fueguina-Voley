@@ -40,23 +40,8 @@ export default function DesignationsPage() {
                     profile:profiles(full_name)
                 )
             `)
-            //.gte('scheduled_time', new Date().toISOString()) // Removed to allow viewing past/today's matches
-            .order('scheduled_time', { ascending: false }) // Show newest/upcoming first? Actually descending shows latest created usually, but for schedule ascending is better for "Unknown->Future". 
-            // If we show past, maybe Descending is better so we see recent past?
-            // User wants to see "assigned referees". If match passed, they still want to see it? Correct.
-            // Let's keep Ascending but remove filter? Or Descending?
-            // "Partidos programados" usually implies future.
-            // But if they are "missing", maybe they are from "today" earlier?
-            // Let's remove the filter.
-            .order('scheduled_time', { ascending: false }) // Past -> Future? No, Future -> Past?
-            // If I sort Ascending: Oldest (Past) ... Newest (Future).
-            // If I sort Descending: Newest (Future) ... Oldest (Past).
-            // Let's use Descending to show latest matches at top? Or Ascending to see "Next match"?
-            // Admin usually wants to see "What's coming next".
-            // Let's stick to Ascending but remove filter? No, if I have 100 past matches, I don't want to scroll.
-            // Let's filter matches from "Last 24 hours" + Future?
-            .gte('scheduled_time', new Date(Date.now() - 86400000).toISOString()) // Show matches from last 24h onwards
-            .order('scheduled_time', { ascending: true })
+            .order('status', { ascending: true }) // Group by status to separate finished
+            .order('scheduled_time', { ascending: false }) // Newest first
 
         if (data) setMatches(data)
         setLoading(false)
@@ -211,12 +196,18 @@ export default function DesignationsPage() {
                         </div>
 
                         {/* Action */}
-                        <button
-                            onClick={() => openAssignmentModal(match)}
-                            className="bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-white px-4 py-2 rounded-lg font-bold text-sm transition"
-                        >
-                            Designar
-                        </button>
+                        {match.status === 'finalizado' ? (
+                            <div className="flex items-center gap-1 px-4 py-2 bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-400 rounded-lg font-bold text-sm">
+                                <CheckCircle size={16} /> Finalizado
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => openAssignmentModal(match)}
+                                className="bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 text-slate-700 dark:text-white px-4 py-2 rounded-lg font-bold text-sm transition"
+                            >
+                                Designar
+                            </button>
+                        )}
                     </div>
                 ))}
             </div>

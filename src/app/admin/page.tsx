@@ -388,7 +388,7 @@ export default function AdminDashboardPage() {
             <div className="flex flex-col lg:flex-row gap-8 mb-10 animate-in fade-in slide-in-from-top-4 duration-700">
                 <header className="flex-1">
                     <h1 className="text-3xl md:text-4xl font-black text-orange-900 dark:text-white tracking-tight mb-2">
-                        Panel de Control <span className="text-tdf-orange">FFV</span>
+                        Panel de Control <span className="text-tdf-orange">FVF</span>
                     </h1>
                     <p className="text-slate-500 dark:text-slate-400 text-lg">
                         Bienvenido al sistema de gestión centralizada.

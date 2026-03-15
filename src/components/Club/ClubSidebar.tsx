@@ -2,6 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { useClubAuth } from '@/hooks/useClubAuth';
 import {
     LayoutDashboard, Users, Trophy, MessageSquare,
     FileText, Briefcase, Settings, LogOut, Shield
@@ -16,12 +19,36 @@ interface SidebarProps {
 export default function ClubSidebar({ clubName, logoUrl, onLogout }: SidebarProps) {
     const pathname = usePathname();
 
+    const { clubId } = useClubAuth();
+    const [supabase] = useState(() => createClient());
+    const [pendingPases, setPendingPases] = useState(0);
+
+    useEffect(() => {
+        if (!clubId) return;
+        const fetchPending = async () => {
+            const { count } = await supabase
+                .from('tramites_pases')
+                .select('*', { count: 'exact', head: true })
+                .eq('origen_club_id', clubId)
+                .eq('estado', 'solicitado');
+            setPendingPases(count || 0);
+        };
+        fetchPending();
+        
+        const channel = supabase.channel('pases_club_sidebar')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases', filter: `origen_club_id=eq.${clubId}` }, () => {
+                 fetchPending();
+            }).subscribe();
+            
+        return () => { supabase.removeChannel(channel); };
+    }, [clubId, supabase]);
+
     const menuItems = [
         { name: 'Dashboard', href: '/club', icon: LayoutDashboard },
         { name: 'Mis Categorías', href: '/club/plantel', icon: Users },
         { name: 'Competencias', href: '/club/competitions', icon: Trophy },
         { name: 'Agenda', href: '/club/agenda', icon: FileText },
-        { name: 'Trámites', href: '/club/tramites', icon: Briefcase },
+        { name: 'Trámites', href: '/club/tramites', icon: Briefcase, badge: pendingPases },
         { name: 'Mensajería', href: '/club/mensajes', icon: MessageSquare },
     ];
 
@@ -50,13 +77,20 @@ export default function ClubSidebar({ clubName, logoUrl, onLogout }: SidebarProp
                         <Link
                             key={item.href}
                             href={item.href}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
+                            className={`flex justify-between items-center px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
                                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20 font-bold'
                                     : 'text-slate-400 hover:bg-slate-900 hover:text-white'
                                 }`}
                         >
-                            <item.icon size={18} className={isActive ? 'text-white' : 'text-slate-500 group-hover:text-white transition-colors'} />
-                            <span className="text-sm">{item.name}</span>
+                            <div className="flex items-center gap-3">
+                                <item.icon size={18} className={isActive ? 'text-white' : 'text-slate-500 group-hover:text-white transition-colors'} />
+                                <span className="text-sm">{item.name}</span>
+                            </div>
+                            {item.badge !== undefined && item.badge > 0 && (
+                                <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full border border-red-400/50 shadow-sm">
+                                    {item.badge}
+                                </span>
+                            )}
                         </Link>
                     );
                 })}

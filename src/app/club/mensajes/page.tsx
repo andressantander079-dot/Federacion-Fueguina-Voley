@@ -330,7 +330,7 @@ export default function ClubMensajesPage() {
                         </div>
                         <div>
                            <p className="text-xs font-bold uppercase tracking-wider">Destinatario</p>
-                           <p className="text-white font-bold text-lg">Administración FFV</p>
+                           <p className="text-white font-bold text-lg">Administración FVF</p>
                         </div>
                      </div>
 
@@ -449,7 +449,7 @@ export default function ClubMensajesPage() {
 
                      {/* Footer Mensaje */}
                      <div className="mt-12 pt-8 border-t border-zinc-800 flex items-center gap-4 opacity-50">
-                        <img src="/logo.png" alt="Logo" className="w-10 h-10 grayscale opacity-20" onError={(e) => e.currentTarget.style.display = 'none'} />
+                        <img src="/logo-fvf.png" alt="Logo" className="w-10 h-10 object-contain opacity-70" onError={(e) => e.currentTarget.style.display = 'none'} />
                         <div className="text-xs text-zinc-600">
                            <p className="font-bold uppercase">Sistema de Gestión Federativa</p>
                            <p>Mensaje Oficial</p>
