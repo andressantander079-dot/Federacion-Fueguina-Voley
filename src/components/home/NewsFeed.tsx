@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { Calendar, Heart, Share2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import Link from 'next/link'
 
 interface NewsItem {
     id: string
@@ -26,12 +25,10 @@ export default function NewsFeed() {
     useEffect(() => {
         async function fetchNews() {
             try {
-                const now = new Date().toISOString()
                 const { data, error } = await supabase
                     .from('news')
                     .select('id, title, body, image_url, created_at, published_at, likes, category, pinned')
                     .eq('status', 'published')
-                    //.lte('published_at', now) 
                     .order('pinned', { ascending: false })
                     .order('published_at', { ascending: false })
                     .limit(6)
@@ -47,29 +44,36 @@ export default function NewsFeed() {
         fetchNews()
     }, [])
 
+    // Actualiza el likes en el array
+    const handleLikesChange = (id: string, newCount: number) => {
+        setNews(prev => prev.map(n => n.id === id ? { ...n, likes: newCount } : n))
+        // Si el modal está abierto con esta noticia, también actualiza
+        setSelectedNews(prev => prev?.id === id ? { ...prev, likes: newCount } : prev)
+    }
+
     if (loading) return <div className="p-8 text-center text-white">Cargando noticias...</div>;
     if (news.length === 0) return <div className="p-8 text-center text-slate-500">No hay noticias publicadas</div>;
 
     return (
         <section className="py-24 bg-gray-50 dark:bg-zinc-900/50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                {/* Header can be added here if needed */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {news.map((item) => (
                         <NewsCard
                             key={item.id}
                             news={item}
                             onClick={() => setSelectedNews(item)}
+                            onLikesChange={handleLikesChange}
                         />
                     ))}
                 </div>
             </div>
 
-            {/* EXPANDED NEWS MODAL */}
+            {/* MODAL DE NOTICIA EXPANDIDA */}
             {selectedNews && (
                 <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-zinc-900 w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl relative flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-200">
-                        {/* Close Button */}
+                        {/* Botón cerrar */}
                         <button
                             onClick={() => setSelectedNews(null)}
                             className="absolute top-4 right-4 z-50 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors"
@@ -77,7 +81,7 @@ export default function NewsFeed() {
                             <X size={24} />
                         </button>
 
-                        {/* Image Section (Left/Top) */}
+                        {/* Imagen */}
                         <div className="w-full md:w-1/2 h-64 md:h-auto bg-black relative shrink-0">
                             {selectedNews.image_url ? (
                                 <img
@@ -97,10 +101,9 @@ export default function NewsFeed() {
                             </div>
                         </div>
 
-                        {/* Content Section (Right/Bottom) */}
-                        <div className="flex-1 p-8 overflow-y-auto bg-white dark:bg-zinc-900">
-
-                            <div className="mb-6">
+                        {/* Contenido */}
+                        <div className="flex-1 p-8 overflow-y-auto bg-white dark:bg-zinc-900 flex flex-col">
+                            <div className="mb-6 flex-1">
                                 <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
                                     <Calendar className="w-3 h-3" />
                                     {new Date(selectedNews.published_at || selectedNews.created_at).toLocaleDateString('es-AR', {
@@ -120,12 +123,14 @@ export default function NewsFeed() {
                                 </div>
                             </div>
 
-                            {/* Actions in Modal too? */}
+                            {/* Botones en modal — con likes funcional */}
                             <div className="pt-6 border-t border-slate-100 dark:border-white/5 flex gap-4">
-                                <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-white/5 rounded-lg text-sm font-bold text-slate-600 dark:text-slate-300">
-                                    <Heart size={16} /> Me gusta ({selectedNews.likes})
-                                </button>
-                                {/* Share logic fits well here too */}
+                                <LikeButton
+                                    newsId={selectedNews.id}
+                                    initialLikes={selectedNews.likes}
+                                    onLikesChange={handleLikesChange}
+                                    large
+                                />
                             </div>
                         </div>
                     </div>
@@ -135,32 +140,88 @@ export default function NewsFeed() {
     )
 }
 
-function NewsCard({ news, onClick }: { news: NewsItem, onClick: () => void }) {
+// ----- Botón de like reutilizable -----
+function LikeButton({
+    newsId,
+    initialLikes,
+    onLikesChange,
+    large = false
+}: {
+    newsId: string
+    initialLikes: number
+    onLikesChange: (id: string, newCount: number) => void
+    large?: boolean
+}) {
     const [liked, setLiked] = useState(false)
-    const [likesCount, setLikesCount] = useState(news.likes || 0)
+    const [likesCount, setLikesCount] = useState(initialLikes)
     const supabase = createClient()
+
+    // Sincronizar si el padre actualiza (ej. se abre el modal con count actualizado)
+    useEffect(() => {
+        setLikesCount(initialLikes)
+    }, [initialLikes])
 
     const handleLike = async (e: React.MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
 
         const isLiking = !liked
+        const newCount = isLiking ? likesCount + 1 : Math.max(0, likesCount - 1)
+
+        setLiked(isLiking)
+        setLikesCount(newCount)
+        onLikesChange(newsId, newCount)
 
         try {
-            setLiked(isLiking)
-            setLikesCount(prev => isLiking ? prev + 1 : Math.max(0, prev - 1))
-
             const rpcName = isLiking ? 'increment_likes' : 'decrement_likes'
-            const { error } = await supabase.rpc(rpcName, { row_id: news.id })
-
+            const { error } = await supabase.rpc(rpcName, { row_id: newsId })
             if (error) throw error
         } catch (error) {
             console.error("Error toggling like:", error)
+            // Revertir
+            const revertCount = isLiking ? newCount - 1 : newCount + 1
             setLiked(!isLiking)
-            setLikesCount(prev => isLiking ? Math.max(0, prev - 1) : prev + 1)
+            setLikesCount(revertCount)
+            onLikesChange(newsId, revertCount)
         }
     }
 
+    if (large) {
+        return (
+            <button
+                onClick={handleLike}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${liked
+                    ? 'bg-red-50 dark:bg-red-900/20 text-red-500'
+                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:text-red-500'
+                    }`}
+            >
+                <Heart size={16} className={liked ? "fill-current" : ""} />
+                Me gusta ({likesCount})
+            </button>
+        )
+    }
+
+    return (
+        <button
+            onClick={handleLike}
+            className={`flex items-center gap-1 text-xs font-bold transition-colors ${liked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
+        >
+            <Heart size={16} className={liked ? "fill-current" : ""} />
+            {likesCount}
+        </button>
+    )
+}
+
+// ----- Tarjeta de noticia -----
+function NewsCard({
+    news,
+    onClick,
+    onLikesChange
+}: {
+    news: NewsItem
+    onClick: () => void
+    onLikesChange: (id: string, newCount: number) => void
+}) {
     const handleShare = async (e: React.MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
@@ -220,13 +281,11 @@ function NewsCard({ news, onClick }: { news: NewsItem, onClick: () => void }) {
                 </p>
 
                 <div className="pt-3 border-t border-gray-100 dark:border-white/5 flex justify-between items-center">
-                    <button
-                        onClick={handleLike}
-                        className={`flex items-center gap-1 text-xs font-bold transition-colors ${liked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
-                    >
-                        <Heart size={16} className={liked ? "fill-current" : ""} />
-                        {likesCount}
-                    </button>
+                    <LikeButton
+                        newsId={news.id}
+                        initialLikes={news.likes}
+                        onLikesChange={onLikesChange}
+                    />
                     <button
                         onClick={handleShare}
                         className="flex items-center gap-1 text-xs font-bold text-gray-400 hover:text-tdf-blue transition-colors"

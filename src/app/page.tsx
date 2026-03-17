@@ -49,7 +49,7 @@ export default function HomePage() {
                         <h1 className="text-6xl md:text-8xl font-black text-white mb-8 tracking-tighter uppercase drop-shadow-2xl animate-in fade-in zoom-in duration-1000 leading-[0.9]">
                             Federación <br />
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-orange-100 to-white transform hover:scale-105 inline-block transition-transform duration-500 cursor-default">
-                                de Vóley Fueguina
+                                de Voleibol Fueguino
                             </span>
                         </h1>
 
