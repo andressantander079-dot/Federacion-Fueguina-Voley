@@ -34,42 +34,33 @@ export default function AgendaClub() {
 
     async function loadData(id: string) {
         try {
-            // 2. Cargar Partidos del Equipo (Local o Visitante)
-            const { data: partidos } = await supabase
-                .from('matches')
-                .select(`
-                  *,
-                  venue:venues(name),
-                  category:categories(name),
-                  home_team:teams!home_team_id(id, name, shield_url),
-                  away_team:teams!away_team_id(id, name, shield_url)
-                `)
-                .or(`home_team_id.eq.${id},away_team_id.eq.${id}`);
-
             // 3. Cargar Eventos de Calendario (Reuniones, Fechas Límite)
+            // Soporta target_role = 'all' o target_role = 'club' con target_clubs_ids conteniendo el teamId
+            // Como Supabase OR es un poco restrictivo con arrays, traemos todo lo de clubes y filtramos en JS para mayor seguridad
             const { data: eventos } = await supabase
                 .from('calendar_events')
                 .select('*')
-                .or(`target_role.eq.all,target_role.eq.club,target_club_id.eq.${id}`);
+                .or(`target_role.eq.all,target_role.eq.club,target_role.eq.specific_club`);
 
             // 4. Normalizar y Combinar
-            const matchesFormatted = (partidos || []).map((p: any) => ({
-                ...p,
-                type: 'match',
-                date_time: p.scheduled_time,
-                title: p.home_team_id === id
-                    ? `vs ${p.away_team?.name || 'Rival'}`
-                    : `vs ${p.home_team?.name || 'Rival'}`
-            }));
+            const matchesFormatted: any[] = []; // Partidos deshabilitados temporalmente hasta crear módulo Competencias
 
-            const eventsFormatted = (eventos || []).map((e: any) => ({
-                ...e,
-                type: e.event_type || 'meeting',
-                date_time: e.start_time,
-                venue: { name: 'Administración' },
-                title: e.title,
-                description: e.description
-            }));
+
+            const eventsFormatted = (eventos || [])
+                .filter((e: any) => {
+                     if (e.target_role === 'all') return true;
+                     if (e.target_role === 'club' && (!e.target_clubs_ids || e.target_clubs_ids.length === 0)) return true;
+                     if ((e.target_role === 'club' || e.target_role === 'specific_club') && e.target_clubs_ids?.includes(id)) return true;
+                     return false;
+                })
+                .map((e: any) => ({
+                    ...e,
+                    type: e.event_type || 'meeting',
+                    date_time: e.start_time,
+                    venue: { name: 'Administración' },
+                    title: e.title,
+                    description: e.description
+                }));
 
             // Combinar todo
             const allEvents = [...matchesFormatted, ...eventsFormatted];
@@ -116,13 +107,15 @@ export default function AgendaClub() {
     const getEventsForDate = (date: Date) => {
         return matches.filter(m => {
             if (!m.date_time) return false;
-            // Use literal date comparison to prevent timezone shift causing events to appear on wrong day
-            const isoDatePart = m.date_time.split('T')[0];
-            const cellY = date.getFullYear();
-            const cellM = String(date.getMonth() + 1).padStart(2, '0');
-            const cellD = String(date.getDate()).padStart(2, '0');
-            const cellIso = `${cellY}-${cellM}-${cellD}`;
-            return isoDatePart === cellIso;
+            
+            // Instanciar ambas fechas en el contexto de la zona horaria local del navegador (Argentina)
+            const eventDate = new Date(m.date_time);
+            
+            return (
+                eventDate.getDate() === date.getDate() &&
+                eventDate.getMonth() === date.getMonth() &&
+                eventDate.getFullYear() === date.getFullYear()
+            );
         });
     };
 

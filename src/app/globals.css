@@ -1,19 +1,24 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #F5F5DC;
   --foreground: #171717;
 }
 
-
-
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #0A192F;
+  --foreground: #FFFFFF;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Transición suave y global prohibiendo cortes bruscos como dictamina el módulo 2 */
+*, *::before, *::after {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
 }

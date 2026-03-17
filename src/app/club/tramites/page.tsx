@@ -14,8 +14,6 @@ export default function ClubTramitesPage() {
     const router = useRouter();
     const { settings, loading: loadingSettings } = useSettings();
 
-    const [procedures, setProcedures] = useState<any[]>([]);
-    const [loadingProcedures, setLoadingProcedures] = useState(true);
     const [userClub, setUserClub] = useState<any>(null);
 
     // Modal / Selection State
@@ -30,22 +28,10 @@ export default function ClubTramitesPage() {
     const { clubId, loading: authLoading, error: authError } = useClubAuth();
 
     useEffect(() => {
-        if (clubId) fetchProcedures(clubId);
+        // No fetch required anymore for general procedures
     }, [clubId]);
 
-    // ... fetchProcedures methods ...
-
-    const fetchProcedures = async (id: string) => {
-        setLoadingProcedures(true);
-        const { data, error } = await supabase
-            .from('procedures')
-            .select('*')
-            .eq('club_id', id)
-            .order('created_at', { ascending: false });
-
-        if (data) setProcedures(data);
-        setLoadingProcedures(false);
-    };
+    // Procedures have been deprecated in favor of specific Tramites Pases/Tesorería.
 
     const openTramite = (fee: any) => {
         if (fee.title.toLowerCase().includes('pase')) {
@@ -98,7 +84,6 @@ export default function ClubTramitesPage() {
             if (insertError) throw insertError;
 
             // Refresh and close
-            fetchProcedures(clubId);
             setIsModalOpen(false);
             setOperationNumber('');
             setFile(null);
@@ -111,7 +96,7 @@ export default function ClubTramitesPage() {
         }
     };
 
-    if (authLoading || loadingSettings || loadingProcedures) return <div className="p-12 text-center text-white">Cargando trámites...</div>;
+    if (authLoading || loadingSettings) return <div className="p-12 text-center text-white">Cargando trámites...</div>;
 
     if (authError) return <div className="p-12 text-center text-red-500">Error: {authError}</div>;
 
@@ -141,11 +126,13 @@ export default function ClubTramitesPage() {
                     </h2>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {settings?.procedure_fees?.map((fee: any, idx: number) => (
-                            <button
+                        {settings?.procedure_fees?.map((fee: any, idx: number) => {
+                            const isPase = fee.title.toLowerCase().includes('pase');
+                            return (
+                            <div
                                 key={idx}
-                                onClick={() => openTramite(fee)}
-                                className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-tdf-blue p-6 rounded-2xl transition text-left group flex flex-col justify-between h-40 shadow-lg relative overflow-hidden"
+                                onClick={() => isPase ? openTramite(fee) : undefined}
+                                className={`bg-zinc-900 border border-zinc-800 p-6 rounded-2xl transition text-left flex flex-col justify-between h-40 shadow-lg relative overflow-hidden ${isPase ? 'hover:bg-zinc-800 hover:border-tdf-blue group cursor-pointer' : 'cursor-default opacity-90'}`}
                             >
                                 <div className="relative z-10">
                                     <h3 className="font-bold text-xl text-white group-hover:text-blue-400 transition-colors mb-1">{fee.title}</h3>
@@ -167,47 +154,10 @@ export default function ClubTramitesPage() {
                                 <div className="absolute -right-4 -bottom-4 text-zinc-800 opacity-20 group-hover:opacity-40 transition-opacity">
                                     <FileText size={100} />
                                 </div>
-                            </button>
-                        ))}
+                            </div>
+                        )})}
                     </div>
 
-                    {/* HISTORIAL */}
-                    <h2 className="text-xl font-bold flex items-center gap-2 text-zinc-400 mt-12">
-                        Historial de Solicitudes
-                    </h2>
-                    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                        {procedures.length === 0 ? (
-                            <EmptyState
-                                icon={<FileText size={48} />}
-                                title="No hay trámites activos"
-                                description="Esta sección te mostrará el historial de pagos de seguros, fichajes y pases solicitados por el club."
-                                actionLabel="Iniciar Nuevo Trámite"
-                                onAction={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                            />
-                        ) : (
-                            <div className="divide-y divide-zinc-800">
-                                {procedures.map(proc => (
-                                    <div key={proc.id} className="p-4 flex items-center justify-between hover:bg-zinc-800/50 transition">
-                                        <div>
-                                            <h4 className="font-bold text-white">{proc.title}</h4>
-                                            <div className="text-xs text-zinc-500 flex gap-3 mt-1">
-                                                <span>Fecha: {new Date(proc.created_at).toLocaleDateString()}</span>
-                                                <span>Cod: {proc.code}</span>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${proc.status === 'aprobado' ? 'bg-green-500/10 text-green-500' :
-                                                proc.status === 'rechazado' ? 'bg-red-500/10 text-red-500' :
-                                                    'bg-yellow-500/10 text-yellow-500'
-                                                }`}>
-                                                {proc.status === 'en_revision' ? 'En Revisión' : proc.status}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
                 </div>
 
                 {/* COL 2: INSTRUCTIONS / HELP */}

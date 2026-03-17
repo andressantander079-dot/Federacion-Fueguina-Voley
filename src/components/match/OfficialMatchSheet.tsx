@@ -1065,9 +1065,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 {!readOnly && (
                                     <>
                                         {!sets[currentSetIdx].finished ? (
-                                            <button onClick={() => { if (confirm("Cerrar set?")) finishSet() }} className="w-full py-1 bg-slate-800 text-white rounded text-xs font-bold">Cerrar Set</button>
+                                            <button onClick={() => finishSet()} className="w-full py-1 bg-slate-800 text-white rounded text-xs font-bold hover:bg-slate-700 transition">Cerrar Set</button>
                                         ) : (
-                                            <button onClick={() => { if (confirm("Iniciar sig set?")) finishSet() }} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold">Iniciar Set {sets.length + 1}</button>
+                                            <button onClick={() => finishSet()} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 transition">Iniciar Set {sets.length + 1}</button>
                                         )}
                                         <button onClick={() => setServingTeam(prev => prev === 'home' ? 'away' : 'home')} className="flex items-center justify-center gap-1 text-[10px] text-slate-400 mt-1 uppercase"><ArrowRightLeft size={10} /> Saque</button>
                                     </>
@@ -1126,7 +1126,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                     <div className="flex justify-end pt-4 pb-10">
                         {!readOnly && (
-                            <button onClick={() => { if (confirm("¿Finalizar Encuentro?")) setClosingFlow(true); }} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-black transition"><Check size={16} /> Finalizar Encuentro</button>
+                            <button onClick={() => setClosingFlow(true)} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-black transition"><Check size={16} /> Finalizar Encuentro</button>
                         )}
                     </div>
                 </main>

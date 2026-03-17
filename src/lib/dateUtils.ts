@@ -4,7 +4,9 @@ const MONTHS = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', '
 const DAYS = ['DOM', 'LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB'];
 
 export function formatArgentinaDateLiteral(dateInput: string | Date, options: any = {}): string {
-    const isoString = dateInput instanceof Date ? dateInput.toISOString() : dateInput;
+    if (!dateInput) return '';
+    if (dateInput instanceof Date && isNaN(dateInput.valueOf())) return '';
+    const isoString = dateInput instanceof Date ? dateInput.toISOString() : String(dateInput);
     if (!isoString) return '';
 
     try {
@@ -37,7 +39,9 @@ export function formatArgentinaDateLiteral(dateInput: string | Date, options: an
 }
 
 export function formatArgentinaTimeLiteral(dateInput: string | Date): string {
-    const isoString = dateInput instanceof Date ? dateInput.toISOString() : dateInput;
+    if (!dateInput) return '';
+    if (dateInput instanceof Date && isNaN(dateInput.valueOf())) return '';
+    const isoString = dateInput instanceof Date ? dateInput.toISOString() : String(dateInput);
     if (!isoString) return '';
     const parts = isoString.split('T');
     if (parts.length < 2) return '';
@@ -45,13 +49,17 @@ export function formatArgentinaTimeLiteral(dateInput: string | Date): string {
 }
 
 export function getArgentinaDayLiteral(dateInput: string | Date): string {
-    const isoString = dateInput instanceof Date ? dateInput.toISOString() : dateInput;
+    if (!dateInput) return '';
+    if (dateInput instanceof Date && isNaN(dateInput.valueOf())) return '';
+    const isoString = dateInput instanceof Date ? dateInput.toISOString() : String(dateInput);
     if (!isoString) return '';
     return isoString.split('T')[0].split('-')[2];
 }
 
 export function getArgentinaMonthLiteral(dateInput: string | Date): string {
-    const isoString = dateInput instanceof Date ? dateInput.toISOString() : dateInput;
+    if (!dateInput) return '';
+    if (dateInput instanceof Date && isNaN(dateInput.valueOf())) return '';
+    const isoString = dateInput instanceof Date ? dateInput.toISOString() : String(dateInput);
     if (!isoString) return '';
     const m = parseInt(isoString.split('T')[0].split('-')[1]);
     return MONTHS[m - 1] || '';

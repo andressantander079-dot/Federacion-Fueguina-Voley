@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, ClipboardList, Calendar, DollarSign, MessageSquare, LogOut, User } from 'lucide-react';
@@ -10,6 +12,38 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
     const pathname = usePathname();
     const router = useRouter();
     const supabase = createClient();
+    const [loading, setLoading] = useState(true);
+    const [accessDenied, setAccessDenied] = useState(false);
+
+    useEffect(() => {
+        const verifyAccess = async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) {
+                    router.push('/login');
+                    return;
+                }
+
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', user.id)
+                    .single();
+
+                if (!profile || (profile.role !== 'referee' && profile.role !== 'admin')) {
+                    setAccessDenied(true);
+                    return;
+                }
+            } catch (error) {
+                console.error("Referee Auth Error:", error);
+                setAccessDenied(true);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        verifyAccess();
+    }, [router, supabase]);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -23,6 +57,31 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
         { href: '/referee/reportes', label: 'Reportes', icon: DollarSign },
         { href: '/referee/perfil', label: 'Mi Perfil', icon: User },
     ];
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-black flex items-center justify-center">
+                <div className="animate-pulse text-white text-xs font-bold uppercase tracking-widest">
+                    Verificando...
+                </div>
+            </div>
+        );
+    }
+
+    if (accessDenied) {
+        return (
+            <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white p-6 text-center">
+                <h1 className="text-3xl font-black mb-2 text-red-500">Acceso Restringido</h1>
+                <p className="text-zinc-500 mb-8 max-w-sm">No tienes permisos de Arbitraje ni de Administración para ingresar a esta consola.</p>
+                <button
+                    onClick={() => router.push('/')}
+                    className="bg-zinc-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-zinc-700 transition"
+                >
+                    Volver al Inicio
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-black text-white pb-20 md:pb-0">

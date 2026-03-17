@@ -20,7 +20,7 @@ export default function AdminAgendaPage() {
         time: '',
         type: 'institucional',
         target_role: 'all', // 'all', 'club', 'referee', 'specific_club'
-        target_club_id: '' 
+        target_clubs_ids: [] as string[]
     });
 
     // Calendar State
@@ -78,7 +78,7 @@ export default function AdminAgendaPage() {
                 start_time: startDateTime.toISOString(),
                 event_type: newEvent.type,
                 target_role: newEvent.target_role,
-                target_club_id: newEvent.target_role === 'specific_club' ? newEvent.target_club_id : null
+                target_clubs_ids: newEvent.target_role === 'specific_club' ? (newEvent.target_clubs_ids.length > 0 ? newEvent.target_clubs_ids : null) : null
             };
 
             const { error } = await supabase.from('calendar_events').insert(payload);
@@ -86,7 +86,7 @@ export default function AdminAgendaPage() {
 
             alert("Evento creado exitosamente");
             setShowModal(false);
-            setNewEvent({ title: '', description: '', date: '', time: '', type: 'institucional', target_role: 'all', target_club_id: '' });
+            setNewEvent({ title: '', description: '', date: '', time: '', type: 'institucional', target_role: 'all', target_clubs_ids: [] });
             fetchData();
 
         } catch (error: any) {
@@ -265,12 +265,28 @@ export default function AdminAgendaPage() {
                                 </select>
                                 
                                 {newEvent.target_role === 'specific_club' && (
-                                    <select required className="w-full border p-2 rounded-lg bg-slate-50 dark:bg-zinc-950 dark:border-zinc-800" value={newEvent.target_club_id} onChange={e => setNewEvent({ ...newEvent, target_club_id: e.target.value })}>
-                                        <option value="">-- Seleccionar Club --</option>
-                                        {teams.map(t => (
-                                            <option key={t.id} value={t.id}>{t.name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg p-3 max-h-40 overflow-y-auto mt-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block border-bottom border-zinc-800 pb-2">Selecciona uno o más clubes:</label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {teams.map(t => (
+                                                <label key={t.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300 cursor-pointer p-1 hover:bg-slate-200 dark:hover:bg-zinc-900 rounded">
+                                                    <input 
+                                                        type="checkbox"
+                                                        className="rounded border-zinc-700 text-pink-600 focus:ring-pink-600 bg-zinc-900"
+                                                        checked={newEvent.target_clubs_ids.includes(t.id)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setNewEvent(prev => ({ ...prev, target_clubs_ids: [...prev.target_clubs_ids, t.id] }));
+                                                            } else {
+                                                                setNewEvent(prev => ({ ...prev, target_clubs_ids: prev.target_clubs_ids.filter(id => id !== t.id) }));
+                                                            }
+                                                        }}
+                                                    />
+                                                    <span className="truncate">{t.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                             <div>

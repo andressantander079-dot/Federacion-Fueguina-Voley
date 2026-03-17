@@ -182,12 +182,24 @@ export default function AdminTramitesPage() {
             toast.success("Trámite aprobado y registrado en Tesorería." + (isClubInscription ? " El Club ahora está habilitado." : ""));
          } else {
             // == JUGADOR ==
-            const playerFeeAmount = getFee('Inscripcion de Jugadoras/es') || getFee('Inscripción de Jugadoras/es');
+            // 1. Calcular Edad Exacta
+            const birthDate = new Date(selectedItem.originalData.birth_date);
+            const today = new Date();
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const m = today.getMonth() - birthDate.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+
+            // 2. Determinar Tarifa (ID 2 = Mayor, ID 3 = Menor)
+            const targetFeeId = age >= 18 ? 2 : 3;
+            const feeObj = fees.find((f: any) => f.id === targetFeeId);
+            const playerFeeAmount = feeObj ? Number(feeObj.price) : 0;
+            const feeTitleRaw = feeObj ? feeObj.title : (targetFeeId === 2 ? 'Inscripción Mayores' : 'Inscripción Menores');
+
             if (accountId && playerFeeAmount > 0) {
                const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
                   type: 'INGRESO',
                   amount: playerFeeAmount,
-                  description: `Inscripción Jugador: ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
+                  description: `Inscripción Jugador (${feeTitleRaw}): ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
                   entity_name: selectedItem.team_name,
                   club_id: selectedItem.originalData.team_id,
                   date: new Date(),
@@ -437,7 +449,26 @@ export default function AdminTramitesPage() {
 
                            <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-zinc-950 pb-32">
                               <h3 className="text-zinc-400 font-bold uppercase tracking-widest text-xs mb-6 border-b border-zinc-800 pb-2">Documentación Adjunta</h3>
-                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 w-full max-w-6xl items-start">
+                              <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 w-full max-w-6xl items-start">
+                              
+                                 {/* 0. AUTORIZACION DE MENORES (Condicional) */}
+                                 {selectedItem.originalData.birth_date && (
+                                    (() => {
+                                       const bDay = new Date(selectedItem.originalData.birth_date);
+                                       const tDay = new Date();
+                                       let ag = tDay.getFullYear() - bDay.getFullYear();
+                                       const md = tDay.getMonth() - bDay.getMonth();
+                                       if (md < 0 || (md === 0 && tDay.getDate() < bDay.getDate())) ag--;
+                                       return ag < 18 ? (
+                                          <DocumentCard
+                                             title="Autorización Familiar"
+                                             url={selectedItem.originalData.family_auth_url || null}
+                                             type="document"
+                                             missingText="Falta Autorización (Menor)"
+                                          />
+                                       ) : null;
+                                    })()
+                                 )}
 
                                  {/* 1. FOTO */}
                                  <DocumentCard
