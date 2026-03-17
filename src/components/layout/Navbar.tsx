@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { User } from 'lucide-react'
+import { User, X } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { ThemeToggle } from '../ThemeToggle'
 
@@ -11,20 +11,35 @@ import LoginModal from '@/components/auth/LoginModal';
 export default function Navbar() {
     const [scrolled, setScrolled] = useState(false)
     const [isLoginOpen, setIsLoginOpen] = useState(false)
+    const [isLogoModalOpen, setIsLogoModalOpen] = useState(false)
     const { settings } = useSettings()
 
-    // Detectar scroll para el efecto de glassmorphism más intenso
+    const logoSrc = settings?.logo_url || "/logo-fvf.png"
+
     useEffect(() => {
         const handleScroll = () => {
-            if (window.scrollY > 10) {
-                setScrolled(true)
-            } else {
-                setScrolled(false)
-            }
+            setScrolled(window.scrollY > 10)
         }
         window.addEventListener('scroll', handleScroll)
         return () => window.removeEventListener('scroll', handleScroll)
     }, [])
+
+    // Cerrar modal con Escape
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setIsLogoModalOpen(false)
+        }
+        if (isLogoModalOpen) {
+            document.addEventListener('keydown', handleKeyDown)
+            document.body.style.overflow = 'hidden'
+        } else {
+            document.body.style.overflow = ''
+        }
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown)
+            document.body.style.overflow = ''
+        }
+    }, [isLogoModalOpen])
 
     return (
         <>
@@ -39,16 +54,20 @@ export default function Navbar() {
 
                         {/* LOGO */}
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-tdf-orange rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg border-2 border-white/20 overflow-hidden">
-                                {settings?.logo_url ? (
-                                    <img src={settings.logo_url} alt="FVU Logo" className="w-full h-full object-cover" />
-                                ) : (
-                                    "FVF"
-                                )}
-                            </div>
+                            <button
+                                onClick={() => setIsLogoModalOpen(true)}
+                                className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/30 shadow-lg shadow-black/30 flex-shrink-0 transition-transform hover:scale-105 active:scale-95 cursor-pointer bg-white"
+                                aria-label="Ver logo"
+                            >
+                                <img
+                                    src={logoSrc}
+                                    alt="FVF Logo"
+                                    className="w-full h-full object-cover"
+                                />
+                            </button>
                             <div className="hidden md:block">
                                 <h1 className="text-xl font-bold leading-none text-white shadow-black drop-shadow-sm">
-                                    Federación de Voley Fueguina
+                                    Federación de Voley Fueguino
                                 </h1>
                             </div>
                         </div>
@@ -90,6 +109,42 @@ export default function Navbar() {
                     </div>
                 </div>
             </nav>
+
+            {/* MODAL DEL LOGO */}
+            {isLogoModalOpen && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center"
+                    onClick={() => setIsLogoModalOpen(false)}
+                >
+                    {/* Backdrop difuminado, NO bloquea el contenido */}
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+
+                    {/* Logo circular centrado */}
+                    <div
+                        className="relative z-10 flex flex-col items-center gap-4 animate-in zoom-in-75 fade-in duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Botón cerrar */}
+                        <button
+                            onClick={() => setIsLogoModalOpen(false)}
+                            className="self-end w-9 h-9 rounded-full bg-white/20 hover:bg-white/40 backdrop-blur-sm flex items-center justify-center text-white transition-colors border border-white/30"
+                            aria-label="Cerrar"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        {/* Imagen circular */}
+                        <div className="w-64 h-64 rounded-full overflow-hidden border-4 border-white/50 shadow-2xl shadow-black/60 bg-white">
+                            <img
+                                src={logoSrc}
+                                alt="Logo FVF"
+                                className="w-full h-full object-cover"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
         </>
     )
