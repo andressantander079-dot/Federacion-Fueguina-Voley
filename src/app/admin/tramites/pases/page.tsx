@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Inbox, Check, X, Shield, Clock, Loader2, User, Key, CheckCircle, FileSignature } from 'lucide-react';
+import { ArrowLeft, Inbox, Check, X, Shield, Clock, Loader2, User, Key, CheckCircle, FileSignature, AlertCircle, ArrowRight, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function AdminPasesInboxPage() {
@@ -14,7 +14,10 @@ export default function AdminPasesInboxPage() {
 
     const [pases, setPases] = useState<any[]>([]);
     
-    // UI State
+    // View State
+    const [activeTab, setActiveTab] = useState<'pendientes' | 'historial'>('pendientes');
+
+    // Modal State
     const [selectedPase, setSelectedPase] = useState<any>(null);
     const [modalMode, setModalMode] = useState<'approve' | 'reject' | null>(null);
     
@@ -29,7 +32,7 @@ export default function AdminPasesInboxPage() {
                 .from('tramites_pases')
                 .select(`
                     *,
-                    player:players(id, name, dni, gender),
+                    player:players(id, name, dni, gender, has_debt),
                     solicitante:teams!solicitante_club_id(name, shield_url),
                     origen:teams!origen_club_id(name, shield_url)
                 `)
@@ -84,18 +87,21 @@ export default function AdminPasesInboxPage() {
 
         setIsSubmitting(true);
         try {
-            // Transaction-like approach via multiple updates (client-side simple tx)
-            // 1. Update Player Record: 
-            // set team_id = solicitante_club_id
-            // set squad_id = null (needs new assign)
-            // set category_id = null (optional, usually left alone if it's the exact same age, but safer to reset or leave squad reset force re-assign)
+            // 1. Update Player Record (Retaining has_debt status implicitly, but enforcing team change)
+            const playerUpdates: any = {
+                team_id: selectedPase.solicitante_club_id,
+                squad_id: null
+            };
             
+            // Si el jugador tenía deuda, el nuevo club la hereda silenciosamente (el pase ya fue tramitado)
+            // Aseguramos que siga en true explícitamente por si acaso.
+            if (selectedPase.player?.has_debt) {
+                playerUpdates.has_debt = true; 
+            }
+
             const { error: playerError } = await supabase
                 .from('players')
-                .update({
-                    team_id: selectedPase.solicitante_club_id,
-                    squad_id: null // Require the new club to assign them to a squad
-                })
+                .update(playerUpdates)
                 .eq('id', selectedPase.player_id);
 
             if (playerError) throw playerError;
@@ -110,6 +116,19 @@ export default function AdminPasesInboxPage() {
                 .eq('id', selectedPase.id);
 
             if (passError) throw passError;
+
+            // Optional 2b: Si tenía deuda, insertar en tesorería un aviso de deuda para el club nuevo.
+            if (selectedPase.player?.has_debt) {
+                 await supabase.from('treasury_movements').insert([{
+                    type: 'EGRESO', 
+                    amount: 0, // Monto simbólico o leer un valor prefijado (ej. 60000)
+                    description: `Migración de Deuda - Pase ${selectedPase.player.name} (DNI ${selectedPase.player.dni})`,
+                    entity_name: selectedPase.solicitante?.name,
+                    club_id: selectedPase.solicitante_club_id,
+                    date: new Date(),
+                    status: 'Pendiente'
+                 }]);
+            }
 
             toast.success(`Traspaso completado. El jugador ya pertenece a ${selectedPase.solicitante?.name}.`);
             
@@ -128,8 +147,8 @@ export default function AdminPasesInboxPage() {
 
     if (loading) return <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center text-white"><Loader2 className="animate-spin mb-4" />Cargando Auditoría de Pases...</div>;
 
-    const pendingFederation = pases.filter(p => p.estado === 'esperando_federacion');
-    const history = pases.filter(p => p.estado !== 'esperando_federacion');
+    const pendingPases = pases.filter(p => p.estado === 'esperando_federacion');
+    const historicalPases = pases.filter(p => p.estado !== 'esperando_federacion');
 
     return (
         <div className="h-screen bg-zinc-950 flex flex-col overflow-hidden font-sans text-white">
@@ -151,57 +170,143 @@ export default function AdminPasesInboxPage() {
                 
                 {/* LIST */}
                 <div className={`w-full md:w-1/3 min-w-[350px] bg-zinc-900 border-r border-zinc-800 flex flex-col z-10 transition-all ${selectedPase ? 'hidden md:flex' : 'flex'}`}>
-                    <div className="p-4 border-b border-zinc-800">
-                        <h3 className="font-bold text-sm text-zinc-400 uppercase tracking-wider">Esperando Aprobación FVF ({pendingFederation.length})</h3>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                        {pendingFederation.map(pase => (
-                            <div 
-                                key={pase.id} 
-                                onClick={() => setSelectedPase(pase)}
-                                className={`p-5 pl-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition border-l-4 ${selectedPase?.id === pase.id ? 'bg-zinc-800 border-l-tdf-blue' : 'border-l-transparent'}`}
-                            >
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-wide bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Listo p/ Auditoría</span>
-                                    <span className="text-[10px] text-zinc-500">{new Date(pase.updated_at).toLocaleDateString()}</span>
-                                </div>
-                                <h4 className="font-bold text-white text-base truncate mb-1">{pase.player?.name}</h4>
-                                <div className="flex items-center gap-2 text-xs text-zinc-400 mt-2 font-medium">
-                                    <span className="truncate">{pase.origen?.name}</span>
-                                    <span>&rarr;</span>
-                                    <span className="text-tdf-blue truncate">{pase.solicitante?.name}</span>
-                                </div>
+                    <div className="p-6">
+                        {/* Encabezado y Tabs */}
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                            <div>
+                                <h1 className="text-3xl font-black tracking-tight mb-2">Auditoría de Pases</h1>
+                                <p className="text-zinc-400 font-medium">Revisa y resuelve las solicitudes de transferencia entre clubes.</p>
                             </div>
-                        ))}
 
-                        {/* History separator */}
-                        {history.length > 0 && (
-                            <div className="p-4 mt-8 border-t border-zinc-800 border-b relative bg-zinc-950/50">
-                                <h3 className="font-bold text-sm text-zinc-500 uppercase tracking-wider">Historial y Trámites Abiertos ({history.length})</h3>
+                            <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1 shrink-0 w-full md:w-auto">
+                                <button 
+                                    onClick={() => setActiveTab('pendientes')}
+                                    className={`flex-1 md:flex-none flex items-center justify-center px-6 py-2.5 rounded-lg font-bold text-sm transition ${activeTab === 'pendientes' ? 'bg-zinc-800 text-tdf-blue shadow-sm' : 'text-zinc-500 hover:text-white'}`}
+                                >
+                                    Pendientes
+                                    {pendingPases.length > 0 && (
+                                        <span className="ml-2 bg-tdf-blue text-white text-[10px] px-2 py-0.5 rounded-full">{pendingPases.length}</span>
+                                    )}
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('historial')}
+                                    className={`flex-1 md:flex-none flex items-center justify-center px-6 py-2.5 rounded-lg font-bold text-sm transition ${activeTab === 'historial' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-white'}`}
+                                >
+                                    Historial
+                                </button>
                             </div>
+                        </div>
+
+                        {/* TAB: PENDIENTES */}
+                        {activeTab === 'pendientes' && (
+                            <>
+                                {pendingPases.length === 0 ? (
+                                    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-12 text-center">
+                                        <Shield className="mx-auto text-zinc-700 mb-4" size={48} />
+                                        <h3 className="text-xl font-bold text-white mb-2">Bandeja al día</h3>
+                                        <p className="text-zinc-500">No hay pases pendientes de revisión federativa.</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-4">
+                                        {pendingPases.map(pase => (
+                                            <div key={pase.id} className="bg-zinc-900 border-l-4 border-l-tdf-blue border border-zinc-800 rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6 hover:border-zinc-700 transition shadow-xl">
+                                                {/* ... contenido del pase pendiente ... */}
+                                                <div className="flex-1">
+                                                    <div className="flex flex-wrap items-center gap-3 mb-2">
+                                                        <span className="bg-blue-500/10 text-blue-500 border border-blue-500/20 px-3 py-1 rounded-full text-xs font-black uppercase flex items-center gap-1">
+                                                            <AlertCircle size={12}/> Revisión Federativa
+                                                        </span>
+                                                        <span className="text-sm font-bold text-zinc-400">ID: {pase.id.substring(0,8)}</span>
+                                                    </div>
+                                                    <h3 className="text-xl font-black text-white mb-1">{pase.player?.name}</h3>
+                                                    <div className="text-sm text-zinc-400 flex flex-wrap items-center gap-4">
+                                                        <span className="flex items-center gap-1 text-white"><User size={14}/> DNI: {pase.player?.dni}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-4 shrink-0 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                                    <div className="text-center">
+                                                        <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Sale de</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <img src={pase.origen?.shield_url || '/placeholder.png'} className="w-8 h-8 object-contain bg-white rounded-full p-0.5" alt="shield"/>
+                                                            <p className="font-bold text-white text-sm">{pase.origen?.name || 'Libre'}</p>
+                                                        </div>
+                                                    </div>
+                                                    <ArrowRight className="text-zinc-700" size={20} />
+                                                    <div className="text-center">
+                                                        <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Va a</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <img src={pase.solicitante?.shield_url || '/placeholder.png'} className="w-8 h-8 object-contain bg-white rounded-full p-0.5" alt="shield"/>
+                                                            <p className="font-bold text-white text-sm">{pase.solicitante?.name}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-col gap-2 shrink-0">
+                                                    <button 
+                                                        onClick={() => { setSelectedPase(pase); setModalMode('approve'); }}
+                                                        className="bg-green-500/10 hover:bg-green-500/20 border border-green-500/50 text-green-500 px-6 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition whitespace-nowrap"
+                                                    >
+                                                        <Check size={18} /> Aprobar Pase
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => { setSelectedPase(pase); setModalMode('reject'); }}
+                                                        className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/50 text-red-500 px-6 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition whitespace-nowrap"
+                                                    >
+                                                        <X size={18} /> Rechazar / Observar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
                         )}
 
-                        {history.map(pase => (
-                            <div 
-                                key={pase.id} 
-                                onClick={() => setSelectedPase(pase)}
-                                className={`p-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition opacity-70 hover:opacity-100 ${selectedPase?.id === pase.id ? 'bg-zinc-800 border-l-4 border-l-zinc-500 pl-3' : ''}`}
-                            >
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className="font-bold text-white text-sm truncate">{pase.player?.name}</span>
-                                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
-                                        pase.estado === 'aprobado' ? 'bg-green-500/10 text-green-500' :
-                                        pase.estado === 'rechazado' ? 'bg-red-500/10 text-red-500' :
-                                        pase.estado === 'esperando_jugador' ? 'bg-amber-500/10 text-amber-500' :
-                                        'bg-zinc-500/10 text-zinc-400'
-                                    }`}>
-                                        {pase.estado.replace('_', ' ')}
-                                    </span>
-                                </div>
-                                <p className="text-[11px] text-zinc-500 mt-1">Hacia: {pase.solicitante?.name}</p>
-                            </div>
-                        ))}
+                        {/* TAB: HISTORIAL */}
+                        {activeTab === 'historial' && (
+                            <>
+                                {historicalPases.length === 0 ? (
+                                    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-12 text-center">
+                                        <FileText className="mx-auto text-zinc-700 mb-4" size={48} />
+                                        <h3 className="text-xl font-bold text-white mb-2">Historial Vacío</h3>
+                                        <p className="text-zinc-500">No hay registros de pases finalizados correspondientes a esta temporada.</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3">
+                                        {historicalPases.map(pase => (
+                                            <div key={pase.id} className="bg-zinc-900/50 border border-zinc-800/50 p-4 shrink-0 rounded-xl flex items-center justify-between hover:bg-zinc-900 transition">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+                                                        <User size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-white text-sm">{pase.player?.name}</p>
+                                                        <p className="text-xs text-zinc-500">
+                                                            De {pase.origen?.name || 'Libre'} a {pase.solicitante?.name}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider ${
+                                                        pase.estado === 'aprobado' ? 'bg-green-500/10 text-green-500' : 
+                                                        pase.estado === 'rechazado' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 
+                                                        'bg-yellow-500/10 text-yellow-500'
+                                                    }`}>
+                                                        {pase.estado.replace('_', ' ')}
+                                                    </span>
+                                                    {pase.estado === 'rechazado' && pase.motivo_rechazo && (
+                                                        <span className="text-[10px] text-zinc-500 max-w-[200px] truncate" title={pase.motivo_rechazo}>
+                                                            Motivo: {pase.motivo_rechazo}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -228,6 +333,11 @@ export default function AdminPasesInboxPage() {
                                         <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
                                             <span className="bg-zinc-800 text-zinc-300 px-3 py-1 rounded-lg text-sm font-bold font-mono">DNI: {selectedPase.player?.dni}</span>
                                             <span className="bg-zinc-800 text-zinc-300 px-3 py-1 rounded-lg text-sm font-bold">{selectedPase.player?.gender}</span>
+                                            {selectedPase.player?.has_debt && (
+                                                <span className="bg-red-500/10 text-red-500 border border-red-500/20 px-3 py-1 rounded-lg text-sm font-black uppercase flex items-center gap-1">
+                                                    <AlertCircle size={14}/> DEUDA ACTIVA DETECTADA
+                                                </span>
+                                            )}
                                             <span className={`px-3 py-1 rounded-lg text-sm font-bold uppercase ${
                                                 selectedPase.estado === 'aprobado' ? 'bg-green-500/20 text-green-500' :
                                                 selectedPase.estado === 'rechazado' ? 'bg-red-500/20 text-red-500' :

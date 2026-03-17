@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { X, Lock, User, Loader2, ArrowRight } from 'lucide-react'
+import { useTheme } from 'next-themes'
 
 interface LoginModalProps {
     isOpen: boolean
@@ -18,6 +19,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     const [error, setError] = useState<string | null>(null)
     const router = useRouter()
     const supabase = createClient()
+    const { setTheme } = useTheme()
 
     if (!isOpen) return null
 
@@ -41,10 +43,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
             if (authError) throw authError
 
             if (data.user) {
-                // Consultar perfil para redirección
+                // Consultar perfil para redirección e inyectar Tema
                 const { data: profile, error: profileError } = await supabase
                     .from('profiles')
-                    .select('role, club_id')
+                    .select('role, club_id, theme_preference')
                     .eq('id', data.user.id)
                     .single()
 
@@ -52,6 +54,11 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     onClose()
                     router.push('/')
                     return
+                }
+                
+                // Aplicar el tema escogido por el usuario guardado en la nube
+                if (profile.theme_preference) {
+                    setTheme(profile.theme_preference)
                 }
 
                 onClose()

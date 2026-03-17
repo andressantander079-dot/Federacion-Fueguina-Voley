@@ -182,7 +182,7 @@ export default function TeamsListPage() {
                     toast.error('Error al eliminar: ' + err.message);
                   }
                 }}
-                className="absolute top-2 right-2 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-all z-20 hover:bg-red-600 hover:text-white"
+                className="absolute top-2 right-2 p-2 bg-red-50 text-red-500 rounded-full opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all z-20 hover:bg-red-600 hover:text-white shadow-sm lg:shadow-none"
                 title="Eliminar Club"
               >
                 <Trash2 size={16} />

@@ -37,8 +37,15 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
                 return;
             }
 
+            if (profile.role !== 'club' && profile.role !== 'admin') {
+                console.warn("Layout: Access denied. User is not a club or admin.");
+                setAccessDenied(true);
+                setLoading(false);
+                return;
+            }
+
             if (!profile.club_id && profile.role !== 'admin') {
-                console.warn("Layout: User has no club and is not admin.");
+                console.warn("Layout: User has no club assigned.");
                 setAccessDenied(true);
                 setLoading(false);
                 return;

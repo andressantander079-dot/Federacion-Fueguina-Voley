@@ -317,16 +317,6 @@ export default function PlantelPage() {
         .select('team_id, teams(name)')
         .eq('dni', dniLimpio);
 
-      if (dupErr) throw dupErr;
-
-      if (existingPlayers && existingPlayers.length > 0) {
-        setUploading(false);
-        const conflict = existingPlayers[0];
-        // @ts-ignore
-        const conflictTeamName = conflict.teams ? (Array.isArray(conflict.teams) ? conflict.teams[0]?.name : conflict.teams.name) : 'la Federación';
-        return toast.error(`ALERTA DE SISTEMA: El DNI ${dniLimpio} ya se encuentra registrado activamente en "${conflictTeamName}". NO PUEDE HABER DOS JUGADORES/AS CON EL MISMO DNI.`);
-      }
-
       let photoUrl = null;
       if (nuevoJugador.photo_file) {
         const fileExt = nuevoJugador.photo_file.name.split('.').pop();
@@ -357,6 +347,40 @@ export default function PlantelPage() {
         const authFileName = `autorizacion-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
         await supabase.storage.from('procedure-files').upload(authFileName, nuevoJugador.authorization_file);
         authorizationUrl = supabase.storage.from('procedure-files').getPublicUrl(authFileName).data.publicUrl;
+      }
+
+      if (existingPlayers && existingPlayers.length > 0) {
+        const conflict = existingPlayers[0];
+        
+        // IF player belongs to THIS club, we UPDATE them (useful for transferred players in limbo)
+        if (conflict.team_id === clubId) {
+          const { error: updateError } = await supabase.from('players').update({
+            squad_id: squadActual.id,
+            category_id: squadActual.category_id,
+            name: nuevoJugador.name, // optionally update data if they typed it
+            birth_date: nuevoJugador.birth_date,
+            number: nuevoJugador.number ? parseInt(nuevoJugador.number) : null,
+            position: nuevoJugador.position,
+            // Only update files if they uploaded new ones during this step, otherwise keep old ones
+            ...(photoUrl && { photo_url: photoUrl }),
+            ...(paymentUrl && { payment_url: paymentUrl }),
+            ...(medicalUrl && { medical_url: medicalUrl }),
+            ...(authorizationUrl && { family_authorization_url: authorizationUrl }),
+            status: 'pending' // Regresa a pending si se cambia su data
+          }).eq('dni', dniLimpio);
+
+          if (updateError) throw updateError;
+          toast.success("Jugador reasignado. El pase federal ha sido completado y el jugador ya forma parte de este plantel.");
+          setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
+          cargarJugadores(squadActual.id);
+          setUploading(false);
+          return;
+        }
+
+        setUploading(false);
+        // @ts-ignore
+        const conflictTeamName = conflict.teams ? (Array.isArray(conflict.teams) ? conflict.teams[0]?.name : conflict.teams.name) : 'la Federación';
+        return toast.error(`ALERTA DE SISTEMA: El DNI ${dniLimpio} ya se encuentra registrado activamente en "${conflictTeamName}". NO PUEDE HABER DOS JUGADORES/AS CON EL MISMO DNI.`);
       }
 
       const { error } = await supabase.from('players').insert([{
@@ -663,6 +687,7 @@ export default function PlantelPage() {
                       <div className="flex gap-1 md:gap-2 shrink-0">
                         {j.medical_url && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
                         {j.photo_url && <span title="Foto OK"><Camera size={16} className="text-blue-500" /></span>}
+                        {j.family_authorization_url && <span title="Autorización Tutor OK"><ShieldCheck size={16} className="text-yellow-500" /></span>}
                       </div>
 
                       <button onClick={(e) => { e.stopPropagation(); borrarJugador(j.id); }} className="p-2 md:p-3 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-100 md:opacity-0 group-hover:opacity-100 z-10 shrink-0">

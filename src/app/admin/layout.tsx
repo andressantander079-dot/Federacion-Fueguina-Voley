@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Users, Trophy, ClipboardList, LogOut, Settings, Mail, Megaphone, FileText, UserPlus } from 'lucide-react'
+import { LayoutDashboard, Users, Trophy, ClipboardList, LogOut, Settings, Mail, Megaphone, FileText, UserPlus, Shield } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import WarningBanner from '@/components/admin/WarningBanner'
@@ -17,8 +17,37 @@ export default function AdminLayout({
     const supabase = createClient()
     const [unreadMsgs, setUnreadMsgs] = useState(0)
     const [pendingPases, setPendingPases] = useState(0)
+    const [loading, setLoading] = useState(true)
+    const [accessDenied, setAccessDenied] = useState(false)
 
     useEffect(() => {
+        const verifyAccess = async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (!user) {
+                    router.push('/login')
+                    return
+                }
+
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', user.id)
+                    .single()
+
+                if (!profile || profile.role !== 'admin') {
+                    setAccessDenied(true)
+                    return
+                }
+            } catch (error) {
+                console.error("Admin Auth Error:", error)
+                setAccessDenied(true)
+            } finally {
+                setLoading(false)
+            }
+        }
+        
+        verifyAccess()
         setUnreadMsgs(0)
         
         const fetchPendingPases = async () => {
@@ -30,17 +59,46 @@ export default function AdminLayout({
         };
         fetchPendingPases();
 
-        const channel = supabase.channel('pases_admin_sidebar')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases', filter: `estado=eq.esperando_federacion` }, () => {
+        const channelPases = supabase.channel('pases_admin_sidebar')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases' }, () => {
                  fetchPendingPases();
             }).subscribe();
             
-        return () => { supabase.removeChannel(channel); };
+        return () => { supabase.removeChannel(channelPases); };
     }, [supabase])
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
-        router.push('/')
+        router.push('/login')
+    }
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
+                <div className="animate-pulse flex flex-col items-center">
+                    <LayoutDashboard size={48} className="text-blue-500 mb-4 opacity-50" />
+                    <p className="text-blue-600 dark:text-blue-400 font-bold uppercase tracking-widest text-xs">Verificando Credenciales...</p>
+                </div>
+            </div>
+        )
+    }
+
+    if (accessDenied) {
+        return (
+            <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col items-center justify-center p-6 text-center">
+                <Shield size={64} className="text-red-500 mb-6" />
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">Acceso Denegado</h1>
+                <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-md">
+                    No tienes los privilegios necesarios de Administrador para ver esta sección.
+                </p>
+                <button
+                    onClick={() => router.push('/')}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg"
+                >
+                    Volver al Inicio
+                </button>
+            </div>
+        )
     }
 
     return (

@@ -122,20 +122,16 @@ export default function RefereeAgendaPage() {
 
     const getEventsForDate = (date: Date) => {
         return matches.filter(m => {
-            // Compare ISO String date part vs Local Date Object
-            // TRICKY: We want "Literal" date match.
-            // If DB says "2026-02-05T22:00", that is Feb 5th.
-            // My local 'date' variable is Feb 5th 00:00 Local.
-            // I should extract YYYY-MM-DD from the ISO string and compare with YYYY-MM-DD of the cell.
-            const isoDatePart = m.start_time.split('T')[0];
-
-            // Build cell YYYY-MM-DD manually to avoid timezone shift
-            const cellY = date.getFullYear();
-            const cellM = String(date.getMonth() + 1).padStart(2, '0');
-            const cellD = String(date.getDate()).padStart(2, '0');
-            const cellIso = `${cellY}-${cellM}-${cellD}`;
-
-            return isoDatePart === cellIso;
+            if (!m.start_time) return false;
+            
+            // Instanciar ambas fechas en el contexto de la zona horaria local del navegador (Argentina)
+            const eventDate = new Date(m.start_time);
+            
+            return (
+                eventDate.getDate() === date.getDate() &&
+                eventDate.getMonth() === date.getMonth() &&
+                eventDate.getFullYear() === date.getFullYear()
+            );
         });
     };
 

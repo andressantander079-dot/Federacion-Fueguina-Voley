@@ -6,6 +6,18 @@ import { Settings, Image, DollarSign, MapPin, Users, Info, Save, Upload, Trash2,
 import { toast } from 'sonner';
 import { useSettings } from '@/hooks/useSettings';
 
+const SYSTEM_FEES = [
+   { id: 1, title: 'Inscripción de clubes' },
+   { id: 2, title: 'Inscripción de jugadores/as mayores de 18 años' },
+   { id: 3, title: 'Inscripción de Jugadoras/es menores de 18 años' },
+   { id: 4, title: 'Inscripción de Jugadores/as de Newcom' },
+   { id: 5, title: 'Inscripción de Técnicos' },
+   { id: 6, title: 'Pase Mayor de 18 años' },
+   { id: 7, title: 'Pase menor de 18 años' },
+   { id: 8, title: 'Pases a préstamos' },
+   { id: 9, title: 'Inscripcion de Jugadoras/es de Mini-voley' }
+];
+
 export default function AdminConfigPage() {
    const { settings: initialSettings, loading: loadingSettings } = useSettings();
    const [expandedSection, setExpandedSection] = useState<string>('general');
@@ -45,27 +57,24 @@ export default function AdminConfigPage() {
          setSettings(initialSettings);
          let loadedFees = initialSettings.procedure_fees ? [...initialSettings.procedure_fees] : [];
 
-         // Ensure system fees exist
-         const requiredFees = ['Inscripcion de clubes', 'Inscripcion de Jugadoras/es', 'Pase a prestamo', 'Pase'];
-         requiredFees.forEach(rf => {
-            const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const exists = loadedFees.find((lf: any) => norm(lf.title) === norm(rf));
-            if (!exists) loadedFees.push({ title: rf, price: '0' });
+         // Ensure all exactly 9 system fees exist and map their prices
+         const mergedFees = SYSTEM_FEES.map(sysFee => {
+            const existing = loadedFees.find((lf: any) => lf.id === sysFee.id || lf.title?.toLowerCase() === sysFee.title.toLowerCase());
+            return {
+               id: sysFee.id,
+               title: sysFee.title,
+               price: existing ? existing.price : '0'
+            };
          });
 
-         setTramites(loadedFees);
+         setTramites(mergedFees);
       } else if (!loadingSettings && !initialSettings) {
          // No settings found in DB
          setSettings({
             id: undefined,
             registration_open: true,
          });
-         setTramites([
-            { title: 'Inscripcion de clubes', price: '0' },
-            { title: 'Inscripcion de Jugadoras/es', price: '0' },
-            { title: 'Pase a prestamo', price: '0' },
-            { title: 'Pase', price: '0' }
-         ]);
+         setTramites(SYSTEM_FEES.map(sf => ({ ...sf, price: '0' })));
       }
       if (!loadingSettings) fetchSubData();
    }, [initialSettings, loadingSettings]);
@@ -743,38 +752,29 @@ export default function AdminConfigPage() {
                   </div>
 
                   {/* EXISTING FEES SECTION */}
-                  <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-2 pt-2">Tarifario de Aranceles</h4>
+                  <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-2 pt-2">Tarifario Estricto de Aranceles</h4>
+                  <p className="text-xs text-zinc-500 mb-4">Los conceptos arancelarios son inmutables por reglas de auditoría y negocio. Solo es posible modificar su valor oficial.</p>
+                  
                   {tramites.map((t: any, i: number) => {
-                     const isSystemFee = ['inscripcion de clubes', 'inscripcion de jugadoras/es', 'pase a prestamo', 'pase', 'inscripción de clubes', 'inscripción de jugadoras/es', 'pase a préstamo'].includes(t.title?.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
                      return (
-                        <div key={i} className="flex gap-4 items-center">
+                        <div key={t.id} className="flex gap-4 items-center">
+                           <div className="w-8 shrink-0 flex items-center justify-center font-mono text-zinc-500 bg-zinc-900 border border-zinc-800 rounded p-2 text-xs">
+                              #{t.id}
+                           </div>
                            <input
-                              className={`flex-1 p-3 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600 ${isSystemFee ? 'opacity-60 cursor-not-allowed text-zinc-400' : ''}`}
-                              placeholder="Nombre (Ej: Pase Interclub)"
+                              className="flex-1 p-3 bg-zinc-950/50 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600 opacity-80 cursor-not-allowed text-sm md:text-base"
                               value={t.title}
-                              readOnly={isSystemFee}
-                              onChange={e => {
-                                 if (isSystemFee) return;
-                                 const newT = [...tramites]; newT[i].title = e.target.value; setTramites(newT);
-                              }}
+                              readOnly
                            />
                            <div className="relative">
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">$</span>
-                              <input className="w-32 p-3 pl-8 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600 focus:border-tdf-blue outline-none" placeholder="0" value={t.price} onChange={e => {
+                              <input className="w-32 p-3 pl-8 bg-zinc-950 border border-zinc-800 rounded-lg font-bold text-white placeholder-zinc-600 focus:border-tdf-orange outline-none" placeholder="0" value={t.price} onChange={e => {
                                  const newT = [...tramites]; newT[i].price = e.target.value; setTramites(newT);
                               }} />
                            </div>
-                           {!isSystemFee ? (
-                              <button onClick={() => {
-                                 const newT = tramites.filter((_, idx) => idx !== i); setTramites(newT);
-                              }} className="text-red-400 hover:bg-red-500/10 p-2 rounded"><Trash2 size={18} /></button>
-                           ) : (
-                              <div className="w-[34px]" title="Arancel de Sistema"></div>
-                           )}
                         </div>
                      )
                   })}
-                  <button onClick={() => setTramites([...tramites, { title: '', price: '0' }])} className="text-tdf-blue font-bold text-sm flex items-center gap-2 hover:bg-blue-500/10 px-4 py-2 rounded-lg w-fit transition"><Plus size={16} /> Agregar Item</button>
 
                   <button onClick={handleSaveGeneral} disabled={saving} className="mt-4 w-full py-4 bg-tdf-blue text-white font-black rounded-xl hover:bg-blue-800 transition shadow-lg flex items-center justify-center gap-2">
                      {saving ? 'Guardando...' : <><Save size={20} /> Guardar Datos de Pago y Aranceles (Persistido)</>}

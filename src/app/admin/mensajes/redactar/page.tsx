@@ -321,7 +321,7 @@ export default function ComposeMessagePage() {
                                 <img src={club.shield_url} className="w-8 h-8 rounded-full bg-slate-100 object-contain" />
                             ) : (
                                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs uppercase">
-                                    {club.name.charAt(0)}
+                                    {(club?.name || '?').charAt(0)}
                                 </div>
                             )}
 
@@ -354,7 +354,7 @@ export default function ComposeMessagePage() {
                                         {selectedReferees.includes(ref.id) && <CheckCircle size={14} />}
                                     </div>
                                     <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold">
-                                        {ref.full_name.charAt(0)}
+                                        {(ref?.full_name || '?').charAt(0)}
                                     </div>
                                     <span className={`text-sm font-bold ${selectedReferees.includes(ref.id) ? 'text-purple-700 dark:text-purple-300' : 'text-slate-700 dark:text-slate-300'}`}>
                                         {ref.full_name}
