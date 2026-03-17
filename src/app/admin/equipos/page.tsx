@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Search, Plus, MapPin, Users, ChevronRight, Shield, Trash2, X, Loader2 } from 'lucide-react'
+import { Search, Plus, MapPin, Users, ChevronRight, Shield, Trash2, X, Loader2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 
@@ -27,6 +27,12 @@ export default function TeamsListPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [creating, setCreating] = useState(false)
+
+  // Modales de Seguridad
+  const [clubToDelete, setClubToDelete] = useState<Team | null>(null)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Form State
   const [formData, setFormData] = useState({
@@ -160,27 +166,12 @@ export default function TeamsListPage() {
               <div className="absolute inset-0 bg-gradient-to-b from-transparent to-gray-50 dark:to-black/20 opacity-0 group-hover:opacity-100 transition-opacity" />
 
               <button
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.preventDefault();
-                  if (!confirm('¿Estás seguro de eliminar este club? Se borrarán todos sus planteles y jugadores.')) return;
-
-                  try {
-                    const response = await fetch('/api/admin/delete-club', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ teamId: team.id })
-                    });
-
-                    if (!response.ok) {
-                      const errorData = await response.json();
-                      throw new Error(errorData.error || 'Error desconocido');
-                    }
-
-                    setTeams(teams.filter(t => t.id !== team.id));
-                    toast.success('Club eliminado correctamente.');
-                  } catch (err: any) {
-                    toast.error('Error al eliminar: ' + err.message);
-                  }
+                  // En lugar de confirm() abrimos el modal
+                  setClubToDelete(team);
+                  setDeletePassword('');
+                  setDeleteError(null);
                 }}
                 className="absolute top-2 right-2 p-2 bg-red-50 text-red-500 rounded-full opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all z-20 hover:bg-red-600 hover:text-white shadow-sm lg:shadow-none"
                 title="Eliminar Club"
@@ -339,6 +330,107 @@ export default function TeamsListPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL ELIMINACIÓN SEGURA */}
+      {clubToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
+            <div className="bg-red-50 dark:bg-red-500/10 p-6 flex flex-col items-center border-b border-red-100 dark:border-red-500/20">
+              <div className="w-16 h-16 bg-white dark:bg-zinc-800 rounded-full flex items-center justify-center mb-4 shadow-sm border border-red-200 dark:border-red-500/30">
+                <Trash2 className="text-red-500 w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-black text-red-600 dark:text-red-400 text-center uppercase tracking-tight">Acción Destructiva</h2>
+              <p className="text-sm text-red-500 text-center mt-2 font-medium">Estás a punto de eliminar permanentemente al club <strong>"{clubToDelete.name}"</strong> y a todo su historial.</p>
+            </div>
+
+            <div className="p-6">
+              {deleteError && (
+                <div className="mb-4 p-3 bg-red-100 border border-red-200 text-red-700 text-sm font-medium rounded-lg text-center">
+                  {deleteError}
+                </div>
+              )}
+
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Contraseña de Administrador Requerida</label>
+              <div className="relative mb-6">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                <input
+                  type="password"
+                  required
+                  placeholder="Por seguridad, verifica tu contraseña..."
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-red-500 transition-all font-mono"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !deleting && deletePassword) {
+                      e.preventDefault();
+                      document.getElementById('btn-confirm-delete')?.click();
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setClubToDelete(null); setDeleteError(null); }}
+                  className="flex-1 py-3 font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition"
+                  disabled={deleting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  id="btn-confirm-delete"
+                  disabled={deleting || !deletePassword}
+                  onClick={async () => {
+                   setDeleting(true);
+                   setDeleteError(null);
+                   try {
+                     // 1. Obtener User Current
+                     const { data: { user } } = await supabase.auth.getUser();
+                     if (!user || !user.email) throw new Error("Sesión no válida");
+                     
+                     // 2. Verificar contraseña intentando re-signin
+                     const { error: authError } = await supabase.auth.signInWithPassword({
+                       email: user.email,
+                       password: deletePassword.trim()
+                     });
+
+                     if (authError) {
+                       throw new Error("Contraseña incorrecta. Operación cancelada.");
+                     }
+
+                     // 3. Ejecutar Delete
+                     const response = await fetch('/api/admin/delete-club', {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({ teamId: clubToDelete.id })
+                     });
+
+                     if (!response.ok) {
+                       const errorData = await response.json();
+                       throw new Error(errorData.error || 'Fallo interno del servidor');
+                     }
+
+                     setTeams(teams.filter(t => t.id !== clubToDelete.id));
+                     toast.success('El equipo ha sido erradicado del sistema de manera segura.');
+                     setClubToDelete(null);
+
+                   } catch (err: any) {
+                     setDeleteError(err.message);
+                   } finally {
+                     setDeleting(false);
+                   }
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-600/20 disabled:opacity-50 flex items-center justify-center gap-2 transition uppercase tracking-wider text-sm"
+                >
+                  {deleting ? <Loader2 className="animate-spin w-5 h-5" /> : 'Eliminar Club'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
