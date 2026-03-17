@@ -8,7 +8,7 @@ import { Toaster } from 'sonner';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Federación de Voley de Ushuaia',
+  title: 'Federación de Voley Fueguino',
   description: 'Sistema Oficial de Gestión',
 };
 

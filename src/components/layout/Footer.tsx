@@ -15,7 +15,7 @@ export default function Footer() {
                     <div className="md:col-span-2">
                         <h4 className="text-2xl font-black text-slate-900 dark:text-white mb-4 uppercase tracking-tight flex items-center justify-center md:justify-start gap-3">
                             {settings?.logo_url && <img src={settings.logo_url} className="w-8 h-8 object-contain" alt="Logo" />}
-                            Federación de Voley Ushuaia
+                            Federación en Tierra del Fuego
                         </h4>
                         <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 max-w-sm mx-auto md:mx-0">
                             Promoviendo el deporte, la integración y la competencia sana en el fin del mundo.
@@ -63,9 +63,9 @@ export default function Footer() {
 
                 <div className="border-t border-slate-200 dark:border-white/5 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="text-xs font-bold text-slate-400 uppercase tracking-widest text-center md:text-left">
-                        &copy; {new Date().getFullYear()} FFV • Todos los derechos reservados
+                        &copy; {new Date().getFullYear()} FVF • Todos los derechos reservados
                     </div>
-                    <div className="text-[10px] text-slate-300 font-medium">
+                    <div className="text-[10px] text-slate-400 font-medium">
                         Hecho con pasión en Tierra del Fuego
                     </div>
                 </div>
