@@ -173,7 +173,7 @@ export default function TeamsListPage() {
                   setDeletePassword('');
                   setDeleteError(null);
                 }}
-                className="absolute top-2 right-2 p-2 bg-red-50 text-red-500 rounded-full opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all z-20 hover:bg-red-600 hover:text-white shadow-sm lg:shadow-none"
+                className="absolute top-2 right-2 p-3 bg-red-50 text-red-500 rounded-full opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all z-20 hover:bg-red-600 hover:text-white shadow-sm lg:shadow-none"
                 title="Eliminar Club"
               >
                 <Trash2 size={16} />
@@ -188,7 +188,7 @@ export default function TeamsListPage() {
                   )}
                 </div>
 
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white group-hover:text-tdf-blue transition-colors">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white group-hover:text-tdf-blue transition-colors line-clamp-2 min-h-[56px]">
                   {team.name}
                 </h3>
 

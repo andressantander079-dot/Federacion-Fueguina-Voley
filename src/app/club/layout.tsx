@@ -114,8 +114,23 @@ export default function ClubLayout({ children }: { children: React.ReactNode }) 
     }
 
     return (
-        <div className="flex bg-slate-50 dark:bg-zinc-950 min-h-screen">
+        <div className="flex bg-slate-50 dark:bg-zinc-950 min-h-screen flex-col md:flex-row">
             <GlobalBanner />
+            {/* Mobile Header con Bottom Nav o Logout */}
+            <div className="md:hidden p-4 border-b border-zinc-200 dark:border-white/10 flex justify-between items-center bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-50">
+                <div className="flex items-center gap-2">
+                    {clubData?.logoUrl && (
+                        <div className="w-8 h-8 rounded-full overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                            <img src={clubData.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                        </div>
+                    )}
+                    <h1 className="font-black text-lg tracking-tight truncate max-w-[200px]">{clubData?.name || 'Mi Club'}</h1>
+                </div>
+                <button onClick={handleLogout} className="text-zinc-500 hover:text-red-500 transition-colors p-2" aria-label="Cerrar Sesión">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                </button>
+            </div>
+
             <ClubSidebar
                 clubName={clubData?.name}
                 logoUrl={clubData?.logoUrl}

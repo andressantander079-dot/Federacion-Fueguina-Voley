@@ -120,19 +120,19 @@ export default function RecentMatches() {
                             </div>
 
                             {/* Teams */}
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3 w-5/12">
-                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-5 bg-slate-50 dark:bg-zinc-800/30 p-3 rounded-xl border border-dashed border-gray-200 dark:border-white/5">
+                                <div className="flex items-center gap-3 w-full sm:w-5/12 justify-start">
+                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
                                         {match.home_team?.shield_url ? <img src={match.home_team.shield_url} className="w-full h-full object-cover" /> : <span className="font-black text-gray-300">L</span>}
                                     </div>
-                                    <span className="font-bold text-sm text-slate-700 dark:text-white truncate">{match.home_team?.name || 'Local'}</span>
+                                    <span className="font-bold text-sm text-slate-700 dark:text-white line-clamp-1">{match.home_team?.name || 'Local'}</span>
                                 </div>
 
-                                <span className="font-black text-lg text-slate-300">VS</span>
+                                <span className="font-black text-xs sm:text-lg text-slate-300">VS</span>
 
-                                <div className="flex items-center gap-3 w-5/12 justify-end">
-                                    <span className="font-bold text-sm text-slate-700 dark:text-white truncate text-right">{match.away_team?.name || 'Visita'}</span>
-                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                                <div className="flex items-center gap-3 w-full sm:w-5/12 justify-start sm:justify-end">
+                                    <span className="font-bold text-sm text-slate-700 dark:text-white line-clamp-1 sm:text-right">{match.away_team?.name || 'Visita'}</span>
+                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0 sm:order-last -order-1">
                                         {match.away_team?.shield_url ? <img src={match.away_team.shield_url} className="w-full h-full object-cover" /> : <span className="font-black text-gray-300">V</span>}
                                     </div>
                                 </div>

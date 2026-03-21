@@ -134,18 +134,18 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
                 </main>
             </div>
 
-            {/* Mobile Bottom Nav */}
-            <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-white/10 p-2 flex justify-around z-50">
-                {navItems.map((item) => {
-                    const isActive = pathname === item.href;
-                    const Icon = item.icon;
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={`flex flex-col items-center justify-center p-2 rounded-xl w-16 transition-all ${isActive ? 'text-tdf-orange' : 'text-zinc-500'
-                                }`}
-                        >
+        {/* Mobile Bottom Nav */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-white/10 p-2 flex overflow-x-auto hide-scrollbar z-50">
+            {navItems.map((item) => {
+                const isActive = pathname === item.href;
+                const Icon = item.icon;
+                return (
+                    <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex flex-col items-center justify-center p-2 rounded-xl min-w-[72px] transition-all flex-shrink-0 ${isActive ? 'text-tdf-orange' : 'text-zinc-500'
+                            }`}
+                    >
                             <Icon size={24} className={isActive ? 'mb-1' : ''} />
                             {isActive && <span className="text-[10px] font-bold">{item.label}</span>}
                         </Link>

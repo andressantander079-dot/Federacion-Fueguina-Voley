@@ -7,9 +7,8 @@ import {
     Zap, Calendar, MapPin,
     MonitorPlay, Activity, Clock, Users
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
 import SponsorsBanner from '@/components/home/SponsorsBanner';
+import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 export default function PublicMatchPage() {
     const { id } = useParams();
@@ -147,11 +146,14 @@ export default function PublicMatchPage() {
             <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 border-b border-zinc-800 pb-8">
                 <div className="max-w-4xl mx-auto px-4 pt-6">
                     {/* Header Info */}
-                    <div className="flex justify-between items-start mb-8 text-sm">
-                        <div className="flex gap-2 text-zinc-400">
+                    <div className="flex flex-col sm:flex-row justify-between items-start mb-8 text-sm gap-4">
+                        <div className="flex flex-wrap gap-2 text-zinc-400">
                             <div className="flex items-center gap-1 bg-zinc-800/50 px-2 py-1 rounded">
                                 <Calendar size={14} />
-                                {format(new Date(match.date), "d MMM, HH:mm", { locale: es })}
+                                {match.scheduled_time 
+                                    ? `${formatArgentinaDateLiteral(match.scheduled_time, { weekday: 'short', day: 'numeric', month: 'short' }).split(',')[0]}, ${formatArgentinaTimeLiteral(match.scheduled_time)} HS`
+                                    : 'A CONFIRMAR'
+                                }
                             </div>
                             {match.court && (
                                 <div className="flex items-center gap-1 bg-zinc-800/50 px-2 py-1 rounded">
@@ -160,7 +162,7 @@ export default function PublicMatchPage() {
                                 </div>
                             )}
                         </div>
-                        <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-xs">
+                        <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-xs bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800">
                             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-500 animate-pulse' : isFinished ? 'bg-zinc-500' : 'bg-green-500'}`}></span>
                             {isLive ? 'EN VIVO' : isFinished ? 'FINALIZADO' : 'PROGRAMADO'}
                         </div>

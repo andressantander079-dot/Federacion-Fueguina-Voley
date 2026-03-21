@@ -47,7 +47,7 @@ export default function PaseConsentimientoPage() {
                 `)
                 .eq('temp_user', dniAuth)
                 .eq('temp_password', pinAuth)
-                .eq('estado', 'esperando_jugador')
+                .eq('estado', 'esperando_firma_jugador')
                 .single();
 
             if (error || !data) {
@@ -99,7 +99,7 @@ export default function PaseConsentimientoPage() {
         setIsSubmitting(true);
         try {
             const updatePayload: any = {
-                estado: 'esperando_federacion',
+                estado: 'auditoria_final_fvf',
                 firma_jugador: firmaJugador,
                 updated_at: new Date().toISOString()
             };

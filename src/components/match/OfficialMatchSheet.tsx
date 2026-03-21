@@ -11,6 +11,7 @@ import {
     QrCode, MapPin, ArrowLeft, Trash2, Edit2
 } from 'lucide-react';
 import Link from 'next/link';
+import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 interface OfficialMatchSheetProps {
     redirectAfterSubmit: string;
@@ -276,15 +277,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 const homeInfo = getTeamInfo(data.home_team);
                 const awayInfo = getTeamInfo(data.away_team);
 
-                const scheduledDate = data.scheduled_time ? new Date(data.scheduled_time) : null;
+                const rawDateStr = data.scheduled_time;
 
                 setTeamsInfo({
                     home: homeInfo,
                     away: awayInfo,
                     // @ts-ignore
                     category: catInfo?.name || 'Voley',
-                    date: scheduledDate ? scheduledDate.toLocaleDateString() : 'A CONFIRMAR',
-                    time: scheduledDate ? scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'A CONFIRMAR',
+                    date: rawDateStr ? formatArgentinaDateLiteral(rawDateStr) : 'A CONFIRMAR',
+                    time: rawDateStr ? formatArgentinaTimeLiteral(rawDateStr) : 'A CONFIRMAR',
                     phase: data.round || 'Fase Regular',
                     gym: data.court_name || 'Polivalente',
                     // @ts-ignore

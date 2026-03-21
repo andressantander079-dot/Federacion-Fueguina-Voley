@@ -8,14 +8,13 @@ import { useSettings } from '@/hooks/useSettings';
 
 const SYSTEM_FEES = [
    { id: 1, title: 'Inscripción de clubes' },
-   { id: 2, title: 'Inscripción de jugadores/as mayores de 18 años' },
-   { id: 3, title: 'Inscripción de Jugadoras/es menores de 18 años' },
+   { id: 2, title: 'Inscripción de jugadores/as mayores de 12 años' },
+   { id: 3, title: 'Inscripción de Jugadoras/es menores de 12 años' },
    { id: 4, title: 'Inscripción de Jugadores/as de Newcom' },
    { id: 5, title: 'Inscripción de Técnicos' },
    { id: 6, title: 'Pase Mayor de 18 años' },
    { id: 7, title: 'Pase menor de 18 años' },
-   { id: 8, title: 'Pases a préstamos' },
-   { id: 9, title: 'Inscripcion de Jugadoras/es de Mini-voley' }
+   { id: 8, title: 'Pases a préstamos' }
 ];
 
 export default function AdminConfigPage() {

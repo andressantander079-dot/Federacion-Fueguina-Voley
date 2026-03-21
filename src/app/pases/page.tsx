@@ -47,7 +47,7 @@ export default function PasesFamiliaPage() {
                         destino:teams!solicitante_club_id(name, shield_url)
                     `)
                     .eq('temp_user', dni)
-                    .eq('estado', 'esperando_jugador')
+                    .eq('estado', 'esperando_firma_jugador')
                     .single();
 
                 if (paseError || !paseData) {
@@ -55,14 +55,18 @@ export default function PasesFamiliaPage() {
                     return;
                 }
 
-                // Verificar Expiración
+                // Verificar Expiración Obligatoria Comercial
                 if (paseData.temp_expires_at) {
                     const expires = new Date(paseData.temp_expires_at);
                     if (new Date() > expires) {
-                        setErrorMsg("El enlace de firma ha caducado (superó las 72hs). Debe solicitar al club de origen que reenvíe el pase.");
+                        setErrorMsg("El enlace de firma ha caducado irreparablemente (superó el límite legal de 72 Horas). Este trámite temporal de pase ha sido clausurado y cancelado automáticamente por el Sistema Federal. El Club solicitante deberá tramitar todo de nuevo desde cero.");
                         
-                        // Opcional: Actualizar estado a caducado en DB 
-                        await supabase.from('tramites_pases').update({ estado: 'caducado' }).eq('id', paseData.id);
+                        // Cancelar en DB
+                        await supabase.from('tramites_pases').update({ 
+                            estado: 'cancelado_por_vencimiento', 
+                            updated_at: new Date().toISOString()
+                        }).eq('id', paseData.id);
+
                         return;
                     }
                 }
