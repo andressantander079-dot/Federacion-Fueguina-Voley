@@ -41,7 +41,7 @@ export default function PasesRecibidosPage() {
                     player:players(name, dni, has_debt, category:categories(name)),
                     solicitante:teams!solicitante_club_id(name, shield_url)
                 `)
-                .eq('solicitante_club_id', clubId)
+                .eq('origen_club_id', clubId)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -65,13 +65,28 @@ export default function PasesRecibidosPage() {
             const { error } = await supabase
                 .from('tramites_pases')
                 .update({
-                    estado: 'rechazado',
+                    estado: 'rechazado_origen',
                     motivo_rechazo: motivoRechazo,
                     updated_at: new Date().toISOString()
                 })
                 .eq('id', selectedPase.id);
 
             if (error) throw error;
+
+            const { data: rejectMsg } = await supabase.from('messages').insert({
+                subject: '❌ Pase Interrumpido - Club Origen Rechazó',
+                body: `El club de origen ha rechazado liberar al jugador ${selectedPase.player?.name}. \n\nMotivo Institucional Documentado: ${motivoRechazo}\n\nEl trámite ha sido detenido.`,
+                type: 'comunicado',
+                priority: 'urgente',
+                sender_id: 'FVF-SYSTEM'
+            }).select('id').single();
+
+            if (rejectMsg) {
+                await supabase.from('message_recipients').insert({
+                    message_id: rejectMsg.id,
+                    recipient_club_id: selectedPase.solicitante_club_id
+                });
+            }
 
             setModalMode(null);
             setSelectedPase(null);
@@ -115,7 +130,7 @@ export default function PasesRecibidosPage() {
             const { error } = await supabase
                 .from('tramites_pases')
                 .update({
-                    estado: 'esperando_jugador',
+                    estado: 'esperando_firma_jugador',
                     firma_origen: signature,
                     temp_user: tempUser,
                     temp_password: tempPassword,
@@ -126,6 +141,48 @@ export default function PasesRecibidosPage() {
                 .eq('id', selectedPase.id);
 
             if (error) throw error;
+            
+            const credMsg = `Pase (Fase 3): Has firmado la liberación de ${selectedPase.player?.name}. \n\n⚠️ ACCIÓN REQUERIDA: Entrégale INMEDIATAMENTE estas credenciales temporales al jugador/a para que ingrese a firmar su conformidad final.\n\nLink: ${window.location.origin}/pases\nUsuario: ${tempUser}\nClave: ${tempPassword}\n\n⚠️ ADVERTENCIA: Estas credenciales caducan en 72 horas. Si no ingresa, el Pase será cancelado.`;
+
+            // Notify Origen (Club B) and ADMIN FVF with the credentials
+            const { data: msgData, error: msgError1 } = await supabase.from('messages').insert({
+                subject: '🔑 Credenciales de Pase Generadas',
+                body: credMsg,
+                type: 'comunicado',
+                priority: 'urgente',
+                recipient_roles: ['admin'] // FVF sees it implicitly if recipient_roles includes admin
+            }).select('id').single();
+
+            if (msgError1) {
+                console.error("Error inserting msg1:", msgError1);
+            }
+
+            if (msgData) {
+                // Send securely to Club B (Origen)
+                await supabase.from('message_recipients').insert({
+                    message_id: msgData.id,
+                    recipient_club_id: clubId // Which is selectedPase.origen_club_id
+                });
+            }
+
+            // Notify Solicitante (Club A) - Only text status
+            const { data: msgSolicitante, error: msgError2 } = await supabase.from('messages').insert({
+                subject: '⏳ Pase en Fase 3: Esperando Firma del Jugador',
+                body: `El club de origen ha firmado la liberación de ${selectedPase.player?.name}. El trámite se encuentra esperando que el jugador/tutor firme dentro de las próximas 72 horas.`,
+                type: 'comunicado',
+                priority: 'normal'
+            }).select('id').single();
+
+            if (msgError2) {
+                console.error("Error inserting msg2:", msgError2);
+            }
+
+            if (msgSolicitante) {
+                await supabase.from('message_recipients').insert({
+                    message_id: msgSolicitante.id,
+                    recipient_club_id: selectedPase.solicitante_club_id
+                });
+            }
             
             setCredentials({
                 user: tempUser,
@@ -151,8 +208,8 @@ export default function PasesRecibidosPage() {
 
     if (authLoading || loadingPases) return <div className="p-12 text-center text-white">Cargando Inbox...</div>;
 
-    const pendingPases = pases.filter(p => p.estado === 'solicitado');
-    const historicalPases = pases.filter(p => p.estado !== 'solicitado');
+    const pendingPases = pases.filter(p => p.estado === 'esperando_origen');
+    const historicalPases = pases.filter(p => p.estado !== 'esperando_origen');
 
     return (
         <div className="min-h-screen bg-zinc-950 text-white font-sans sm:pb-24">
@@ -197,6 +254,18 @@ export default function PasesRecibidosPage() {
                             <Inbox className="text-tdf-blue" />
                             Solicitudes Recibidas
                         </h2>
+
+                        {pendingPases.length > 0 && (
+                            <div className="bg-tdf-blue/10 border-l-4 border-tdf-blue text-blue-400 p-4 rounded-xl mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top-4">
+                                <div className="flex items-center gap-3">
+                                    <AlertCircle size={24} className="animate-pulse" />
+                                    <div>
+                                        <p className="font-bold">Tienes {pendingPases.length} solicitud(es) de pase por responder.</p>
+                                        <p className="text-sm text-blue-400/80">Recuerda que estas decisiones traban el flujo del jugador. Por favor aprueba o rechaza con justificativo.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {pendingPases.length === 0 ? (
                             <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-12 text-center mb-12">

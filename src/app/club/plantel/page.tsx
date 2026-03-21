@@ -31,6 +31,12 @@ export default function PlantelPage() {
   const [squadActual, setSquadActual] = useState<any>(null);
   const [jugadores, setJugadores] = useState<any[]>([]);
   const [globalCategories, setGlobalCategories] = useState<any[]>([]);
+  
+  // Huerfanos State
+  const [huerfanos, setHuerfanos] = useState<any[]>([]);
+  const [isBannerMinimized, setIsBannerMinimized] = useState(false);
+  const [asignarModal, setAsignarModal] = useState<{ isOpen: boolean, huerfano: any }>({ isOpen: false, huerfano: null });
+  const [asignarSquadId, setAsignarSquadId] = useState('');
 
   // PIN Modal State
   const [pinModal, setPinModal] = useState<{
@@ -73,14 +79,10 @@ export default function PlantelPage() {
 
   const isMinor = () => {
     if (!nuevoJugador.birth_date) return false;
-    const today = new Date();
-    const birthDate = new Date(nuevoJugador.birth_date);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-    }
-    return age < 18;
+    const currentYear = new Date().getFullYear();
+    const birthYear = new Date(nuevoJugador.birth_date).getFullYear();
+    const projectedAge = currentYear - birthYear; // Edad proyectada al 31 de Diciembre
+    return projectedAge < 18;
   };
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -112,6 +114,7 @@ export default function PlantelPage() {
         setHasPaidInscription(!!teamData.has_paid_inscription);
       }
       await cargarSquads(id);
+      await cargarHuerfanos(id);
 
     } catch (err: any) {
       console.error(err);
@@ -164,6 +167,15 @@ export default function PlantelPage() {
     setSquads(data || []);
   }
 
+  async function cargarHuerfanos(idEquipo: string) {
+    const { data } = await supabase
+      .from('players')
+      .select('*')
+      .eq('team_id', idEquipo)
+      .is('squad_id', null);
+    setHuerfanos(data || []);
+  }
+
   const getCategoryName = (id: string) => {
     return globalCategories.find(c => c.id === id)?.name || 'Sin Categoría';
   };
@@ -195,6 +207,32 @@ export default function PlantelPage() {
       toast.error("Error: " + error.message);
     } finally {
       setCreandoSquad(false);
+    }
+  }
+
+  async function handleAsignarHuerfano(e: React.FormEvent) {
+    e.preventDefault();
+    if (!asignarSquadId || !asignarModal.huerfano) return toast.error("Seleccione un plantel");
+    
+    try {
+      setUploading(true);
+      const { error } = await supabase.from('players').update({
+        squad_id: asignarSquadId
+      }).eq('id', asignarModal.huerfano.id);
+      
+      if (error) throw error;
+      toast.success("Jugador asignado al plantel exitosamente.");
+      
+      setAsignarModal({ isOpen: false, huerfano: null });
+      setAsignarSquadId('');
+      if (clubId) await cargarHuerfanos(clubId);
+      if (squadActual && squadActual.id === asignarSquadId) {
+         cargarJugadores(asignarSquadId);
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -417,9 +455,21 @@ export default function PlantelPage() {
   }
 
   async function borrarJugador(id: string) {
-    if (!confirm("¿Eliminar?")) return;
-    await supabase.from('players').delete().eq('id', id);
-    cargarJugadores(squadActual.id);
+    if (!confirm("¿Eliminar definitivamente este jugador y sus anexos?")) return;
+    try {
+        const { error } = await supabase.from('players').delete().eq('id', id);
+        if (error) throw error;
+        toast.success("Ficha del jugador eliminada de la base de datos.");
+    } catch (err: any) {
+        console.error("Delete Error:", err);
+        if (err.code === '23503') { // Foreign Key Violation
+            toast.error("El jugador no puede ser eliminado porque tiene un trámite de pase FVF asociado. Primero cancele el pase.");
+        } else {
+            toast.error("El sistema bloqueó el borrado: " + err.message);
+        }
+    } finally {
+        if (squadActual) cargarJugadores(squadActual.id);
+    }
   }
 
   if (authLoading || loading) return (
@@ -470,6 +520,46 @@ export default function PlantelPage() {
             title: mode === 'remove' ? 'Eliminar Contraseña' : prev.title
           }))}
         />
+
+        {/* BANNER HUERFANOS */}
+        {huerfanos.length > 0 && vista === 'squads' && (
+          <div className="mb-8 border border-red-500/50 bg-red-950/20 rounded-2xl shadow-lg border-l-4 border-l-red-500 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="p-4 flex items-center justify-between bg-red-900/40">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="text-red-500" />
+                <h3 className="text-white font-bold">Tienes {huerfanos.length} jugador(es) pendiente(s) de asignación</h3>
+                <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider hidden sm:block">Acción Requerida</span>
+              </div>
+              <button onClick={() => setIsBannerMinimized(!isBannerMinimized)} className="p-2 text-zinc-400 hover:text-white transition">
+                <ChevronRight className={`transform transition-transform ${isBannerMinimized ? 'rotate-90' : '-rotate-90'}`} />
+              </button>
+            </div>
+            
+            {!isBannerMinimized && (
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 bg-zinc-950/50">
+                {huerfanos.map(h => (
+                   <div key={h.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex justify-between items-center group">
+                      <div>
+                        <div className="font-bold text-white flex gap-2 items-center text-sm">
+                          {h.name} 
+                          {h.has_debt && <span title="Inhabilitado por deudas transferidas"><Lock size={12} className="text-red-500" /></span>}
+                        </div>
+                        <div className="text-[10px] uppercase font-bold text-zinc-500 mt-1 flex items-center gap-1">
+                           Sugerido: <span className="text-orange-500 font-black bg-orange-500/10 px-1 rounded">{getCategoryName(h.category_id)}</span>
+                        </div>
+                      </div>
+                      <button 
+                         onClick={() => setAsignarModal({ isOpen: true, huerfano: h })}
+                         className="px-3 py-1.5 bg-white text-black text-xs font-bold rounded-lg hover:bg-zinc-200 transition shadow-lg shrink-0"
+                      >
+                         Asignar
+                      </button>
+                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12 animate-in fade-in slide-in-from-top-4 duration-700">
           <div className="flex items-center gap-6">
@@ -548,8 +638,8 @@ export default function PlantelPage() {
                 const isMale = squad.gender === 'Masculino';
 
                 const cardClasses = isMale
-                  ? "group bg-zinc-900 border-2 border-white rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-white/10 relative overflow-hidden"
-                  : "group bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50 relative overflow-hidden";
+                  ? "group bg-zinc-900 border-2 border-white rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-white/10 relative overflow-hidden flex flex-col h-full"
+                  : "group bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50 relative overflow-hidden flex flex-col h-full";
 
                 return (
                   <div
@@ -557,7 +647,7 @@ export default function PlantelPage() {
                     onClick={() => abrirSquad(squad)}
                     className={cardClasses}
                   >
-                    <div className="flex justify-between items-start mb-8">
+                    <div className="flex flex-col-reverse sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
                       <div className="space-y-1">
                         <h3 className={`font-extrabold text-xl transition-colors ${isMale ? 'text-white' : 'text-white group-hover:text-orange-500'}`}>
                           {clubName}
@@ -572,7 +662,7 @@ export default function PlantelPage() {
                           </span>
                         </div>
                       </div>
-                      <span className="bg-white text-zinc-900 text-xs font-black px-3 py-1 rounded-lg uppercase tracking-wider">
+                      <span className="shrink-0 self-end sm:self-auto bg-white text-zinc-900 text-xs font-black px-3 py-1 rounded-lg uppercase tracking-wider">
                         {catName.split(' ')[0]}
                       </span>
                     </div>
@@ -651,27 +741,47 @@ export default function PlantelPage() {
                       onClick={() => {
                         if (j.status === 'pending') {
                           alert("Pendiente esperando la aprobación del administrador");
+                        } else if (j.status === 'rejected') {
+                          alert(`JUGADOR OBSERVADO POR FVF: ${j.rejection_reason || 'Debe eliminar el jugador y volver a cargar la documentación requerida.'}`);
                         }
                       }}
                       className={`
-                        border p-3 md:p-4 rounded-xl flex items-center gap-3 md:gap-4 transition group cursor-pointer relative overflow-hidden
+                        border p-3 md:p-4 rounded-xl flex items-center gap-3 md:gap-4 transition group relative overflow-hidden
                         ${j.status === 'pending'
-                          ? 'bg-yellow-500/10 border-yellow-500/50 hover:bg-yellow-500/20'
-                          : 'bg-zinc-900 border-zinc-800/80 hover:border-zinc-700'
+                          ? 'bg-yellow-500/10 border-yellow-500/50 hover:bg-yellow-500/20 cursor-pointer'
+                          : j.status === 'rejected'
+                          ? 'bg-red-500/10 border-red-500/50 hover:bg-red-500/20 cursor-pointer'
+                          : j.has_debt
+                          ? 'bg-zinc-900/50 border-red-900/50 hover:border-red-500/50 opacity-80 cursor-default' /* DEUDA VISUAL */
+                          : 'bg-zinc-900 border-zinc-800/80 hover:border-zinc-700 cursor-default'
                         }
                       `}
                     >
                       {j.status === 'pending' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500" />}
+                      {j.status === 'rejected' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]" />}
 
                       <div className="w-8 h-8 md:w-10 md:h-10 shrink-0 bg-zinc-800 rounded-full flex items-center justify-center font-black text-zinc-500 text-xs md:text-sm">
                         {j.number || '#'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-bold text-white text-sm md:text-base truncate leading-tight">{j.name}</h4>
+                          <h4 className={`font-bold text-sm md:text-base truncate leading-tight flex items-center gap-2 ${j.status === 'rejected' ? 'text-red-400 line-through opacity-70' : 'text-white'}`}>
+                            {j.name}
+                            {j.has_debt && <span title="Inhabilitado para competir por deudas"><Lock size={14} className="text-red-500" /></span>}
+                          </h4>
+                          {j.has_debt && (
+                            <span className="text-[10px] font-bold border border-red-500/50 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                              Deuda
+                            </span>
+                          )}
                           {j.status === 'pending' && (
                             <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
                               Pendiente
+                            </span>
+                          )}
+                          {j.status === 'rejected' && (
+                            <span className="text-[10px] font-bold bg-red-500/20 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 animate-pulse" title={j.rejection_reason || 'Rechazado'}>
+                              Observado (Click para ver motivo)
                             </span>
                           )}
                         </div>
@@ -785,7 +895,7 @@ export default function PlantelPage() {
                         <label className="flex items-center gap-3 p-3 bg-yellow-950/20 hover:bg-yellow-900/40 border border-dashed border-yellow-700/50 rounded-xl cursor-pointer transition group">
                           <div className="p-2 bg-yellow-900/50 rounded-lg text-yellow-500"><ShieldCheck size={16} /></div>
                           <div className="flex-1 overflow-hidden">
-                            <div className="text-xs font-bold text-yellow-500">Autorización Familia (Obligatorio)</div>
+                            <div className="text-xs font-bold text-yellow-500">Declaración Jurada por parte de la Familia</div>
                             <div className="text-[10px] text-zinc-400 truncate">{nuevoJugador.authorization_file ? nuevoJugador.authorization_file.name : 'Subir PDF firmado'}</div>
                           </div>
                           <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => setNuevoJugador({ ...nuevoJugador, authorization_file: e.target.files?.[0] || null })} />
@@ -866,6 +976,43 @@ export default function PlantelPage() {
           </div>
         </form>
       </dialog>
+
+      {asignarModal.isOpen && asignarModal.huerfano && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+           <form onSubmit={handleAsignarHuerfano} className="bg-zinc-900 border border-zinc-800 text-white p-8 rounded-3xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
+              <h3 className="text-xl font-black mb-2 flex items-center gap-2"><UserPlus className="text-orange-500"/> Asignar Jugador</h3>
+              <p className="text-sm text-zinc-400 mb-6 border-b border-zinc-800 pb-4">
+                 <strong className="text-white block text-lg mb-1">{asignarModal.huerfano.name}</strong> 
+                 Categoría Oficial Validada: <span className="text-orange-500 font-bold">{getCategoryName(asignarModal.huerfano.category_id)}</span>
+              </p>
+
+              <div className="mb-8">
+                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Seleccionar Plantel</label>
+                <select 
+                   required
+                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-orange-500 font-bold"
+                   value={asignarSquadId}
+                   onChange={e => setAsignarSquadId(e.target.value)}
+                >
+                   <option value="">Elegir plantel sugerido...</option>
+                   {squads.filter(s => s.category_id === asignarModal.huerfano.category_id).map(s => (
+                      <option value={s.id} key={s.id}>{s.name} ({s.gender})</option>
+                   ))}
+                </select>
+                {squads.filter(s => s.category_id === asignarModal.huerfano.category_id).length === 0 && (
+                   <p className="text-red-500 text-xs mt-3 flex items-start gap-1 bg-red-500/10 p-2 rounded">
+                      <AlertCircle size={14} className="mt-0.5 shrink-0"/> No tienes planteles compatibles con esta categoría matemática. Crea uno antes de asignar.
+                   </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                 <button type="button" onClick={() => { setAsignarModal({ isOpen: false, huerfano: null }); setAsignarSquadId(''); }} className="px-4 py-2 text-zinc-400 font-bold hover:text-white transition">Cancelar</button>
+                 <button type="submit" disabled={uploading || squads.filter(s => s.category_id === asignarModal.huerfano.category_id).length === 0} className="px-6 py-2 bg-white text-black font-black rounded-lg hover:bg-zinc-200 transition disabled:opacity-50">Confirmar</button>
+              </div>
+           </form>
+        </div>
+      )}
 
     </div>
   );

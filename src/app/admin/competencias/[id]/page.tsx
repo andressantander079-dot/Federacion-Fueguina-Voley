@@ -11,6 +11,7 @@ import Link from 'next/link';
 
 // Componente para ver planillas (si existe)
 import MatchSheetsTable from '@/components/admin/MatchSheetsTable';
+import PlayoffGenerator from '@/components/admin/PlayoffGenerator';
 import { calculateStandings } from '@/lib/tournamentUtils';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
@@ -304,9 +305,6 @@ export default function DetalleTorneoPage() {
                                  <div className="text-xs text-zinc-500 flex items-center gap-1">
                                     <Clock size={12} /> {formatArgentinaDateLiteral(p.scheduled_time)} {formatArgentinaTimeLiteral(p.scheduled_time)}
                                  </div>
-                                 <Link href={`/admin/partido/${p.id}`} className="mt-1 w-full text-center bg-tdf-blue text-white py-1.5 rounded-lg text-xs font-bold hover:bg-blue-600 transition flex items-center justify-center gap-1">
-                                    <Edit3 size={14} /> Gestionar
-                                 </Link>
                               </div>
                            ))}
                         </div>
@@ -361,9 +359,6 @@ export default function DetalleTorneoPage() {
 
                                        {/* Acciones */}
                                        <div className="flex gap-2 w-full md:w-auto justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition mt-2 md:mt-0 pt-3 md:pt-0 border-t border-zinc-800/50 md:border-t-0">
-                                          {p.status !== 'finalizado' && (
-                                             <Link href={`/admin/partido/${p.id}`} className="px-4 py-2 bg-blue-500/10 text-tdf-blue rounded-lg hover:bg-blue-500/20 transition flex items-center justify-center flex-1 md:flex-none" title="Editar / Cargar Planilla"><Edit3 size={16} /><span className="ml-2 font-bold text-xs md:hidden">Gestionar</span></Link>
-                                          )}
                                           <button onClick={(e) => eliminarPartido(e, p.id)} className="px-4 py-2 text-zinc-500 bg-zinc-900 border border-zinc-800 hover:text-red-500 hover:border-red-500/50 transition hover:bg-red-500/10 rounded-lg flex items-center justify-center flex-1 md:flex-none" title="Eliminar"><Trash2 size={16} /><span className="ml-2 font-bold text-xs md:hidden">Eliminar</span></button>
                                        </div>
 
@@ -397,11 +392,13 @@ export default function DetalleTorneoPage() {
 
             {/* === PLAYOFFS === */}
             {activeTab === 'playoffs' && (
-               <div className="text-center py-20 bg-zinc-900 rounded-2xl border border-dashed border-zinc-800">
-                  <Trophy size={60} className="mx-auto text-zinc-800 mb-4" />
-                  <h3 className="text-xl font-bold text-zinc-500">Fase Final</h3>
-                  <p className="text-zinc-600">Próximamente disponible.</p>
-               </div>
+               <PlayoffGenerator 
+                  tournamentId={id} 
+                  categoryId={torneo.category_id}
+                  tablaGeneral={tablaPosiciones} 
+                  onMatchesGenerated={cargarDatos}
+                  matches={partidosOficiales.concat(partidosPendientes)}
+               />
             )}
 
          </div>

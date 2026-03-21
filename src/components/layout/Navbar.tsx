@@ -53,10 +53,10 @@ export default function Navbar() {
                     <div className="flex items-center justify-between h-20">
 
                         {/* LOGO */}
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3 sm:gap-4 truncate">
                             <button
                                 onClick={() => setIsLogoModalOpen(true)}
-                                className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/30 shadow-lg shadow-black/30 flex-shrink-0 transition-transform hover:scale-105 active:scale-95 cursor-pointer bg-white"
+                                className="w-10 h-10 sm:w-14 sm:h-14 rounded-full overflow-hidden border-2 border-white/30 shadow-lg shadow-black/30 flex-shrink-0 transition-transform hover:scale-105 active:scale-95 cursor-pointer bg-white"
                                 aria-label="Ver logo"
                             >
                                 <img
@@ -65,8 +65,8 @@ export default function Navbar() {
                                     className="w-full h-full object-cover"
                                 />
                             </button>
-                            <div className="hidden md:block">
-                                <h1 className="text-xl font-bold leading-none text-white shadow-black drop-shadow-sm">
+                            <div className="hidden sm:block">
+                                <h1 className="text-lg sm:text-xl font-bold leading-none text-white shadow-black drop-shadow-sm truncate">
                                     Federación de Voley Fueguino
                                 </h1>
                             </div>
@@ -96,14 +96,14 @@ export default function Navbar() {
                         </div>
 
                         {/* ACCESO OFICIAL */}
-                        <div className="flex items-center gap-4">
-                            <ThemeToggle className="text-white hover:bg-white/10" />
+                        <div className="flex items-center gap-2 sm:gap-4 whitespace-nowrap">
+                            <ThemeToggle className="text-white hover:bg-white/10 scale-90 sm:scale-100" />
                             <button
                                 onClick={() => setIsLoginOpen(true)}
-                                className="group flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-full transition-all shadow-md hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 cursor-pointer border border-white/10"
+                                className="group flex items-center gap-1 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-full transition-all shadow-md hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 cursor-pointer border border-white/10"
                             >
-                                <User className="w-4 h-4" />
-                                <span className="text-sm font-semibold tracking-wide">Acceso Oficial</span>
+                                <User className="w-4 h-4 shrink-0" />
+                                <span className="text-xs sm:text-sm font-semibold tracking-wide hidden sm:inline">Acceso Oficial</span>
                             </button>
                         </div>
                     </div>

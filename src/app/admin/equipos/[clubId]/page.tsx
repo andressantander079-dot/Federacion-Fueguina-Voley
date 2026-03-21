@@ -203,9 +203,9 @@ export default function ClubDetailsPage() {
                 <Link href="/admin/equipos" className="inline-flex items-center text-sm text-gray-500 hover:text-tdf-orange mb-4 transition-colors">
                     <ChevronLeft size={16} /> Volver a Clubes
                 </Link>
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                        <div className="w-24 h-24 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="flex flex-col sm:flex-row items-center sm:items-start md:items-center gap-4 sm:gap-6 text-center sm:text-left">
+                        <div className="w-24 h-24 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center shrink-0">
                             {club.shield_url ? (
                                 <img src={club.shield_url} alt={club.name} className="w-16 h-16 object-contain" />
                             ) : (
@@ -213,7 +213,7 @@ export default function ClubDetailsPage() {
                             )}
                         </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex flex-col sm:flex-row items-center gap-3">
                                 {club.name}
                                 {club.has_paid_inscription ? (
                                     <span className="bg-green-100 text-green-700 border border-green-200 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1">
@@ -225,24 +225,24 @@ export default function ClubDetailsPage() {
                                     </span>
                                 )}
                             </h1>
-                            <p className="text-gray-500">{club.city}</p>
+                            <p className="text-gray-500 mt-2 sm:mt-0">{club.city}</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-col sm:flex-row flex-wrap justify-center md:justify-end items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
                         <button
                             onClick={toggleInscriptionPayment}
                             disabled={togglingPayment}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold shadow-md transition-all ${club.has_paid_inscription
+                            className={`w-full sm:w-auto shrink-0 justify-center flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold shadow-md transition-all ${club.has_paid_inscription
                                     ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
                                     : 'bg-green-600 text-white hover:bg-green-700'
                                 }`}
                         >
                             <Shield size={18} />
-                            {club.has_paid_inscription ? 'Revocar Inscripción' : 'Marcar Inscripción Pagada'}
+                            {club.has_paid_inscription ? 'Revocar Inscripción' : 'Marcar Pagada'}
                         </button>
                         <button
                             onClick={() => setIsCreateModalOpen(true)}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
+                            className="w-full sm:w-auto shrink-0 justify-center flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
                         >
                             <Plus size={20} />
                             Nuevo Plantel

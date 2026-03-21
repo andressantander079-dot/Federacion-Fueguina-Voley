@@ -462,7 +462,7 @@ export default function AdminTramitesPage() {
                                        return ag < 18 ? (
                                           <DocumentCard
                                              title="Autorización Familiar"
-                                             url={selectedItem.originalData.family_auth_url || null}
+                                             url={selectedItem.originalData.family_authorization_url || null}
                                              type="document"
                                              missingText="Falta Autorización (Menor)"
                                           />

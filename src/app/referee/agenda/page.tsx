@@ -13,8 +13,8 @@ export default function RefereeAgendaPage() {
     const [loading, setLoading] = useState(true)
 
     // Calendar State
-    const [currentDate, setCurrentDate] = useState(new Date(2026, 1, 1)); // Feb 2026 default
-    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [currentDate, setCurrentDate] = useState<Date>(new Date()); // Current month default
+    const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
     const [selectedDateEvents, setSelectedDateEvents] = useState<any[]>([]);
 
     useEffect(() => {
@@ -95,6 +95,19 @@ export default function RefereeAgendaPage() {
         });
 
         setMatches(allEvents);
+        
+        // Auto-select today's events on load
+        const today = new Date();
+        const todaysEvents = allEvents.filter(m => {
+            if (!m || !m.start_time) return false;
+            const [datePart] = m.start_time.split('T');
+            if(!datePart) return false;
+            const [y, mm, d] = datePart.split('-');
+            const evDate = new Date(Number(y), Number(mm) - 1, Number(d));
+            return evDate.getDate() === today.getDate() && evDate.getMonth() === today.getMonth() && evDate.getFullYear() === today.getFullYear();
+        });
+        setSelectedDateEvents(todaysEvents);
+        
         setLoading(false)
     }
 
@@ -122,15 +135,18 @@ export default function RefereeAgendaPage() {
 
     const getEventsForDate = (date: Date) => {
         return matches.filter(m => {
-            if (!m.start_time) return false;
+            if (!m || !m.start_time) return false;
             
-            // Instanciar ambas fechas en el contexto de la zona horaria local del navegador (Argentina)
-            const eventDate = new Date(m.start_time);
+            // Literal Parse to avoid absolute timezone shifts crossing midnight boundaries
+            const [datePart] = m.start_time.split('T');
+            if(!datePart) return false;
+            const [y, mm, d] = datePart.split('-');
+            const evDate = new Date(Number(y), Number(mm) - 1, Number(d));
             
             return (
-                eventDate.getDate() === date.getDate() &&
-                eventDate.getMonth() === date.getMonth() &&
-                eventDate.getFullYear() === date.getFullYear()
+                evDate.getDate() === date.getDate() &&
+                evDate.getMonth() === date.getMonth() &&
+                evDate.getFullYear() === date.getFullYear()
             );
         });
     };

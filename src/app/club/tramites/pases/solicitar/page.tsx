@@ -15,8 +15,7 @@ export default function SolicitarPasePage() {
     const { clubId, loading: authLoading } = useClubAuth();
     const { settings } = useSettings();
 
-    // Derived Fee value
-    const paseFee = settings?.procedure_fees?.find((f: any) => f.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes('pase'))?.price || '0';
+    // Derived Fee value: No se calcula globalmente, depende del jugador buscado.
 
     // Search State
     const [dniSearch, setDniSearch] = useState('');
@@ -25,10 +24,23 @@ export default function SolicitarPasePage() {
     
     // Player State
     const [player, setPlayer] = useState<any>(null);
-    
+    const [calculatedFee, setCalculatedFee] = useState<{title: string, price: string, id: number} | null>(null);
+
+    const isUnder18 = (birthDateString: string) => {
+        if (!birthDateString) return false;
+        const today = new Date();
+        const birthDate = new Date(birthDateString);
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+        }
+        return age < 18;
+    };
     // Form State
     const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [signature, setSignature] = useState('');
+    const [receiptFile, setReceiptFile] = useState<File | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
 
@@ -47,7 +59,7 @@ export default function SolicitarPasePage() {
             const { data, error } = await supabase
                 .from('players')
                 .select(`
-                    id, name, dni, category_id, team_id, squad_id,
+                    id, name, dni, birth_date, category_id, team_id, squad_id,
                     team:teams!team_id(id, name, shield_url),
                     category:categories(name),
                     squad:squads(name)
@@ -79,6 +91,16 @@ export default function SolicitarPasePage() {
                     teamName: Array.isArray(data.team) ? data.team[0]?.name : (data.team as any)?.name,
                     teamShield: Array.isArray(data.team) ? data.team[0]?.shield_url : (data.team as any)?.shield_url
                 });
+
+                if (settings?.procedure_fees) {
+                    const isMinor = isUnder18(data.birth_date);
+                    // ID 6 = Mayor de 18, ID 7 = Menor de 18.
+                    const feeId = isMinor ? 7 : 6;
+                    const matchingFee = settings.procedure_fees.find((f: any) => f.id === feeId);
+                    if (matchingFee) {
+                        setCalculatedFee(matchingFee);
+                    }
+                }
             }
 
         } catch (error: any) {
@@ -90,7 +112,10 @@ export default function SolicitarPasePage() {
     };
 
     const handleSubmitPase = async () => {
-        if (!player || !clubId || !acceptedTerms || !signature) return;
+        if (!player || !clubId || !acceptedTerms || !signature || !receiptFile) {
+            alert("Atención: Debe adjuntar de manera OBLIGATORIA el comprobante de pago.");
+            return;
+        }
         
         setIsSubmitting(true);
         try {
@@ -99,7 +124,7 @@ export default function SolicitarPasePage() {
                 .from('tramites_pases')
                 .select('id')
                 .eq('player_id', player.id)
-                .not('estado', 'in', '("rechazado", "aprobado")')
+                .not('estado', 'in', '("rechazado_origen", "completado")')
                 .maybeSingle();
                 
             if (checkError) throw checkError;
@@ -110,20 +135,34 @@ export default function SolicitarPasePage() {
                 return;
             }
 
-            // Create new Pass Request
+            // Subir comprobante a storage
+            const fileExt = receiptFile.name.split('.').pop();
+            const fileName = `pase-${player.dni}-${Date.now()}.${fileExt}`;
+            const { error: uploadError } = await supabase.storage
+                .from('procedure-files')
+                .upload(`pases/${fileName}`, receiptFile);
+            
+            if (uploadError) throw new Error('Error al subir comprobante: ' + uploadError.message);
+            
+            const { data: { publicUrl } } = supabase.storage
+                .from('procedure-files')
+                .getPublicUrl(`pases/${fileName}`);
+
+            // Create new Pass Request en Paso 2 de la Maquina
             const { error: insertError } = await supabase
                 .from('tramites_pases')
                 .insert({
                     player_id: player.id,
                     solicitante_club_id: clubId,
                     origen_club_id: player.team_id,
-                    estado: 'solicitado',
-                    firma_solicitante: signature
+                    estado: 'revision_inicial_fvf',
+                    firma_solicitante: signature,
+                    comprobante_url: publicUrl
                 });
 
             if (insertError) throw insertError;
 
-            setSuccessMessage(`Solicitud de pase iniciada correctamente para ${player.name}. El club de origen ha sido notificado.`);
+            setSuccessMessage(`Solicitud de pase iniciada correctamente para ${player.name}. El trámite ha sido enviado a la Federación para su Revisión Inicial de Pagos.`);
             
         } catch (error: any) {
             console.error("Error al crear pase:", error);
@@ -240,7 +279,8 @@ export default function SolicitarPasePage() {
                             <div className="grid md:grid-cols-2 gap-6 items-center">
                                 <div className="bg-black/50 p-4 rounded-xl border border-zinc-900 border-l-tdf-blue border-l-4">
                                     <p className="text-zinc-500 font-bold uppercase text-[10px] tracking-widest mb-1">Costo Oficial del Trámite</p>
-                                    <p className="text-4xl font-black text-white leading-none">$ {parseInt(paseFee).toLocaleString('es-AR')}</p>
+                                    <p className="text-sm font-bold text-tdf-blue mb-1">{calculatedFee?.title || 'Arancel de Pase'}</p>
+                                    <p className="text-4xl font-black text-white leading-none">$ {calculatedFee ? parseInt(calculatedFee.price || '0').toLocaleString('es-AR') : '0'}</p>
                                 </div>
                                 <div className="text-sm text-zinc-400 space-y-2 relative">
                                     <p className="font-bold text-zinc-300">Deberá transferir a la cuenta de la FVF:</p>
@@ -251,6 +291,21 @@ export default function SolicitarPasePage() {
                                     </div>
                                     <p className="text-xs uppercase tracking-wider italic text-zinc-500 mt-2">* Guarde el comprobante. Se lo requerirán al finalizar.</p>
                                 </div>
+                            </div>
+                            
+                            {/* UPLOAD TICKET COMPROBANTE - REQUISITO NUEVO MÓDULO 3 */}
+                            <div className="mt-8 border-t border-zinc-800/50 pt-6">
+                                <label className="block font-bold text-white mb-2 flex items-center gap-2">
+                                    <CheckCircle size={16} className={receiptFile ? "text-green-500" : "text-zinc-600"}/> 
+                                    Adjuntar Comprobante de Pago (Obligatorio)
+                                </label>
+                                <p className="text-sm text-zinc-500 mb-4">El pase no iniciará hasta que la Federación valide este pago adjunto manualmente.</p>
+                                <input 
+                                    type="file" 
+                                    accept="image/*,.pdf"
+                                    onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+                                    className="block w-full text-sm text-zinc-400 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-sm file:font-black file:bg-tdf-blue file:text-white hover:file:bg-blue-600 transition cursor-pointer bg-zinc-900 border border-zinc-800 rounded-xl"
+                                />
                             </div>
                         </div>
 
@@ -284,7 +339,7 @@ export default function SolicitarPasePage() {
 
                             <button
                                 onClick={handleSubmitPase}
-                                disabled={!acceptedTerms || !signature || isSubmitting}
+                                disabled={!acceptedTerms || !signature || !receiptFile || isSubmitting}
                                 className="w-full mt-8 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 text-white font-black py-4 rounded-xl text-lg shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)] transition flex justify-center items-center gap-2"
                             >
                                 {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : 'Confirmar e Iniciar Solicitud Formal'}

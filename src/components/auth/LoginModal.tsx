@@ -102,7 +102,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                 onClick={onClose}
             />
 
-            <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="relative w-[90vw] max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
 
                 {/* Header */}
                 <div className="bg-tdf-blue px-6 py-4 flex items-center justify-between">
@@ -119,7 +119,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                 </div>
 
                 {/* Body */}
-                <div className="p-8">
+                <div className="p-6 sm:p-8">
                     <form onSubmit={handleLogin} className="space-y-6">
                         {error && (
                             <div className="p-3 bg-red-100 border border-red-200 text-red-700 text-sm rounded-lg">
