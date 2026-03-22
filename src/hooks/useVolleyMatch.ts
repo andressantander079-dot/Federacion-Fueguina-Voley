@@ -56,11 +56,11 @@ export type MatchState = {
     servingTeam: TeamSide | null;
 
     // Substitution Tracking (Per Set)
-    // Maps PlayerID -> PlayerID (Original -> Current).
-    // Or better: Track pairs. { starterId: string, subId: string | null }
-    // Only 6 substitutions per set per team.
     substitutionsHome: number;
     substitutionsAway: number;
+    subHistory: { team: TeamSide, playerOutId: string, playerInId: string }[];
+    timeoutsHome: number;
+    timeoutsAway: number;
     blockedPlayers: { id: string, type: 'set' | 'match' }[];
     sanctionsLog: SanctionEvent[];
 };
@@ -79,6 +79,10 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     const [servingTeam, setServingTeam] = useState<TeamSide | null>(initialState?.servingTeam || null);
 
     const [subsCount, setSubsCount] = useState({ home: 0, away: 0 }); // Track count per set
+    const [subHistory, setSubHistory] = useState<{ team: TeamSide, playerOutId: string, playerInId: string }[]>(initialState?.subHistory || []);
+    
+    // Timeouts per set
+    const [timeouts, setTimeouts] = useState({ home: 0, away: 0 });
 
     const [blockedPlayers, setBlockedPlayers] = useState<{ id: string, type: 'set' | 'match' }[]>(initialState?.blockedPlayers || []);
     const [sanctionsLog, setSanctionsLog] = useState<SanctionEvent[]>(initialState?.sanctionsLog || []);
@@ -90,10 +94,10 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
     const snapshot = useCallback(() => {
         const state = {
-            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers, sanctionsLog
+            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog
         };
         setHistory(prev => [...prev, JSON.stringify(state)]);
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, blockedPlayers, sanctionsLog]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog]);
 
     const undo = () => {
         if (history.length === 0) return;
@@ -108,6 +112,8 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         setBenchAway(lastState.benchAway);
         setServingTeam(lastState.servingTeam);
         setSubsCount(lastState.subsCount);
+        setSubHistory(lastState.subHistory || []);
+        setTimeouts(lastState.timeouts || { home: 0, away: 0 });
         setBlockedPlayers(lastState.blockedPlayers || []);
         setSanctionsLog(lastState.sanctionsLog || []);
 
@@ -130,6 +136,28 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     };
 
     const addPoint = (team: TeamSide) => {
+        const currentHome = sets[currentSetIdx].home;
+        const currentAway = sets[currentSetIdx].away;
+        
+        // Detectar si es un set decisivo (Tie-Break)
+        let homeWonSets = 0;
+        let awayWonSets = 0;
+        for (let i = 0; i < currentSetIdx; i++) {
+            if (sets[i].home > sets[i].away) homeWonSets++;
+            else if (sets[i].away > sets[i].home) awayWonSets++;
+        }
+        const isTieBreak = (homeWonSets === 1 && awayWonSets === 1 && currentSetIdx === 2) || 
+                           (homeWonSets === 2 && awayWonSets === 2 && currentSetIdx === 4);
+        
+        const targetScore = isTieBreak ? 15 : 25;
+
+        // Validar si el set ya terminó (alcanzó el target y diferencia de 2)
+        if ((currentHome >= targetScore && currentHome - currentAway >= 2) || 
+            (currentAway >= targetScore && currentAway - currentHome >= 2)) {
+            alert(`El set ya ha sido ganado a los ${targetScore} puntos con diferencia de 2. Modifique manualmente si es un error, o cierre el set.`);
+            return;
+        }
+
         snapshot();
 
         // Logic: If receiving team wins point -> They Rotate & Serve
@@ -206,13 +234,10 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         // Validation should happen in UI, but basic check here
         const isLiberoChange = playerIn.isLibero; // Simplified check
 
-        // If NOT Libero, increment sub count
+        // If NOT Libero, increment sub count and record history
         if (!isLiberoChange) {
-            if (subsCount[team] >= 6) {
-                alert("Máximo de 6 sustituciones permitidas por set.");
-                return;
-            }
             setSubsCount(prev => ({ ...prev, [team]: prev[team] + 1 }));
+            setSubHistory(prev => [...prev, { team, playerOutId, playerInId: playerIn.id }]);
         }
 
         snapshot();
@@ -325,6 +350,8 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         if (currentSetIdx < 4) {
             setCurrentSetIdx(prev => prev + 1);
             setSubsCount({ home: 0, away: 0 }); // Reset subs for new set
+            setSubHistory([]); // Clear history for new set
+            setTimeouts({ home: 0, away: 0 }); // Reset timeouts
             // Unblock players blocked only for the set
             setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
         }
@@ -339,6 +366,14 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         if (state.benchHome) setBenchHome(state.benchHome);
         if (state.benchAway) setBenchAway(state.benchAway);
         if (state.servingTeam !== undefined) setServingTeam(state.servingTeam);
+        // Rescatar nuevos campos de DB
+        // @ts-ignore
+        if (state.subsCount) setSubsCount(state.subsCount);
+        // @ts-ignore
+        if (state.subHistory) setSubHistory(state.subHistory);
+        // @ts-ignore
+        if (state.timeouts) setTimeouts(state.timeouts);
+        
         if (state.blockedPlayers) setBlockedPlayers(state.blockedPlayers);
         if (state.sanctionsLog) setSanctionsLog(state.sanctionsLog);
     };
@@ -355,10 +390,14 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
     return {
         sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
-        servingTeam, subsCount, blockedPlayers, sanctionsLog,
+        servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog,
         addPoint, subtractPoint, substitutePlayer, finishSet, undo,
         setAllState, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
         initPositions, addPlayerToBench, moveToCourt, removeFromCourt, removePlayerFromMatch,
+        requestTimeout: (team: TeamSide) => {
+            snapshot();
+            setTimeouts(prev => ({ ...prev, [team]: prev[team] + 1 }));
+        },
         blockPlayer: (id: string, type: 'set' | 'match') => {
             snapshot();
             setBlockedPlayers(prev => [...prev.filter(p => p.id !== id), { id, type }]);

@@ -16,7 +16,7 @@ export default function AdminLayout({
     const router = useRouter()
     const supabase = createClient()
     const [unreadMsgs, setUnreadMsgs] = useState(0)
-    const [pendingPases, setPendingPases] = useState(0)
+    const [pendingTasksCount, setPendingTasksCount] = useState(0)
     const [loading, setLoading] = useState(true)
     const [accessDenied, setAccessDenied] = useState(false)
 
@@ -50,21 +50,35 @@ export default function AdminLayout({
         verifyAccess()
         setUnreadMsgs(0)
         
-        const fetchPendingPases = async () => {
-            const { count } = await supabase
-                .from('tramites_pases')
-                .select('*', { count: 'exact', head: true })
-                .eq('estado', 'esperando_federacion');
-            setPendingPases(count || 0);
-        };
-        fetchPendingPases();
-
-        const channelPases = supabase.channel('pases_admin_sidebar')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases' }, () => {
-                 fetchPendingPases();
-            }).subscribe();
+        const fetchPendingTasks = async () => {
+            const [
+                { count: pases },
+                { count: procs },
+                { count: players },
+                { count: coaches },
+                { count: refs }
+            ] = await Promise.all([
+                supabase.from('tramites_pases').select('*', { count: 'exact', head: true }).in('estado', ['esperando_federacion', 'revision_inicial_fvf', 'auditoria_final_fvf']),
+                supabase.from('procedures').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
+                supabase.from('players').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                supabase.from('coaches').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
+                supabase.from('referees').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
+            ]);
             
-        return () => { supabase.removeChannel(channelPases); };
+            setPendingTasksCount((pases||0) + (procs||0) + (players||0) + (coaches||0) + (refs||0));
+        };
+        fetchPendingTasks();
+
+        // Listeners multi-tabla
+        const channels = supabase.channel('admin_sidebar_counters')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases' }, () => fetchPendingTasks())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'procedures' }, () => fetchPendingTasks())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => fetchPendingTasks())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => fetchPendingTasks())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'referees' }, () => fetchPendingTasks())
+            .subscribe();
+            
+        return () => { supabase.removeChannel(channels); };
     }, [supabase])
 
     const handleLogout = async () => {
@@ -126,7 +140,7 @@ export default function AdminLayout({
                     <AdminNavLink href="/admin/equipos" icon={<Users size={18} />} label="Equipos" />
 
                     <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3 mt-4">Institucional</div>
-                    <AdminNavLink href="/admin/tramites" icon={<ClipboardList size={18} />} label="Trámites" badge={pendingPases} />
+                    <AdminNavLink href="/admin/tramites" icon={<ClipboardList size={18} />} label="Trámites" badge={pendingTasksCount} />
                     <AdminNavLink href="/admin/reglamentos" icon={<FileText size={18} />} label="Reglamentos" />
                     <AdminNavLink href="/admin/configuracion" icon={<Settings size={18} />} label="Configuración" />
                 </nav>

@@ -8,7 +8,7 @@ import LogoutButton from '@/components/LogoutButton';
 import {
     RefreshCw, Trophy, X, Check, Search, Plus,
     Download, User, Users, Calendar, Clock, ArrowRightLeft, Volleyball,
-    QrCode, MapPin, ArrowLeft, Trash2, Edit2
+    QrCode, MapPin, ArrowLeft, Trash2, Edit2, AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
@@ -27,7 +27,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
         moveToCourt, removeFromCourt, removePlayerFromMatch,
-        blockedPlayers, blockPlayer, unblockSetPlayers, sanctionsLog, addSanction
+        blockedPlayers, blockPlayer, unblockSetPlayers, sanctionsLog, addSanction,
+        timeouts, requestTimeout, subsCount, subHistory
     } = useVolleyMatch();
 
     // --- ESTADOS DE UI ---
@@ -36,7 +37,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [modalSubOpen, setModalSubOpen] = useState(false);
 
     // New: Match Status & Metadata
-    const [matchStatus, setMatchStatus] = useState<'scheduled' | 'live' | 'finished'>('scheduled'); // 'finalizado' is db value but let's map 'scheduled' = 'programmado'
+    const [matchStatus, setMatchStatus] = useState<'scheduled' | 'live' | 'finished' | 'suspended'>('scheduled'); // 'finalizado' is db value but let's map 'scheduled' = 'programmado'
     const [teamsInfo, setTeamsInfo] = useState<{
         home: { name: string, shield: string | null },
         away: { name: string, shield: string | null },
@@ -255,6 +256,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 // Map DB status to UI Status if needed
                 if (data.status === 'live' || data.status === 'en_curso') setMatchStatus('live');
                 else if (data.status === 'finalizado') setMatchStatus('finished');
+                else if (data.status === 'suspendido') setMatchStatus('suspended');
                 else setMatchStatus('scheduled');
 
                 // Robustly handle if Supabase returns objects or arrays for the joins
@@ -317,6 +319,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         coachHome: prev.coachHome || homeSquad?.coach_name || '',
                         coachAway: prev.coachAway || awaySquadData?.coach_name || ''
                     }));
+                }
+
+                // ✅ Hidratar estado de planilla guardado si existe (para partidos reprogramados después de suspensión)
+                if (!readOnly) {
+                    const { data: matchWithSheet } = await supabase.from('matches').select('sheet_data').eq('id', matchId).single();
+                    if (matchWithSheet?.sheet_data && Object.keys(matchWithSheet.sheet_data).length > 0) {
+                        hydrateMatchState(matchWithSheet.sheet_data);
+                    }
                 }
             }
         };
@@ -766,10 +776,35 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         setModalActionOpen(true);
     };
 
-    const handleSubConfirm = (playerIn: any) => {
+    const handleSubConfirm = (playerIn: any, isException: boolean = false) => {
         if (!selectedPlayer) return;
         substitutePlayer(selectedPlayer.team, selectedPlayer.id, playerIn);
+        
+        if (isException) {
+            setObservations(prev => prev + (prev ? '\n' : '') + 
+                `[Set ${currentSetIdx + 1}] Sustitución excepcional: Entró #${playerIn.number} ${playerIn.name} por #${selectedPlayer.number} ${selectedPlayer.name} (${selectedPlayer.team === 'home' ? 'Local' : 'Visita'}).`);
+        }
+        
         setModalSubOpen(false); setModalActionOpen(false); setSelectedPlayer(null);
+    };
+
+    const handleSuspendMatch = () => {
+        if(confirm("⚠️ ¿Estás seguro de que deseas SUSPENDER este partido?\n\nDeberás detallar el motivo en las observaciones y completar las firmas de la planilla.")) {
+            setMatchStatus('suspended');
+            setObservations(prev => prev + (prev ? '\n\n' : '') + '[PARTIDO SUSPENDIDO A LAS ' + new Date().toLocaleTimeString() + '] Razón: ');
+            setClosingFlow(true);
+        }
+    };
+
+    const handleTimeout = (team: 'home' | 'away') => {
+        if (timeouts[team] >= 2) {
+            if (confirm(`El equipo ya consumió sus 2 tiempos muertos permitidos en este set. ¿Conceder tiempo muerto adicional/excepcional?`)) {
+                requestTimeout(team);
+                setObservations(prev => prev + (prev ? '\n' : '') + `[Set ${currentSetIdx + 1}] Tiempo muerto adicional/excepcional concedido al equipo ${team === 'home' ? 'Local' : 'Visitante'}.`);
+            }
+        } else {
+            requestTimeout(team);
+        }
     };
 
     // --- FIRMAS ---
@@ -855,8 +890,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                             ...finalSheetData,
                             final_score: { home: setsWonHome, away: setsWonAway }
                         },
-                        sheet_status: 'submitted',
-                        status: 'finalizado'
+                        sheet_status: matchStatus === 'suspended' ? 'suspended' : 'submitted',
+                        status: matchStatus === 'suspended' ? 'suspendido' : 'finalizado'
                     })
                     .eq('id', matchId);
 
@@ -1037,8 +1072,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     {/* DT LOCAL INPUTS */}
                     <div className="p-3 bg-blue-50/50 border-t border-blue-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
                         <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Cuerpo Técnico L</label>
-                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Nombre DT..." value={staff.coachHome || ''} onChange={e => setStaff({ ...staff, coachHome: e.target.value })} />
-                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-blue-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Ayudante Técnico..." value={staff.ayTecHome || ''} onChange={e => setStaff({ ...staff, ayTecHome: e.target.value })} />
+                        <input disabled className="w-full bg-slate-200/50 border border-blue-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none transition cursor-not-allowed" placeholder="DT No Asignado" value={staff.coachHome || ''} readOnly />
+                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-blue-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir Ayudante Técnico..." value={staff.ayTecHome || ''} onChange={e => setStaff({ ...staff, ayTecHome: e.target.value })} />
                     </div>
                 </aside>
 
@@ -1053,6 +1088,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                         <button onClick={() => addPoint('home')} className="bg-blue-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition">+</button>
                                         <button onClick={() => subtractPoint('home')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200">-</button>
                                     </div>
+                                )}
+                                <div className="flex gap-1 mt-2">
+                                    <div className={`w-3 h-3 rounded-full ${timeouts.home >= 1 ? 'bg-blue-600' : 'bg-slate-200'} transition-colors`}></div>
+                                    <div className={`w-3 h-3 rounded-full ${timeouts.home >= 2 ? 'bg-blue-600' : 'bg-slate-200'} transition-colors`}></div>
+                                </div>
+                                {!readOnly && (
+                                    <button onClick={() => handleTimeout('home')} className="mt-1 text-[10px] font-bold text-slate-400 border border-slate-200 px-3 py-1 rounded-full uppercase hover:bg-blue-50 hover:text-blue-600 transition active:scale-95">Tiempo</button>
                                 )}
                             </div>
                             <div className="flex flex-col gap-2 w-64 text-center items-center">
@@ -1081,6 +1123,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                         <button onClick={() => addPoint('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition">+</button>
                                         <button onClick={() => subtractPoint('away')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200">-</button>
                                     </div>
+                                )}
+                                <div className="flex gap-1 mt-2">
+                                    <div className={`w-3 h-3 rounded-full ${timeouts.away >= 1 ? 'bg-red-600' : 'bg-slate-200'} transition-colors`}></div>
+                                    <div className={`w-3 h-3 rounded-full ${timeouts.away >= 2 ? 'bg-red-600' : 'bg-slate-200'} transition-colors`}></div>
+                                </div>
+                                {!readOnly && (
+                                    <button onClick={() => handleTimeout('away')} className="mt-1 text-[10px] font-bold text-slate-400 border border-slate-200 px-3 py-1 rounded-full uppercase hover:bg-red-50 hover:text-red-600 transition active:scale-95">Tiempo</button>
                                 )}
                             </div>
                         </div>
@@ -1125,9 +1174,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     </div>
 
-                    <div className="flex justify-end pt-4 pb-10">
+                    <div className="flex justify-end pt-4 pb-10 gap-4">
                         {!readOnly && (
-                            <button onClick={() => setClosingFlow(true)} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-black transition"><Check size={16} /> Finalizar Encuentro</button>
+                            <>
+                                <button onClick={handleSuspendMatch} className="bg-orange-600 text-white px-6 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-orange-700 transition"><AlertTriangle size={16} /> Suspender</button>
+                                <button onClick={() => setClosingFlow(true)} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-black transition"><Check size={16} /> Finalizar Encuentro</button>
+                            </>
                         )}
                     </div>
                 </main>
@@ -1181,8 +1233,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     {/* DT VISITA INPUTS */}
                     <div className="p-3 bg-red-50/50 border-t border-red-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
                         <label className="text-[10px] font-black text-red-600 uppercase tracking-widest px-1">Cuerpo Técnico V</label>
-                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-red-500 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Nombre DT..." value={staff.coachAway || ''} onChange={e => setStaff({ ...staff, coachAway: e.target.value })} />
-                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-red-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Ayudante Técnico..." value={staff.ayTecAway || ''} onChange={e => setStaff({ ...staff, ayTecAway: e.target.value })} />
+                        <input disabled className="w-full bg-slate-200/50 border border-red-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none transition cursor-not-allowed" placeholder="DT No Asignado" value={staff.coachAway || ''} readOnly />
+                        <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-red-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir Ayudante Técnico..." value={staff.ayTecAway || ''} onChange={e => setStaff({ ...staff, ayTecAway: e.target.value })} />
                     </div>
                 </aside>
             </div>
@@ -1265,16 +1317,61 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             )}
             {modalSubOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-[60] backdrop-blur-sm">
-                    <div className="bg-white p-6 rounded-3xl shadow-2xl w-80 h-[500px] flex flex-col">
-                        <h3 className="font-black text-lg mb-4 text-slate-800">Elegir Suplente</h3>
+                    <div className="bg-white p-6 rounded-3xl shadow-2xl w-80 max-h-[90vh] flex flex-col">
+                        <h3 className="font-black text-lg mb-4 text-slate-800 flex justify-between items-center">
+                            <span>Elegir Suplente</span>
+                            {selectedPlayer && (
+                                <span className="text-xs bg-slate-100 px-2 py-1 rounded-lg text-slate-500 font-bold">Cambios: {subsCount[selectedPlayer.team as 'home' | 'away']}/6</span>
+                            )}
+                        </h3>
                         <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                            {activeBench && activeBench.length > 0 ? activeBench.filter(p => !blockedPlayers.find(bp => bp.id === p.id)).map(p => (
-                                <div key={p.id} onClick={() => handleSubConfirm(p)} className="p-3 border border-slate-100 rounded-xl hover:bg-blue-50 cursor-pointer flex gap-4 items-center">
-                                    <span className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center font-black text-slate-700">{p.number}</span> <span className="font-bold text-slate-600">{p.name}</span>
-                                </div>
-                            )) : <p className="text-center text-slate-400 mt-10">No hay suplentes disponibles.</p>}
+                            {(() => {
+                                if (!activeBench || activeBench.length === 0) return <p className="text-center text-slate-400 mt-10">No hay suplentes disponibles.</p>;
+
+                                const isStrictCategory = !['minivoley', 'sub-12'].some(cat => teamsInfo?.category.toLowerCase().includes(cat));
+
+                                const getPlayerSubStatus = (player: any) => {
+                                    if (!selectedPlayer || !isStrictCategory || player.isLibero) return { allowed: true, reason: '' };
+                                    const team = selectedPlayer.team;
+                                    if (subsCount[team as 'home' | 'away'] >= 6) return { allowed: false, reason: 'Límite 6 cambios' };
+
+                                    const pHistory = subHistory.filter(h => h.team === team && (h.playerInId === player.id || h.playerOutId === player.id));
+                                    if (pHistory.length > 0) {
+                                        const paired = pHistory.find(h => 
+                                            (h.playerInId === player.id && h.playerOutId === selectedPlayer.id) || 
+                                            (h.playerOutId === player.id && h.playerInId === selectedPlayer.id)
+                                        );
+                                        if (!paired) return { allowed: false, reason: 'Rol de Emparejamiento' };
+                                    }
+                                    return { allowed: true, reason: '' };
+                                };
+
+                                return activeBench.filter(p => !blockedPlayers.find(bp => bp.id === p.id)).map(p => {
+                                    const status = getPlayerSubStatus(p);
+                                    return (
+                                        <div key={p.id} className={`p-3 border rounded-xl flex flex-col gap-1 transition-colors ${status.allowed ? 'border-slate-100 hover:bg-blue-50 cursor-pointer' : 'border-red-100 bg-red-50/50 opacity-80'}`}>
+                                            <div className="flex gap-4 items-center justify-between" onClick={() => status.allowed && handleSubConfirm(p)}>
+                                                <div className="flex items-center gap-3">
+                                                    <span className={`w-10 h-10 rounded-lg flex items-center justify-center font-black ${status.allowed ? 'bg-slate-100 text-slate-700' : 'bg-red-100 text-red-700'}`}>{p.number}</span> 
+                                                    <span className={`font-bold ${status.allowed ? 'text-slate-600' : 'text-red-700'}`}>{p.name}</span>
+                                                </div>
+                                            </div>
+                                            {!status.allowed && (
+                                                <div className="flex justify-between items-center mt-2 border-t border-red-100 pt-2">
+                                                    <span className="text-[10px] uppercase font-bold text-red-500 bg-red-100 px-2 py-0.5 rounded shadow-sm">{status.reason}</span>
+                                                    <button onClick={() => {
+                                                        if(confirm(`¿Desea FORZAR esta sustitución de forma EXCEPCIONAL (Ej: Lesión)?\n\nEsto ignorará la regla y quedará registrado en las observaciones del partido.`)) {
+                                                            handleSubConfirm(p, true);
+                                                        }
+                                                    }} className="text-[10px] bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded font-bold shadow transition">Forzar Excepción</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                });
+                            })()}
                         </div>
-                        <button onClick={() => setModalSubOpen(false)} className="mt-4 text-slate-400 font-bold hover:text-slate-600">Cerrar</button>
+                        <button onClick={() => setModalSubOpen(false)} className="mt-4 text-slate-400 font-bold hover:text-slate-600 py-2">Cancelar Operación</button>
                     </div>
                 </div>
             )}

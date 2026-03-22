@@ -1,18 +1,30 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Search, Trash2, X, Loader2, User, Phone, BadgeCheck, Mail } from 'lucide-react'
+import { Plus, Search, Trash2, X, Loader2, User, Phone, CheckCircle, XCircle, Mail } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner';
 
 type Referee = {
     id: string
     category: string
+    status: string
     created_at: string
     profile: {
         full_name: string
         email: string | null
         phone: string | null
+    }
+}
+
+const getCategoryStyles = (category: string) => {
+    switch (category) {
+        case 'Aspirante': return 'bg-[#f5f5dc] dark:bg-[#2d2a23] text-[#4b5563] dark:text-[#d1d5db]';
+        case 'Provincial': return 'bg-[#dbeafe] dark:bg-[#1e3a8a] text-[#1e3a8a] dark:text-[#93c5fd]';
+        case 'Regional': return 'bg-[#e0f2fe] dark:bg-[#0c4a6e] text-[#0369a1] dark:text-[#7dd3fc]';
+        case 'Nacional': return 'bg-[#bfdbfe] dark:bg-[#172554] text-[#1e40af] dark:text-[#bfdbfe]';
+        case 'Internacional': return 'bg-gradient-to-r from-yellow-200 to-amber-400 dark:from-yellow-900 dark:to-orange-900 text-yellow-900 dark:text-yellow-100';
+        default: return 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-gray-400';
     }
 }
 
@@ -29,7 +41,7 @@ export default function RefereesAdminPage() {
         email: '',
         password: '',
         phone: '',
-        category: 'Provincial' // Default
+        category: 'Aspirante' // Default
     })
 
     const supabase = createClient()
@@ -43,7 +55,7 @@ export default function RefereesAdminPage() {
             const { data, error } = await supabase
                 .from('referees')
                 .select(`
-          id, category, created_at,
+          id, category, status, created_at,
           profile:profiles(full_name, email, phone)
         `)
                 .order('created_at', { ascending: false })
@@ -85,7 +97,7 @@ export default function RefereesAdminPage() {
             // Refresh list
             fetchReferees();
 
-            setFormData({ fullName: '', email: '', password: '', phone: '', category: 'Provincial' });
+            setFormData({ fullName: '', email: '', password: '', phone: '', category: 'Aspirante' });
             setShowCreateModal(false);
             toast.success(`¡Árbitro Creado! Usuario: ${result.user.email}`);
 
@@ -98,7 +110,7 @@ export default function RefereesAdminPage() {
     }
 
     const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`¿Estás seguro de eliminar a ${name}? Esta acción no se puede deshacer.`)) return;
+        if (!confirm(`¿Estás seguro de eliminar a ${name}? Esta acción física no se puede deshacer.`)) return;
 
         try {
             const response = await fetch('/api/admin/delete-referee', {
@@ -114,16 +126,56 @@ export default function RefereesAdminPage() {
 
             // Update local state
             setReferees(referees.filter(r => r.id !== id));
-            toast.success("Árbitro eliminado correctamente.");
+            toast.success("Árbitro eliminado permanentemente.");
 
         } catch (error: any) {
             toast.error("Error al eliminar: " + error.message);
         }
     }
 
+    const handleApprove = async (id: string, name: string) => {
+        if (!confirm(`¿Aprobar al árbitro ${name} y registrar su inscripción en tesorería?`)) return;
+
+        try {
+            const response = await fetch('/api/admin/approve-referee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ referee_id: id })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Error al aprobar');
+            
+            fetchReferees();
+            toast.success(`Árbitro aprobado. Ingreso registrado por $${data.feeAmount}`);
+        } catch (error: any) {
+            toast.error("Error al aprobar: " + error.message);
+        }
+    }
+
+    const handleReject = async (id: string, name: string) => {
+        if (!confirm(`¿Rechazar a ${name}? (Esto ocultará su perfil vía Soft Delete)`)) return;
+
+        try {
+            const response = await fetch('/api/admin/reject-referee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ referee_id: id })
+            });
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Error al rechazar');
+            }
+            fetchReferees();
+            toast.success("Árbitro rechazado correctamente.");
+        } catch (error: any) {
+            toast.error("Error al rechazar: " + error.message);
+        }
+    }
+
     const filteredReferees = referees.filter(r =>
-        r.profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.profile?.email?.toLowerCase().includes(searchTerm.toLowerCase())
+        r.status !== 'rechazado' &&
+        (r.profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.profile?.email?.toLowerCase().includes(searchTerm.toLowerCase()))
     )
 
     return (
@@ -141,7 +193,7 @@ export default function RefereesAdminPage() {
                     className="flex items-center gap-2 px-5 py-2.5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all"
                 >
                     <Plus size={20} />
-                    Nuevo Árbitro
+                    Nuevo Árbitro/a
                 </button>
             </div>
 
@@ -164,12 +216,31 @@ export default function RefereesAdminPage() {
                 ) : filteredReferees.length > 0 ? (
                     filteredReferees.map((ref) => (
                         <div key={ref.id} className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-gray-100 dark:border-white/5 shadow-sm hover:shadow-md transition-all relative group">
-                            <button
-                                onClick={() => handleDelete(ref.id, ref.profile?.full_name)}
-                                className="absolute top-4 right-4 text-gray-300 hover:text-red-500 transition-colors"
-                            >
-                                <Trash2 size={16} />
-                            </button>
+                            {ref.status === 'pendiente' ? (
+                                <div className="absolute top-4 right-4 flex gap-2">
+                                    <button
+                                        onClick={() => handleApprove(ref.id, ref.profile?.full_name)}
+                                        title="Aprobar y Cobrar"
+                                        className="text-gray-300 hover:text-green-500 transition-colors"
+                                    >
+                                        <CheckCircle size={18} />
+                                    </button>
+                                    <button
+                                        onClick={() => handleReject(ref.id, ref.profile?.full_name)}
+                                        title="Rechazar"
+                                        className="text-gray-300 hover:text-orange-500 transition-colors"
+                                    >
+                                        <XCircle size={18} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => handleDelete(ref.id, ref.profile?.full_name)}
+                                    className="absolute top-4 right-4 text-gray-300 hover:text-red-500 transition-colors"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            )}
 
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-500 font-bold text-lg">
@@ -179,9 +250,21 @@ export default function RefereesAdminPage() {
                                     <h3 className="font-bold text-slate-800 dark:text-white truncate max-w-[150px]" title={ref.profile?.full_name}>
                                         {ref.profile?.full_name || 'Sin Nombre'}
                                     </h3>
-                                    <span className="text-xs font-bold px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-tdf-blue dark:text-blue-400 rounded-full">
-                                        {ref.category}
-                                    </span>
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getCategoryStyles(ref.category)}`}>
+                                            {ref.category}
+                                        </span>
+                                        {ref.status === 'pendiente' && (
+                                            <span className="text-xs font-bold px-2 py-0.5 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 rounded-full">
+                                                Pendiente Pago
+                                            </span>
+                                        )}
+                                        {ref.status === 'rechazado' && (
+                                            <span className="text-xs font-bold px-2 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 rounded-full">
+                                                Rechazado
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -209,7 +292,7 @@ export default function RefereesAdminPage() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 max-w-lg w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
                         <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-black text-slate-800 dark:text-white">Nuevo Árbitro</h2>
+                            <h2 className="text-2xl font-black text-slate-800 dark:text-white">Nuevo Árbitro/a</h2>
                             <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full">
                                 <X size={24} className="text-slate-500" />
                             </button>
@@ -270,6 +353,7 @@ export default function RefereesAdminPage() {
                                     >
                                         <option value="Aspirante">Aspirante</option>
                                         <option value="Provincial">Provincial</option>
+                                        <option value="Regional">Regional</option>
                                         <option value="Nacional">Nacional</option>
                                         <option value="Internacional">Internacional</option>
                                     </select>
