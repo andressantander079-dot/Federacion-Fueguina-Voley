@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 // Unified Type
 type DashboardItem = {
    id: string;
-   type: 'procedure' | 'player';
+   type: 'procedure' | 'player' | 'referee' | 'coach';
    title: string;
    subtitle: string;
    status: string; // Keep generic string to match DB values exactly
@@ -48,8 +48,8 @@ export default function AdminTramitesPage() {
       // Rechazado: 'rechazado' (tramites), 'rejected' (players)
 
       const s = p.status.toLowerCase();
-      const isPending = s === 'en_revision' || s === 'pending';
-      const isApproved = s === 'aprobado' || s === 'active';
+      const isPending = s === 'en_revision' || s === 'pending' || s === 'pendiente';
+      const isApproved = s === 'aprobado' || s === 'active' || s === 'activo';
       const isRejected = s === 'rechazado' || s === 'rejected';
 
       let matchStatus = false;
@@ -84,6 +84,18 @@ export default function AdminTramitesPage() {
          .select(`*, team:teams(name)`)
          .order('created_at', { ascending: false });
 
+      // 3. Referees (Validations)
+      const { data: refereesData } = await supabase
+         .from('referees')
+         .select('*')
+         .order('created_at', { ascending: false });
+
+      // 4. Coaches (Validations)
+      const { data: coachesData } = await supabase
+         .from('coaches')
+         .select(`*, team:teams(name)`)
+         .order('created_at', { ascending: false });
+
       const mappedProcedures: DashboardItem[] = (proceduresData || []).map((p: any) => ({
          id: p.id,
          type: 'procedure',
@@ -106,8 +118,30 @@ export default function AdminTramitesPage() {
          originalData: p
       }));
 
+      const mappedReferees: DashboardItem[] = (refereesData || []).map((p: any) => ({
+         id: p.id,
+         type: 'referee',
+         title: `Alta Árbitro: ${p.first_name} ${p.last_name}`,
+         subtitle: `Email: ${p.email || 'S/D'}`,
+         status: p.status,
+         date: p.created_at,
+         team_name: 'Federación',
+         originalData: p
+      }));
+
+      const mappedCoaches: DashboardItem[] = (coachesData || []).map((p: any) => ({
+         id: p.id,
+         type: 'coach',
+         title: `Alta Técnico: ${p.first_name} ${p.last_name}`,
+         subtitle: `DNI: ${p.dni}`,
+         status: p.status,
+         date: p.created_at,
+         team_name: p.team?.name || 'Club',
+         originalData: p
+      }));
+
       // Merge and sort
-      const allItems = [...mappedProcedures, ...mappedPlayers].sort((a, b) =>
+      const allItems = [...mappedProcedures, ...mappedPlayers, ...mappedReferees, ...mappedCoaches].sort((a, b) =>
          new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
@@ -145,7 +179,6 @@ export default function AdminTramitesPage() {
                   amount: procedureFee,
                   description: `Trámite: ${selectedItem.title} - Op: ${selectedItem.originalData.code || 'S/N'}`,
                   entity_name: selectedItem.team_name,
-                  club_id: selectedItem.originalData.club_id,
                   date: new Date(),
                   account_id: accountId
                }]);
@@ -180,6 +213,28 @@ export default function AdminTramitesPage() {
             }
 
             toast.success("Trámite aprobado y registrado en Tesorería." + (isClubInscription ? " El Club ahora está habilitado." : ""));
+         } else if (selectedItem.type === 'referee') {
+            // == ARBITRO ==
+            const response = await fetch('/api/admin/approve-referee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ referee_id: selectedItem.id })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Error al aprobar');
+
+            toast.success(`Árbitro aprobado. Ingreso registrado por $${data.feeAmount}`);
+         } else if (selectedItem.type === 'coach') {
+            // == COACH ==
+            const response = await fetch('/api/admin/approve-coach', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ coach_id: selectedItem.id })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Error al aprobar técnico');
+
+            toast.success(`Técnico habilitado. Ingreso registrado por $${data.feeAmount}`);
          } else {
             // == JUGADOR ==
             // 1. Calcular Edad Exacta
@@ -189,11 +244,11 @@ export default function AdminTramitesPage() {
             const m = today.getMonth() - birthDate.getMonth();
             if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
 
-            // 2. Determinar Tarifa (ID 2 = Mayor, ID 3 = Menor)
-            const targetFeeId = age >= 18 ? 2 : 3;
+            // 2. Determinar Tarifa (ID 2 = Mayor de 12, ID 3 = Menor de 12)
+            const targetFeeId = age >= 12 ? 2 : 3;
             const feeObj = fees.find((f: any) => f.id === targetFeeId);
             const playerFeeAmount = feeObj ? Number(feeObj.price) : 0;
-            const feeTitleRaw = feeObj ? feeObj.title : (targetFeeId === 2 ? 'Inscripción Mayores' : 'Inscripción Menores');
+            const feeTitleRaw = feeObj ? feeObj.title : (targetFeeId === 2 ? 'Inscripción Mayores (>12)' : 'Inscripción Menores (<12)');
 
             if (accountId && playerFeeAmount > 0) {
                const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
@@ -201,7 +256,6 @@ export default function AdminTramitesPage() {
                   amount: playerFeeAmount,
                   description: `Inscripción Jugador (${feeTitleRaw}): ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
                   entity_name: selectedItem.team_name,
-                  club_id: selectedItem.originalData.team_id,
                   date: new Date(),
                   account_id: accountId
                }]);
@@ -267,6 +321,26 @@ export default function AdminTramitesPage() {
                }]);
             }
 
+         } else if (selectedItem.type === 'referee') {
+            // == ARBITRO ==
+            const response = await fetch('/api/admin/reject-referee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ referee_id: selectedItem.id })
+            });
+            if (!response.ok) throw new Error("Error al rechazar");
+
+            toast.success("Árbitro rechazado y ocultado exitosamente.");
+         } else if (selectedItem.type === 'coach') {
+            // == TÉCNICO ==
+            const response = await fetch('/api/admin/reject-coach', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ coach_id: selectedItem.id, reason })
+            });
+            if (!response.ok) throw new Error("Error al rechazar técnico");
+
+            toast.success("Técnico rechazado y club notificado.");
          } else {
             // Players use 'rejected' status
             await supabase.from('players').update({ status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
@@ -306,7 +380,8 @@ export default function AdminTramitesPage() {
    // Determine if we should show Actions Footer
    const showActions = selectedItem && (
       selectedItem.status === 'en_revision' ||
-      selectedItem.status === 'pending'
+      selectedItem.status === 'pending' ||
+      selectedItem.status === 'pendiente'
    );
 
    if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50">Cargando Sistema...</div>;
@@ -378,9 +453,9 @@ export default function AdminTramitesPage() {
                       `}
                         >
                            <div className="flex justify-between items-start mb-1">
-                              <span className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 ${item.type === 'player' ? 'text-orange-500' : 'text-zinc-500'}`}>
-                                 {item.type === 'player' ? <Users size={10} /> : <FileText size={10} />}
-                                 {item.type === 'player' ? 'Lista de Buena Fe' : item.subtitle}
+                              <span className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 ${item.type === 'player' ? 'text-orange-500' : item.type === 'referee' ? 'text-emerald-500' : item.type === 'coach' ? 'text-blue-500' : 'text-zinc-500'}`}>
+                                 {item.type === 'player' ? <Users size={10} /> : item.type === 'referee' ? <Shield size={10} /> : item.type === 'coach' ? <UserCheck size={10} /> : <FileText size={10} />}
+                                 {item.type === 'player' ? 'Lista de Buena Fe' : item.type === 'referee' ? 'Alta de Árbitro' : item.type === 'coach' ? 'Alta de Técnico' : item.subtitle}
                               </span>
                               <span className="text-[10px] text-zinc-500">{new Date(item.date).toLocaleDateString()}</span>
                            </div>
@@ -418,6 +493,101 @@ export default function AdminTramitesPage() {
                                     <iframe src={selectedItem.originalData.attachment_url} className="w-full h-full" />
                                  </div>
                               ) : <div className="text-zinc-500 mt-20">Sin adjunto</div>}
+                           </div>
+                        </div>
+                     ) : selectedItem.type === 'referee' ? (
+                        // --- VISTA ARBITRO ---
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                           <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col md:flex-row gap-4 md:gap-6 items-start md:items-center flex-shrink-0">
+                               <div className="flex items-center gap-3 w-full md:w-auto md:hidden border-b border-zinc-800/50 pb-3 mb-1">
+                                 <button onClick={() => setSelectedItemId(null)} className="p-2 -ml-2 hover:bg-zinc-800 rounded-full text-zinc-400">
+                                    <ArrowLeft size={20} />
+                                 </button>
+                                 <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Atrás a la lista</span>
+                               </div>
+                               <div className="flex gap-4 items-center">
+                                 <div className="w-16 h-16 rounded-full bg-zinc-800 overflow-hidden border-2 border-zinc-700 shrink-0 flex items-center justify-center">
+                                    <Shield className="w-8 h-8 text-zinc-500" />
+                                 </div>
+                                 <div className="min-w-0">
+                                    <h2 className="text-xl md:text-2xl font-black text-white truncate">{selectedItem.originalData.first_name} {selectedItem.originalData.last_name}</h2>
+                                    <div className="flex flex-wrap gap-2 text-xs md:text-sm text-zinc-400 font-bold mt-2">
+                                       <span className="bg-zinc-800 px-2 py-0.5 rounded text-white border border-zinc-700">{selectedItem.originalData.email || 'S/E'}</span>
+                                       <span className="bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded text-emerald-500">Alta Administrativa</span>
+                                    </div>
+                                 </div>
+                               </div>
+                           </div>
+                           <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-zinc-950 pb-32 flex flex-col items-center justify-center text-center">
+                              <div className="bg-zinc-900 p-8 rounded-2xl border border-zinc-800 max-w-md w-full">
+                                <AlertTriangle className="mx-auto w-12 h-12 text-yellow-500 mb-4" />
+                                <h3 className="text-lg font-bold text-white mb-2">Validación Manual Requerida</h3>
+                                <p className="text-sm text-zinc-400 mb-6">Los candidatos a árbitro envían el comprobante de arancel por canales oficiales (WhatsApp/Email). Verifique la recepción del dinero en la cuenta bancaria de la FVF antes de aprobarlo.</p>
+                                <div className="text-xs font-mono bg-zinc-950 p-3 rounded text-zinc-500 border border-zinc-800">
+                                   Al presionar APROBAR, el árbitro tendrá acceso completo al sistema y se generará un ingreso por el valor del Arancel (Ítem 9).
+                                </div>
+                              </div>
+                           </div>
+                        </div>
+                     ) : selectedItem.type === 'coach' ? (
+                        // --- VISTA TÉCNICO (VALIDATION) ---
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                           <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col md:flex-row gap-4 md:gap-6 items-start md:items-center flex-shrink-0">
+                              <div className="flex items-center gap-3 w-full md:w-auto md:hidden border-b border-zinc-800/50 pb-3 mb-1">
+                                 <button onClick={() => setSelectedItemId(null)} className="p-2 -ml-2 hover:bg-zinc-800 rounded-full text-zinc-400">
+                                    <ArrowLeft size={20} />
+                                 </button>
+                                 <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Atrás a la lista</span>
+                              </div>
+                              <div className="flex gap-4 items-center">
+                                 <div className="w-16 h-16 rounded-full bg-zinc-800 overflow-hidden border-2 border-zinc-700 shrink-0">
+                                    {selectedItem.originalData.photo_url ? (
+                                       <img src={selectedItem.originalData.photo_url} className="w-full h-full object-cover" />
+                                    ) : <UserCheck className="w-full h-full p-4 text-zinc-600" />}
+                                 </div>
+                                 <div className="min-w-0">
+                                    <h2 className="text-xl md:text-2xl font-black text-white truncate">{selectedItem.originalData.first_name} {selectedItem.originalData.last_name}</h2>
+                                    <div className="flex flex-wrap gap-2 text-xs md:text-sm text-zinc-400 font-bold mt-2">
+                                       <span className="bg-zinc-800 px-2 py-0.5 rounded text-white border border-zinc-700">DNI: {selectedItem.originalData.dni}</span>
+                                       <span className="bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded text-blue-500">Alta Técnico</span>
+                                    </div>
+                                 </div>
+                              </div>
+                           </div>
+
+                           <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-zinc-950 pb-32">
+                              <h3 className="text-zinc-400 font-bold uppercase tracking-widest text-xs mb-6 border-b border-zinc-800 pb-2">Documentación Adjunta</h3>
+                              <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 w-full max-w-6xl items-start">
+                              
+                                 {/* 1. FOTO */}
+                                 <DocumentCard
+                                    title="Foto de Perfil"
+                                    url={selectedItem.originalData.photo_url}
+                                    type="image"
+                                    missingText="Falta Foto"
+                                 />
+
+                                 {/* 2. DNI FRENTE */}
+                                 <DocumentCard
+                                    title="DNI Frente"
+                                    url={selectedItem.originalData.id_document_url}
+                                    type="image"
+                                    missingText="Falta DNI"
+                                 />
+
+                                 {/* 3. COMPROBANTE DE PAGO */}
+                                 <DocumentCard
+                                    title="Comprobante Pago"
+                                    url={selectedItem.originalData.payment_url}
+                                    type="document"
+                                    missingText="Falta Comprobante"
+                                 />
+
+                              </div>
+                              <div className="mt-8 bg-zinc-900 p-6 rounded-2xl border border-zinc-800 max-w-3xl">
+                                <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-2"><Info size={16} className="text-blue-500"/> Impacto en Tesorería Automático</h4>
+                                <p className="text-sm text-zinc-400">Al aprobar este trámite, el sistema automáticamente generará un ingreso en Tesorería por el valor estipulado en el Tariffario para <strong>Inscripción de Técnicos (Ítem #5)</strong> a nombre del club <strong className="text-zinc-200">{selectedItem.team_name}</strong>. El Técnico quedará habilitado para ser asignado a planteles.</p>
+                              </div>
                            </div>
                         </div>
                      ) : (

@@ -158,6 +158,24 @@ export default function AdminDashboardPage() {
 
     useEffect(() => {
         fetchCounts();
+
+        // Suscripción Realtime para actualización automática de contadores
+        const channel = supabase
+            .channel('admin-dashboard-counts')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'procedures' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'squads' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'referees' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, () => fetchCounts())
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     async function fetchCounts() {
@@ -168,11 +186,22 @@ export default function AdminDashboardPage() {
                 .select('*', { count: 'exact', head: true })
                 .eq('status', 'abierto');
 
-            // 2. Trámites en revisión
-            const { count: procCount } = await supabase
-                .from('procedures')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'en_revision');
+            // 2. Trámites Pendientes (Global)
+            const [
+                { count: pases },
+                { count: procs },
+                { count: pendingPlayers },
+                { count: pendingCoaches },
+                { count: pendingRefs }
+            ] = await Promise.all([
+                supabase.from('tramites_pases').select('*', { count: 'exact', head: true }).in('estado', ['esperando_federacion', 'revision_inicial_fvf', 'auditoria_final_fvf']),
+                supabase.from('procedures').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
+                supabase.from('players').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                supabase.from('coaches').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
+                supabase.from('referees').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
+            ]);
+            
+            const totalTramites = (pases||0) + (procs||0) + (pendingPlayers||0) + (pendingCoaches||0) + (pendingRefs||0);
 
             // 3. Equipos
             const { count: teamCount } = await supabase
@@ -214,7 +243,7 @@ export default function AdminDashboardPage() {
 
             setCounts({
                 mensajes: msgCount || 0,
-                tramites: procCount || 0,
+                tramites: totalTramites,
                 equipos: teamCount || 0,
                 torneos: tournamentCount || 0,
                 jugadores: playerCount || 0

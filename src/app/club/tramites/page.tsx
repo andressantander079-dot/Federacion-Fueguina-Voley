@@ -38,6 +38,10 @@ export default function ClubTramitesPage() {
             router.push('/club/tramites/pases/solicitar');
             return;
         }
+        if (fee.title.toLowerCase().includes('técnic') || fee.title.toLowerCase().includes('tecnic')) {
+            router.push('/club/tramites/tecnicos/nuevo');
+            return;
+        }
         
         // Block other tramites from opening modal, just show the price
         // No action needed for inscriptions as they are handled elsewhere
@@ -128,11 +132,13 @@ export default function ClubTramitesPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {settings?.procedure_fees?.map((fee: any, idx: number) => {
                             const isPase = fee.title.toLowerCase().includes('pase');
+                            const isTecnico = fee.title.toLowerCase().includes('técnic') || fee.title.toLowerCase().includes('tecnic');
+                            const isActionable = isPase || isTecnico;
                             return (
                             <div
                                 key={idx}
-                                onClick={() => isPase ? openTramite(fee) : undefined}
-                                className={`bg-zinc-900 border border-zinc-800 p-6 rounded-2xl transition text-left flex flex-col justify-between h-40 shadow-lg relative overflow-hidden ${isPase ? 'hover:bg-zinc-800 hover:border-tdf-blue group cursor-pointer' : 'cursor-default opacity-90'}`}
+                                onClick={() => isActionable ? openTramite(fee) : undefined}
+                                className={`bg-zinc-900 border border-zinc-800 p-6 rounded-2xl transition text-left flex flex-col justify-between h-40 shadow-lg relative overflow-hidden ${isActionable ? 'hover:bg-zinc-800 hover:border-tdf-blue group cursor-pointer' : 'cursor-default opacity-90'}`}
                             >
                                 <div className="relative z-10">
                                     <h3 className="font-bold text-xl text-white group-hover:text-blue-400 transition-colors mb-1">{fee.title}</h3>
@@ -140,7 +146,7 @@ export default function ClubTramitesPage() {
                                 </div>
                                 <div className="relative z-10 flex items-end justify-between w-full mt-4">
                                     <div className="text-2xl font-black text-white">$ {parseInt(fee.price).toLocaleString('es-AR')}</div>
-                                    {fee.title.toLowerCase().includes('pase') ? (
+                                    {isActionable ? (
                                         <span className="bg-white text-black text-xs font-black px-3 py-1.5 rounded-lg group-hover:scale-105 transition-transform">
                                             INICIAR &rarr;
                                         </span>

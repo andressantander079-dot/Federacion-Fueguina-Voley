@@ -31,6 +31,7 @@ export default function PlantelPage() {
   const [squadActual, setSquadActual] = useState<any>(null);
   const [jugadores, setJugadores] = useState<any[]>([]);
   const [globalCategories, setGlobalCategories] = useState<any[]>([]);
+  const [coaches, setCoaches] = useState<any[]>([]);
   
   // Huerfanos State
   const [huerfanos, setHuerfanos] = useState<any[]>([]);
@@ -115,6 +116,7 @@ export default function PlantelPage() {
       }
       await cargarSquads(id);
       await cargarHuerfanos(id);
+      await cargarCoaches(id);
 
     } catch (err: any) {
       console.error(err);
@@ -174,6 +176,15 @@ export default function PlantelPage() {
       .eq('team_id', idEquipo)
       .is('squad_id', null);
     setHuerfanos(data || []);
+  }
+
+  async function cargarCoaches(idEquipo: string) {
+    const { data } = await supabase
+      .from('coaches')
+      .select('*')
+      .eq('club_id', idEquipo)
+      .eq('status', 'habilitado');
+    setCoaches(data || []);
   }
 
   const getCategoryName = (id: string) => {
@@ -355,36 +366,46 @@ export default function PlantelPage() {
         .select('team_id, teams(name)')
         .eq('dni', dniLimpio);
 
+      const uploadFileAPI = async (file: File, bucketName: string, fileName: string) => {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('bucketName', bucketName);
+        form.append('fileName', fileName);
+        const res = await fetch('/api/upload', { method: 'POST', body: form });
+        if (!res.ok) {
+           const err = await res.json();
+           throw new Error(err.error || "Error subiendo archivo seguro");
+        }
+        const { publicUrl } = await res.json();
+        return publicUrl;
+      };
+
       let photoUrl = null;
       if (nuevoJugador.photo_file) {
         const fileExt = nuevoJugador.photo_file.name.split('.').pop();
         const fileName = `foto-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        await supabase.storage.from('player-photos').upload(fileName, nuevoJugador.photo_file);
-        photoUrl = supabase.storage.from('player-photos').getPublicUrl(fileName).data.publicUrl;
+        photoUrl = await uploadFileAPI(nuevoJugador.photo_file, 'player-photos', fileName);
       }
 
       let paymentUrl = null;
       if (nuevoJugador.payment_file) {
         const fileExt = nuevoJugador.payment_file.name.split('.').pop();
         const payFileName = `pago-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        await supabase.storage.from('procedure-files').upload(payFileName, nuevoJugador.payment_file);
-        paymentUrl = supabase.storage.from('procedure-files').getPublicUrl(payFileName).data.publicUrl;
+        paymentUrl = await uploadFileAPI(nuevoJugador.payment_file, 'procedure-files', payFileName);
       }
 
       let medicalUrl = null;
       if (nuevoJugador.medical_file) {
         const fileExt = nuevoJugador.medical_file.name.split('.').pop();
         const medFileName = `medico-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        await supabase.storage.from('procedure-files').upload(medFileName, nuevoJugador.medical_file);
-        medicalUrl = supabase.storage.from('procedure-files').getPublicUrl(medFileName).data.publicUrl;
+        medicalUrl = await uploadFileAPI(nuevoJugador.medical_file, 'procedure-files', medFileName);
       }
 
       let authorizationUrl = null;
       if (nuevoJugador.authorization_file) {
         const fileExt = nuevoJugador.authorization_file.name.split('.').pop();
         const authFileName = `autorizacion-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        await supabase.storage.from('procedure-files').upload(authFileName, nuevoJugador.authorization_file);
-        authorizationUrl = supabase.storage.from('procedure-files').getPublicUrl(authFileName).data.publicUrl;
+        authorizationUrl = await uploadFileAPI(nuevoJugador.authorization_file, 'procedure-files', authFileName);
       }
 
       if (existingPlayers && existingPlayers.length > 0) {
@@ -602,7 +623,7 @@ export default function PlantelPage() {
           </div>
 
           {vista === 'squads' && (
-            <div className="relative">
+            <div className="relative flex items-center gap-4">
               {/* CARTEL FLOTANTE ANIMADO */}
               {!hasPaidInscription && !loading && (
                 <div className="absolute -top-16 right-0 animate-bounce bg-yellow-400 text-yellow-900 px-4 py-2 rounded-xl font-bold text-sm shadow-xl flex items-center gap-2 whitespace-nowrap z-10 border border-yellow-500">
@@ -610,6 +631,13 @@ export default function PlantelPage() {
                   <div className="absolute -bottom-2 right-8 w-4 h-4 bg-yellow-400 rotate-45 border-r border-b border-yellow-500" />
                 </div>
               )}
+
+              <Link
+                href="/club/equipos/tecnicos"
+                className="px-6 py-3 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 text-white font-bold transition shadow-lg rounded-xl flex items-center gap-2 group"
+              >
+                 Cuerpo Técnico
+              </Link>
 
               <button
                 disabled={!hasPaidInscription}
@@ -841,10 +869,15 @@ export default function PlantelPage() {
                       <div>
                         <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">DNI (Sin Puntos)</label>
                         <input
+                          type="text"
+                          inputMode="numeric"
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
                           placeholder="Ej: 12345678"
                           value={nuevoJugador.dni}
-                          onChange={e => setNuevoJugador({ ...nuevoJugador, dni: e.target.value })}
+                          onChange={e => {
+                              const cleanValue = e.target.value.replace(/[^0-9]/g, '');
+                              setNuevoJugador({ ...nuevoJugador, dni: cleanValue });
+                          }}
                         />
                       </div>
                       <div>
@@ -961,12 +994,18 @@ export default function PlantelPage() {
             </div>
             <div>
               <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Director Técnico</label>
-              <input
+              <select
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 outline-none focus:border-orange-600 font-bold"
                 value={nuevoSquad.coach_name}
                 onChange={e => setNuevoSquad({ ...nuevoSquad, coach_name: e.target.value })}
-                placeholder="Nombre completo"
-              />
+              >
+                <option value="">Sin Asignar / Pendiente...</option>
+                {coaches.map(c => (
+                   <option key={c.id} value={`${c.first_name} ${c.last_name}`}>
+                      {c.first_name} {c.last_name}
+                   </option>
+                ))}
+              </select>
             </div>
           </div>
 

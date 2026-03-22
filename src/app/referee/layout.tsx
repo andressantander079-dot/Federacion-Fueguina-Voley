@@ -14,6 +14,7 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
     const supabase = createClient();
     const [loading, setLoading] = useState(true);
     const [accessDenied, setAccessDenied] = useState(false);
+    const [isPending, setIsPending] = useState(false);
 
     useEffect(() => {
         const verifyAccess = async () => {
@@ -33,6 +34,18 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
                 if (!profile || (profile.role !== 'referee' && profile.role !== 'admin')) {
                     setAccessDenied(true);
                     return;
+                }
+
+                if (profile.role === 'referee') {
+                    const { data: refereeData } = await supabase
+                        .from('referees')
+                        .select('status')
+                        .eq('user_id', user.id)
+                        .single();
+                        
+                    if (refereeData && refereeData.status === 'pendiente') {
+                        setIsPending(true);
+                    }
                 }
             } catch (error) {
                 console.error("Referee Auth Error:", error);
@@ -79,6 +92,29 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
                 >
                     Volver al Inicio
                 </button>
+            </div>
+        );
+    }
+
+    if (isPending) {
+        return (
+            <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-center">
+                <div className="bg-zinc-900 border border-white/10 p-8 rounded-3xl max-w-lg shadow-2xl">
+                    <div className="w-16 h-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <User className="text-tdf-orange w-8 h-8" />
+                    </div>
+                    <h1 className="text-2xl font-black text-white mb-4">Perfil en Evaluación</h1>
+                    <p className="text-zinc-400 leading-relaxed mb-8">
+                        Tu perfil está siendo evaluado por la Administración. Por favor, envía tu comprobante de pago de la Temporada 2026 por los canales oficiales para ser habilitado.
+                    </p>
+                    <button
+                        onClick={handleLogout}
+                        className="w-full flex justify-center items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-6 py-3 rounded-xl font-bold transition-all"
+                    >
+                        <LogOut size={18} />
+                        Cerrar Sesión
+                    </button>
+                </div>
             </div>
         );
     }

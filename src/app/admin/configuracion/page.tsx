@@ -14,7 +14,8 @@ const SYSTEM_FEES = [
    { id: 5, title: 'Inscripción de Técnicos' },
    { id: 6, title: 'Pase Mayor de 18 años' },
    { id: 7, title: 'Pase menor de 18 años' },
-   { id: 8, title: 'Pases a préstamos' }
+   { id: 8, title: 'Pases a préstamos' },
+   { id: 9, title: 'Inscripción de Árbitro/a' }
 ];
 
 export default function AdminConfigPage() {

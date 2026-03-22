@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useParams } from 'next/navigation';
 import {
@@ -17,29 +17,49 @@ export default function PublicMatchPage() {
     const [match, setMatch] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'info' | 'lineups'>('info');
+    const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+    const matchRef = useRef<any>(null);
+
+    // Sincronizar ref cada vez que cambia el estado
+    useEffect(() => { matchRef.current = match; }, [match]);
 
     useEffect(() => {
         if (!id) return;
 
-        // Initial Load
+        // Carga inicial
         fetchMatch();
 
-        // Realtime Subscription
+        // Supabase Realtime — actualización inmediata cuando el árbitro mueve el marcador
         const channel = supabase
-            .channel(`match-${id}`)
+            .channel(`match-public-${id}`)
             .on('postgres_changes', {
                 event: 'UPDATE',
                 schema: 'public',
                 table: 'matches',
                 filter: `id=eq.${id}`
             }, (payload) => {
-                console.log('Realtime change:', payload);
-                setMatch((prev: any) => ({ ...prev, ...payload.new }));
+                // Merge del payload con los datos relacionados existentes
+                setMatch((prev: any) => {
+                    if (!prev) return prev;
+                    const updated = { ...prev, ...payload.new };
+                    return updated;
+                });
+                setLastUpdate(new Date());
             })
             .subscribe();
 
+        // Polling de respaldo cada 3 segundos para partidos en vivo
+        // Garantiza actualización aunque Realtime falle o el match no tenga REPLICA IDENTITY
+        const pollInterval = setInterval(() => {
+            const currentMatch = matchRef.current;
+            if (currentMatch?.status === 'en_curso') {
+                fetchMatch();
+            }
+        }, 3000);
+
         return () => {
             supabase.removeChannel(channel);
+            clearInterval(pollInterval);
         };
     }, [id]);
 
@@ -91,6 +111,7 @@ export default function PublicMatchPage() {
             }
 
             setMatch(data);
+            setLastUpdate(new Date());
         }
         setLoading(false);
     }
@@ -162,9 +183,17 @@ export default function PublicMatchPage() {
                                 </div>
                             )}
                         </div>
-                        <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-xs bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800">
-                            <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-500 animate-pulse' : isFinished ? 'bg-zinc-500' : 'bg-green-500'}`}></span>
-                            {isLive ? 'EN VIVO' : isFinished ? 'FINALIZADO' : 'PROGRAMADO'}
+                        <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-xs bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800">
+                                <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-red-500 animate-pulse' : isFinished ? 'bg-zinc-500' : 'bg-green-500'}`}></span>
+                                {isLive ? 'EN VIVO' : isFinished ? 'FINALIZADO' : 'PROGRAMADO'}
+                            </div>
+                            {isLive && lastUpdate && (
+                                <div className="text-[10px] text-zinc-500 font-medium flex items-center gap-1">
+                                    <Activity size={10} className="text-emerald-500" />
+                                    Sincronizado {lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </div>
+                            )}
                         </div>
                     </div>
 

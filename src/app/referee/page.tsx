@@ -76,12 +76,25 @@ export default function RefereeDashboard() {
 
                 {matches.length > 0 ? (
                     <div className="space-y-4">
-                        {matches.map(matchItem => (
-                            <Link key={matchItem.id} href={`/referee/partido/${matchItem.match.id}`} className="group relative block bg-gradient-to-br from-zinc-900 via-zinc-900 to-black rounded-3xl border border-zinc-800 overflow-hidden shadow-2xl hover:shadow-orange-900/10 hover:border-zinc-700 transition-all duration-300">
+                        {matches.map(matchItem => {
+                            const isSuspended = matchItem.match.status === 'suspendido';
+                            return (
+                            <Link 
+                                key={matchItem.id} 
+                                href={isSuspended ? '#' : `/referee/partido/${matchItem.match.id}`} 
+                                onClick={(e) => { 
+                                    if(isSuspended) { 
+                                        e.preventDefault(); 
+                                        alert("Este partido está SUSPENDIDO. No puedes ingresar hasta que la Federación lo reprograme y te habilite nuevamente."); 
+                                    } 
+                                }}
+                                className={`group relative block bg-gradient-to-br from-zinc-900 via-zinc-900 to-black rounded-3xl border ${isSuspended ? 'border-red-900/50 opacity-80 cursor-not-allowed' : 'border-zinc-800'} overflow-hidden shadow-2xl hover:shadow-orange-900/10 hover:border-zinc-700 transition-all duration-300`}
+                            >
                                 {/* Status Label */}
-                                <div className="absolute top-4 right-4 z-10">
-                                    {matchItem.status === 'assigned' && <span className="bg-orange-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg animate-pulse">Pendiente</span>}
-                                    {matchItem.status === 'confirmed' && <span className="bg-emerald-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg">Confirmado</span>}
+                                <div className="absolute top-4 right-4 z-10 flex gap-2">
+                                    {matchItem.match.status === 'suspendido' && <span className="bg-red-600 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg animate-pulse border border-red-400">Suspendido</span>}
+                                    {matchItem.status === 'assigned' && matchItem.match.status !== 'suspendido' && <span className="bg-orange-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg animate-pulse">Pendiente</span>}
+                                    {matchItem.status === 'confirmed' && matchItem.match.status !== 'suspendido' && <span className="bg-emerald-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg">Confirmado</span>}
                                 </div>
 
                                 <div className="p-6 relative z-0">
@@ -133,7 +146,8 @@ export default function RefereeDashboard() {
                                     </div>
                                 </div>
                             </Link>
-                        ))}
+                            );
+                        })}
                     </div>
                 ) : (
                     <div className="bg-zinc-900/50 border border-dashed border-zinc-800 rounded-3xl p-8 text-center">
