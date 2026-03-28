@@ -14,7 +14,8 @@ export default function IncomeForm({ onSuccess }: { onSuccess: () => void }) {
         amount: '',
         date: new Date().toISOString().split('T')[0],
         description: '',
-        entity_name: '', // Entidad (Gobierno/Sponsor)
+        concept: '', // Selector de concepto
+        entity_name: '', // Entidad o detalle cuando es Otros
         account_id: '',
         deadline_date: '' // Fecha límite rendición (Alerta)
     })
@@ -36,7 +37,10 @@ export default function IncomeForm({ onSuccess }: { onSuccess: () => void }) {
         setError('')
         setLoading(true)
 
-        if (!formData.entity_name || !formData.amount || !formData.account_id) {
+        // Validar entity_name solo si concept es Otros
+        const finalEntityName = formData.concept === 'Otros' ? formData.entity_name : formData.concept;
+
+        if (!finalEntityName || !formData.amount || !formData.account_id || !formData.concept) {
             setError('Faltan datos obligatorios.')
             setLoading(false)
             return
@@ -56,30 +60,39 @@ export default function IncomeForm({ onSuccess }: { onSuccess: () => void }) {
             }
 
             // 2. Insert Movement
-            // Nota: Podríamos guardar la deadline_date en un campo de metadata o description por ahora si no hay columna
-            // Asumiremos que description incluye la alerta por simplificación inicial
-            const fullDescription = formData.deadline_date
-                ? `${formData.description} [Rendición Límite: ${formData.deadline_date}]`
-                : formData.description
+            const baseDescription = formData.concept === 'Otros' 
+                ? formData.description 
+                : `${formData.concept} - ${formData.description}`;
 
-            const { error: insertError } = await supabase.from('treasury_movements').insert([{
+            const fullDescription = formData.deadline_date
+                ? `${baseDescription} [Rendición Límite: ${formData.deadline_date}]`
+                : baseDescription;
+
+            const userRes = await supabase.auth.getUser();
+
+            const payload = {
                 type: 'INGRESO',
                 amount: parseFloat(formData.amount.replace(/\./g, '').replace(',', '.') || '0'),
                 date: formData.date,
                 description: fullDescription,
-                entity_name: formData.entity_name,
+                entity_name: finalEntityName,
                 account_id: formData.account_id,
                 proof_url: proof_url,
-                created_by: (await supabase.auth.getUser()).data.user?.id
-            }])
+                created_by: userRes.data?.user?.id || null
+            };
 
-            if (insertError) throw insertError
+            const { error: insertError } = await supabase.from('treasury_movements').insert([payload])
+
+            if (insertError) {
+                throw new Error(insertError.message || 'Error al guardar (Verifique sus permisos).');
+            }
 
             onSuccess()
             setFormData({
                 amount: '',
                 date: new Date().toISOString().split('T')[0],
                 description: '',
+                concept: '',
                 entity_name: '',
                 account_id: '',
                 deadline_date: ''
@@ -113,18 +126,38 @@ export default function IncomeForm({ onSuccess }: { onSuccess: () => void }) {
                     </h3>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Entidad (Gobierno / Sponsor) <span className="text-red-500">*</span></label>
-                        <div className="relative">
-                            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <input
-                                required
-                                value={formData.entity_name}
-                                onChange={e => setFormData({ ...formData, entity_name: e.target.value })}
-                                placeholder="Ej: Gobierno TDF"
-                                className="w-full pl-10 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-orange outline-none transition-all"
-                            />
-                        </div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">En concepto de... <span className="text-red-500">*</span></label>
+                        <select
+                            required
+                            value={formData.concept}
+                            onChange={e => setFormData({ ...formData, concept: e.target.value })}
+                            className="w-full p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-orange outline-none transition-all text-sm appearance-none"
+                        >
+                            <option value="">Seleccione un concepto</option>
+                            <option value="Inscripciones">Inscripciones a Torneo</option>
+                            <option value="Fichajes">Fichajes de Jugadores</option>
+                            <option value="Trámites Generales">Trámites Generales / Pases</option>
+                            <option value="Sponsors">Sponsor / Patrocinio</option>
+                            <option value="Gobierno">Subsidio Gubernamental</option>
+                            <option value="Otros">Otros (Especifique)</option>
+                        </select>
                     </div>
+
+                    {formData.concept === 'Otros' && (
+                        <div className="animate-in fade-in slide-in-from-top-2">
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Especificar Entidad/Concepto <span className="text-red-500">*</span></label>
+                            <div className="relative">
+                                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    required
+                                    value={formData.entity_name}
+                                    onChange={e => setFormData({ ...formData, entity_name: e.target.value })}
+                                    placeholder="Ej: Gobierno TDF"
+                                    className="w-full pl-10 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-orange outline-none transition-all"
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Repositorio Legal (Contrato/Convenio)</label>

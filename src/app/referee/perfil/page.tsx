@@ -120,7 +120,7 @@ export default function RefereeProfilePage() {
             if (updateError) throw updateError
 
             setProfile(prev => ({ ...prev, avatar_url: urlData.publicUrl }))
-            toast.success('Foto de perfil actualizada')
+            toast.success('Foto de DNI actualizada')
 
         } catch (error: any) {
             toast.error('Error subiendo imagen: ' + error.message)

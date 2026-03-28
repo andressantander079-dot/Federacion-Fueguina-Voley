@@ -14,7 +14,6 @@ export default function TreasuryPage() {
     const [loading, setLoading] = useState(true)
     const [showExport, setShowExport] = useState(false)
 
-    // Stats State
     const [stats, setStats] = useState({
         balance: 0,
         monthIncome: 0,
@@ -26,6 +25,8 @@ export default function TreasuryPage() {
     })
 
     const [distributionData, setDistributionData] = useState<any[]>([])
+    const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
+    const [globalBalance, setGlobalBalance] = useState({ total_ingresos: 0, total_egresos: 0, saldo_actual: 0 })
 
     const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#6366f1', '#ec4899', '#8b5cf6']
 
@@ -36,83 +37,105 @@ export default function TreasuryPage() {
             fetchStats()
         }
         setLoading(false)
-    }, [isUnlocked])
+    }, [isUnlocked, selectedYear])
 
     async function fetchStats() {
-        // 1. All Movs (Balance)
-        const { data: allMovs } = await supabase.from('treasury_movements').select('amount, type, date, description')
+        try {
+            // Fuerza el cálculo manual local por contingencia para el balance global
+            let globalIn = 0;
+            let globalOut = 0;
 
-        if (allMovs) {
-            const totalIn = allMovs.filter(m => m.type === 'INGRESO').reduce((sum, m) => sum + m.amount, 0)
-            const totalOut = allMovs.filter(m => m.type === 'EGRESO').reduce((sum, m) => sum + m.amount, 0)
-
-            // Current Month
-            const now = new Date()
-            const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
-            // Previous Month
-            const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime()
-            const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).getTime()
-
-            let curIn = 0, curOut = 0, curCount = 0
-            let prevIn = 0, prevOut = 0
-
-            // Distribution Map (Category parsing from description MVP)
-            const distMap: Record<string, number> = {
-                'Inscripciones': 0,
-                'Fichajes': 0,
-                'Trámites Generales': 0,
-                'Multas/Otros': 0
+            const { data: allGlobalMovs } = await supabase.from('treasury_movements').select('amount, type');
+            if (allGlobalMovs) {
+                allGlobalMovs.forEach(m => {
+                    const amt = Number(m.amount) || 0;
+                    if (m.type === 'INGRESO') globalIn += amt;
+                    if (m.type === 'EGRESO') globalOut += amt;
+                });
+                setGlobalBalance({
+                    total_ingresos: globalIn,
+                    total_egresos: globalOut,
+                    saldo_actual: globalIn - globalOut,
+                });
             }
 
-            allMovs.forEach(m => {
-                const mkTime = new Date(m.date).getTime()
+            // 2. Filtramos para gráficos locales del año seleccionado
+            const { data: allMovs } = await supabase.from('treasury_movements')
+                .select('amount, type, date, description')
+                .gte('date', `${selectedYear}-01-01T00:00:00Z`)
+                .lte('date', `${selectedYear}-12-31T23:59:59Z`)
 
-                // --- Timeline Sorting ---
-                if (mkTime >= currentMonthStart) {
-                    if (m.type === 'INGRESO') curIn += m.amount
-                    else if (m.type === 'EGRESO') { curOut += m.amount; curCount++ }
-                } else if (mkTime >= prevMonthStart && mkTime <= prevMonthEnd) {
-                    if (m.type === 'INGRESO') prevIn += m.amount
-                    else if (m.type === 'EGRESO') prevOut += m.amount
+            if (allMovs) {
+                // Current Month
+                const now = new Date()
+                const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+                // Previous Month
+                const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime()
+                const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).getTime()
+
+                let curIn = 0, curOut = 0, curCount = 0
+                let prevIn = 0, prevOut = 0
+
+                // Distribution Map (Category parsing from description MVP)
+                const distMap: Record<string, number> = {
+                    'Inscripciones': 0,
+                    'Fichajes': 0,
+                    'Trámites Generales': 0,
+                    'Multas/Otros': 0
                 }
 
-                // --- Category Distribution (Current Month Income Only) ---
-                if (m.type === 'INGRESO' && mkTime >= currentMonthStart) {
-                    const desc = (m.description || '').toLowerCase()
-                    if (desc.includes('inscripción') || desc.includes('inscripcion')) distMap['Inscripciones'] += m.amount
-                    else if (desc.includes('jugador') || desc.includes('fichaje')) distMap['Fichajes'] += m.amount
-                    else if (desc.includes('trámite') || desc.includes('tramite')) distMap['Trámites Generales'] += m.amount
-                    else distMap['Multas/Otros'] += m.amount
-                }
-            })
+                allMovs.forEach(m => {
+                    const mkTime = new Date(m.date).getTime()
 
-            // Calculate Growth %
-            const calcGrowth = (current: number, previous: number) => {
-                if (previous === 0) return current > 0 ? 100 : 0
-                return ((current - previous) / previous) * 100
+                    // --- Timeline Sorting ---
+                    if (mkTime >= currentMonthStart) {
+                        if (m.type === 'INGRESO') curIn += m.amount
+                        else if (m.type === 'EGRESO') { curOut += m.amount; curCount++ }
+                    } else if (mkTime >= prevMonthStart && mkTime <= prevMonthEnd) {
+                        if (m.type === 'INGRESO') prevIn += m.amount
+                        else if (m.type === 'EGRESO') prevOut += m.amount
+                    }
+
+                    // --- Category Distribution (Current Month Income Only) ---
+                    if (m.type === 'INGRESO' && mkTime >= currentMonthStart) {
+                        const desc = (m.description || '').toLowerCase()
+                        if (desc.includes('inscripción') || desc.includes('inscripcion')) distMap['Inscripciones'] += m.amount
+                        else if (desc.includes('jugador') || desc.includes('fichaje')) distMap['Fichajes'] += m.amount
+                        else if (desc.includes('trámite') || desc.includes('tramite')) distMap['Trámites Generales'] += m.amount
+                        else distMap['Multas/Otros'] += m.amount
+                    }
+                })
+
+                // Calculate Growth %
+                const calcGrowth = (current: number, previous: number) => {
+                    if (previous === 0) return current > 0 ? 100 : 0
+                    return ((current - previous) / previous) * 100
+                }
+
+                // Map chart data
+                const pieData = Object.keys(distMap)
+                    .map(k => ({ name: k, value: distMap[k] }))
+                    .filter(d => d.value > 0)
+                    .sort((a, b) => b.value - a.value)
+
+                setDistributionData(pieData)
+
+                const { data: budgets } = await supabase.from('treasury_cost_centers').select('budget_allocated')
+                const totalBudget = budgets?.reduce((sum, b) => sum + b.budget_allocated, 0) || 1
+                const budgetUsed = (curOut / totalBudget) * 100
+
+                setStats({
+                    balance: 0, // Not used if using globalBalance RPC
+                    monthIncome: curIn,
+                    monthExpense: curOut,
+                    expenseCount: curCount,
+                    budgetUsedPercentage: Math.min(budgetUsed, 100),
+                    incomeGrowth: calcGrowth(curIn, prevIn),
+                    expenseGrowth: calcGrowth(curOut, prevOut)
+                })
             }
-
-            // Map chart data
-            const pieData = Object.keys(distMap)
-                .map(k => ({ name: k, value: distMap[k] }))
-                .filter(d => d.value > 0)
-                .sort((a, b) => b.value - a.value)
-
-            setDistributionData(pieData)
-
-            const { data: budgets } = await supabase.from('treasury_cost_centers').select('budget_allocated')
-            const totalBudget = budgets?.reduce((sum, b) => sum + b.budget_allocated, 0) || 1
-            const budgetUsed = (curOut / totalBudget) * 100
-
-            setStats({
-                balance: totalIn - totalOut,
-                monthIncome: curIn,
-                monthExpense: curOut,
-                expenseCount: curCount,
-                budgetUsedPercentage: Math.min(budgetUsed, 100),
-                incomeGrowth: calcGrowth(curIn, prevIn),
-                expenseGrowth: calcGrowth(curOut, prevOut)
-            })
+        } catch (error) {
+            console.error("Error fetching stats:", error);
         }
     }
 
@@ -156,7 +179,17 @@ export default function TreasuryPage() {
                         Control de caja, reportes fiscales y rendimiento (Vs Mes Anterior).
                     </p>
                 </div>
-                <div className="flex gap-2 w-full md:w-auto">
+                <div className="flex gap-2 w-full md:w-auto items-center">
+                    <select
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(Number(e.target.value))}
+                        className="px-4 py-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-tdf-orange truncate max-w-[120px]"
+                    >
+                        {[...Array(5)].map((_, i) => {
+                            const year = new Date().getFullYear() - i;
+                            return <option key={year} value={year}>{year}</option>;
+                        })}
+                    </select>
                     <button
                         onClick={() => setShowExport(true)}
                         className="flex-1 md:flex-none px-4 py-2 bg-slate-900 dark:bg-zinc-800 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
@@ -180,9 +213,9 @@ export default function TreasuryPage() {
                         </div>
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-100 dark:bg-zinc-800 px-2 py-1 rounded">Global</span>
                     </div>
-                    <div className="text-xs font-bold uppercase text-slate-400 mb-1">Saldo en Caja</div>
-                    <div className={`text-4xl font-black tracking-tight ${stats.balance >= 0 ? '' : 'text-red-500'}`}>
-                        ARS $ {stats.balance.toLocaleString('es-AR')}
+                    <div className="text-[10px] font-bold uppercase text-slate-400 mb-1 leading-tight">Saldo Actual de la Federación de Voleibol Fueguino</div>
+                    <div className={`text-4xl font-black tracking-tight ${globalBalance.saldo_actual >= 0 ? '' : 'text-red-500'}`}>
+                        ARS $ {globalBalance.saldo_actual.toLocaleString('es-AR')}
                     </div>
                 </div>
 

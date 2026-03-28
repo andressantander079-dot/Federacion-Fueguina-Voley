@@ -12,6 +12,7 @@ type Squad = {
     category_id: string
     coach_name: string | null
     players_count?: number
+    gender?: string
 }
 
 type Club = {
@@ -46,6 +47,7 @@ export default function ClubDetailsPage() {
     const [newSquadCategory, setNewSquadCategory] = useState('')
     const [newSquadName, setNewSquadName] = useState('')
     const [newSquadCoach, setNewSquadCoach] = useState('')
+    const [newSquadGender, setNewSquadGender] = useState('Femenino')
 
     useEffect(() => {
         const fetchData = async () => {
@@ -106,7 +108,8 @@ export default function ClubDetailsPage() {
                     team_id: clubId,
                     category_id: newSquadCategory,
                     name: newSquadName,
-                    coach_name: newSquadCoach
+                    coach_name: newSquadCoach,
+                    gender: newSquadGender
                 })
                 .select()
                 .single()
@@ -119,6 +122,7 @@ export default function ClubDetailsPage() {
                 setNewSquadCategory('')
                 setNewSquadName('')
                 setNewSquadCoach('')
+                setNewSquadGender('Femenino')
             }
         } catch (error: any) {
             console.error('Error creating squad:', JSON.stringify(error, null, 2))
@@ -276,10 +280,15 @@ export default function ClubDetailsPage() {
                             className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-white/5 rounded-xl p-6 hover:shadow-lg hover:border-tdf-blue/30 transition-all group"
                         >
                             <div className="flex justify-between items-start mb-4">
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-tdf-blue transition-colors">
-                                    {squad.name}
-                                </h3>
-                                <span className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded font-semibold">
+                                <div className="space-y-1">
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-tdf-blue transition-colors">
+                                        {squad.name}
+                                    </h3>
+                                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md inline-block ${squad.gender === 'Masculino' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'}`}>
+                                        Rama {squad.gender || 'Femenino'}
+                                    </span>
+                                </div>
+                                <span className="bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs px-2 py-1 rounded font-semibold ml-2 text-right shrink-0">
                                     {categories.find(c => c.id === squad.category_id)?.name || 'Categoría'}
                                 </span>
                             </div>
@@ -322,6 +331,30 @@ export default function ClubDetailsPage() {
                                     ))}
                                 </select>
                                 {categories.length === 0 && <p className="text-xs text-red-500 mt-1">No hay categorías cargadas en el sistema.</p>}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Rama / Género</label>
+                                <div className="flex bg-gray-100 dark:bg-zinc-800 rounded-lg p-1 relative h-[42px]">
+                                    <div 
+                                        className="absolute inset-y-1 w-[calc(50%-4px)] bg-white dark:bg-zinc-600 rounded-md shadow-sm transition-all duration-300 ease-out"
+                                        style={{ left: newSquadGender === 'Femenino' ? '4px' : 'calc(50%)' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewSquadGender('Femenino')}
+                                        className={`flex-1 text-sm font-bold relative z-10 transition-colors ${newSquadGender === 'Femenino' ? 'text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                                    >
+                                        Femenino
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewSquadGender('Masculino')}
+                                        className={`flex-1 text-sm font-bold relative z-10 transition-colors ${newSquadGender === 'Masculino' ? 'text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                                    >
+                                        Masculino
+                                    </button>
+                                </div>
                             </div>
 
                             <div>

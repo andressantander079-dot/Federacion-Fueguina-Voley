@@ -23,6 +23,7 @@ type Squad = {
     category_id: string
     coach_name: string | null
     password?: string | null
+    gender?: string
 }
 
 export default function SquadPlayersPage() {
@@ -46,6 +47,7 @@ export default function SquadPlayersPage() {
         dni: '',
         birth_date: '',
         position: 'Punta',
+        gender: 'Femenino',
         photo: null as File | null,
         medical: null as File | null,
         payment: null as File | null
@@ -62,11 +64,15 @@ export default function SquadPlayersPage() {
                 // Fetch Squad
                 const { data: squadData } = await supabase
                     .from('squads')
-                    .select('*')
+                    .select('*, gender')
                     .eq('id', squadId)
                     .single()
 
-                if (squadData) setSquad(squadData)
+                if (squadData) {
+                    setSquad(squadData)
+                    // Autofill the gender to match the squad's gender
+                    setNewPlayer(prev => ({ ...prev, gender: squadData.gender || 'Femenino' }))
+                }
 
                 // Fetch Players
                 const { data: playersData } = await supabase
@@ -108,7 +114,13 @@ export default function SquadPlayersPage() {
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, field: 'photo' | 'medical' | 'payment') => {
         if (e.target.files && e.target.files[0]) {
-            setNewPlayer(prev => ({ ...prev, [field]: e.target.files![0] }))
+            const file = e.target.files[0];
+            if (file.size > 10 * 1024 * 1024) {
+               alert(`El archivo ${file.name} excede el límite de 10MB.`);
+               e.target.value = '';
+               return;
+            }
+            setNewPlayer(prev => ({ ...prev, [field]: file }))
         }
     }
 
@@ -167,28 +179,35 @@ export default function SquadPlayersPage() {
                 }
             }
 
+            if (!newPlayer.photo) return alert("La Foto DNI es obligatoria.");
+            if (!newPlayer.payment) return alert("El Comprobante de Pago es obligatorio.");
+
             let photoUrl = null
             let medicalUrl = null
             let paymentUrl = null
+            let cemadPendiente = true;
+            let cemadStatus = 'unsubmitted';
 
             // Use exact same bucket locations as clubs to match Tramites process
             if (newPlayer.photo) {
                 const fileExt = newPlayer.photo.name.split('.').pop()
-                const fileName = `foto-${Date.now()}-${newPlayer.dni}.${fileExt}`
-                await supabase.storage.from('player-photos').upload(fileName, newPlayer.photo)
-                photoUrl = supabase.storage.from('player-photos').getPublicUrl(fileName).data.publicUrl
+                const fileName = `${clubId}/${newPlayer.dni}/avatar-${Date.now()}.${fileExt}`
+                await supabase.storage.from('public_avatars').upload(fileName, newPlayer.photo)
+                photoUrl = supabase.storage.from('public_avatars').getPublicUrl(fileName).data.publicUrl
             }
             if (newPlayer.payment) {
                 const fileExt = newPlayer.payment.name.split('.').pop()
-                const payFileName = `pago-${Date.now()}-${newPlayer.dni}.${fileExt}`
-                await supabase.storage.from('procedure-files').upload(payFileName, newPlayer.payment)
-                paymentUrl = supabase.storage.from('procedure-files').getPublicUrl(payFileName).data.publicUrl
+                const payFileName = `${clubId}/${newPlayer.dni}/pago-${Date.now()}.${fileExt}`
+                await supabase.storage.from('private_docs').upload(payFileName, newPlayer.payment)
+                paymentUrl = supabase.storage.from('private_docs').getPublicUrl(payFileName).data.publicUrl
             }
             if (newPlayer.medical) {
                 const fileExt = newPlayer.medical.name.split('.').pop()
-                const medFileName = `medico-${Date.now()}-${newPlayer.dni}.${fileExt}`
-                await supabase.storage.from('procedure-files').upload(medFileName, newPlayer.medical)
-                medicalUrl = supabase.storage.from('procedure-files').getPublicUrl(medFileName).data.publicUrl
+                const medFileName = `${clubId}/${newPlayer.dni}/medico-${Date.now()}.${fileExt}`
+                await supabase.storage.from('private_docs').upload(medFileName, newPlayer.medical)
+                medicalUrl = supabase.storage.from('private_docs').getPublicUrl(medFileName).data.publicUrl
+                cemadPendiente = false;
+                cemadStatus = 'uploaded';
             }
 
             // Insert Player with exactly the same payload as club/plantel
@@ -201,17 +220,20 @@ export default function SquadPlayersPage() {
                 position: newPlayer.position,
                 number: newPlayer.number ? parseInt(newPlayer.number) : null,
                 dni: newPlayer.dni,
+                gender: newPlayer.gender,
                 photo_url: photoUrl,
                 medical_url: medicalUrl,
                 payment_url: paymentUrl,
-                status: 'pending' // MATCH: Trigger Tramite
+                status: 'pending', // MATCH: Trigger Tramite
+                cemad_pendiente: cemadPendiente,
+                cemad_status: cemadStatus
             }]).select().single()
 
             if (error) throw error
 
             if (data) {
                 setPlayers([...players, data])
-                setNewPlayer({ name: '', number: '', dni: '', birth_date: '', position: 'Punta', photo: null, medical: null, payment: null })
+                setNewPlayer({ name: '', number: '', dni: '', birth_date: '', position: 'Punta', gender: squad?.gender || 'Femenino', photo: null, medical: null, payment: null })
                 alert('Jugador inscrito y trámite generado.')
             }
         } catch (error: any) {
@@ -373,6 +395,32 @@ export default function SquadPlayersPage() {
                                             />
                                         </div>
                                         <div>
+                                            <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Rama / Género</label>
+                                            <div className="flex bg-zinc-950 border border-zinc-800 rounded-lg p-1 relative h-[42px]">
+                                                <div 
+                                                    className="absolute inset-y-1 w-[calc(50%-4px)] bg-zinc-800 rounded-md transition-all duration-300 ease-out"
+                                                    style={{ left: newPlayer.gender === 'Femenino' ? '4px' : 'calc(50%)' }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNewPlayer({ ...newPlayer, gender: 'Femenino' })}
+                                                    className={`flex-1 text-xs font-bold relative z-10 transition-colors ${newPlayer.gender === 'Femenino' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                >
+                                                    Fem
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNewPlayer({ ...newPlayer, gender: 'Masculino' })}
+                                                    className={`flex-1 text-xs font-bold relative z-10 transition-colors ${newPlayer.gender === 'Masculino' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                >
+                                                    Masc
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1">
+                                        <div>
                                             <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Nacimiento</label>
                                             <input
                                                 type="date"
@@ -389,17 +437,17 @@ export default function SquadPlayersPage() {
                                         <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                                             <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><Camera size={16} /></div>
                                             <div className="flex-1 overflow-hidden">
-                                                <div className="text-xs font-bold text-zinc-300">Foto de Perfil</div>
-                                                <div className="text-[10px] text-zinc-500 truncate">{newPlayer.photo ? newPlayer.photo.name : 'Subir JPG/PNG'}</div>
+                                                <div className="text-xs font-bold text-zinc-300">Foto DNI <span className="text-red-500">*</span></div>
+                                                <div className="text-[10px] text-zinc-500 truncate">{newPlayer.photo ? newPlayer.photo.name : 'Subir JPG/PNG/PDF'}</div>
                                             </div>
-                                            <input type="file" hidden accept="image/*" onChange={e => handleFileUpload(e, 'photo')} />
+                                            <input type="file" hidden accept=".pdf,image/*" onChange={e => handleFileUpload(e, 'photo')} />
                                             {newPlayer.photo && <CheckCircle size={14} className="text-green-500" />}
                                         </label>
 
                                         <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                                             <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><FileText size={16} /></div>
                                             <div className="flex-1 overflow-hidden">
-                                                <div className="text-xs font-bold text-zinc-300">Ficha Médica</div>
+                                                <div className="text-xs font-bold text-zinc-300">CEMAD (Alta Médica) <span className="text-zinc-500 font-normal text-[10px]">(Opcional ahora)</span></div>
                                                 <div className="text-[10px] text-zinc-500 truncate">{newPlayer.medical ? newPlayer.medical.name : 'Subir PDF'}</div>
                                             </div>
                                             <input type="file" hidden accept=".pdf,.jpg" onChange={e => handleFileUpload(e, 'medical')} />
@@ -409,7 +457,7 @@ export default function SquadPlayersPage() {
                                         <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                                             <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><DollarSign size={16} /></div>
                                             <div className="flex-1 overflow-hidden">
-                                                <div className="text-xs font-bold text-zinc-300">Pago Inscripción</div>
+                                                <div className="text-xs font-bold text-zinc-300">Comprobante Pago <span className="text-red-500">*</span></div>
                                                 <div className="text-[10px] text-zinc-500 truncate">{newPlayer.payment ? newPlayer.payment.name : 'Subir Comprobante'}</div>
                                             </div>
                                             <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => handleFileUpload(e, 'payment')} />
