@@ -140,7 +140,7 @@ export default function LoginPage() {
 
                         <div className="space-y-2">
                             <label htmlFor="email" className="block text-xs font-bold uppercase text-gray-500 tracking-wider">
-                                Correo Electrónico o DNI
+                                Usuario
                             </label>
                             <input
                                 id="email"

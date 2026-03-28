@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign, Lock, Unlock, Plus, Trash, Search, Download, Eye, RefreshCw, X, Pencil, MapPin, Tag, ShieldCheck, Mail, Award, Calendar } from 'lucide-react';
 import PinPadModal from '@/components/security/PinPadModal';
 import EmptyState from '@/components/ui/EmptyState';
+import { ProfileCropperModal } from '@/components/ui/ProfileCropperModal';
 import { useClubAuth } from '@/hooks/useClubAuth';
 import { toast } from 'sonner';
 
@@ -32,7 +33,7 @@ export default function PlantelPage() {
   const [jugadores, setJugadores] = useState<any[]>([]);
   const [globalCategories, setGlobalCategories] = useState<any[]>([]);
   const [coaches, setCoaches] = useState<any[]>([]);
-  
+
   // Huerfanos State
   const [huerfanos, setHuerfanos] = useState<any[]>([]);
   const [isBannerMinimized, setIsBannerMinimized] = useState(false);
@@ -71,6 +72,7 @@ export default function PlantelPage() {
     birth_date: '',
     number: '',
     position: 'Universal',
+    gender: 'Femenino',
     license_type: 'Jugador',
     photo_file: null as File | null,
     medical_file: null as File | null,
@@ -88,6 +90,154 @@ export default function PlantelPage() {
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [clubLogo, setClubLogo] = useState<string | null>(null);
+
+  // Profile Cropper States
+  const [isCroppingPhoto, setIsCroppingPhoto] = useState(false);
+  const [tempPhotoSrc, setTempPhotoSrc] = useState<string | null>(null);
+
+  // Estados - ACTUALIZAR AVATAR LISTA
+  const [avatarUploadTarget, setAvatarUploadTarget] = useState<any>(null);
+  const [avatarCropper, setAvatarCropper] = useState<{ isOpen: boolean, tempUrl: string }>({ isOpen: false, tempUrl: '' });
+
+  const checkFileSize = (file: File): boolean => {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(`El archivo ${file.name} excede el límite de 10MB.`);
+      return false;
+    }
+    return true;
+  };
+
+  const uploadFileAPI = async (file: File, bucketName: string, fileName: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('bucketName', bucketName);
+    form.append('fileName', fileName);
+    const res = await fetch('/api/upload', { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Error subiendo archivo seguro");
+    }
+    const { publicUrl } = await res.json();
+    return publicUrl;
+  };
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (!checkFileSize(file)) {
+        e.target.value = '';
+        return;
+      }
+      // If it's a PDF, we bypass the cropper and store it directly.
+      if (file.type === 'application/pdf') {
+         setNuevoJugador(prev => ({ ...prev, photo_file: file }));
+      } else {
+         const imageUrl = URL.createObjectURL(file);
+         setTempPhotoSrc(imageUrl);
+         setIsCroppingPhoto(true);
+      }
+    }
+    // reset input allows picking the same file again if canceled
+    e.target.value = '';
+  };
+
+  const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>, player: any) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (!checkFileSize(file)) {
+        e.target.value = '';
+        return;
+      }
+      const imageUrl = URL.createObjectURL(file);
+      setAvatarUploadTarget(player);
+      setAvatarCropper({ isOpen: true, tempUrl: imageUrl });
+    }
+    e.target.value = '';
+  };
+
+  const handleAvatarCropComplete = async (croppedFile: File) => {
+    if (!avatarUploadTarget) return;
+    const toastId = toast.loading("Actualizando foto de perfil...");
+    try {
+      if (!clubId) throw new Error("No club_id found");
+      const cleanFileName = croppedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '');
+      const filePath = `${clubId}/${avatarUploadTarget.dni}/avatar_${Date.now()}_${cleanFileName}`;
+      
+      const publicUrl = await uploadFileAPI(croppedFile, 'public_avatars', filePath);
+      
+      const { error: updateErr } = await supabase.from('players').update({ photo_url: publicUrl }).eq('id', avatarUploadTarget.id);
+      if (updateErr) throw updateErr;
+
+      setJugadores(jugadores.map(j => j.id === avatarUploadTarget.id ? { ...j, photo_url: publicUrl } : j));
+      toast.success("Foto actualizada exitosamente", { id: toastId });
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Error al actualizar la foto de perfil", { id: toastId });
+    } finally {
+      setAvatarCropper({ isOpen: false, tempUrl: '' });
+      setAvatarCropper({ isOpen: false, tempUrl: '' });
+      setAvatarUploadTarget(null);
+    }
+  };
+
+  const handleMissingDocument = async (e: React.ChangeEvent<HTMLInputElement>, player: any, docType: 'medical_url' | 'payment_url' | 'family_authorization_url') => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    if (!checkFileSize(file)) {
+      e.target.value = '';
+      return;
+    }
+
+    const toastId = toast.loading("Subiendo documento...");
+    try {
+      if (!clubId) throw new Error("No club_id found");
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '');
+      const filePath = `${clubId}/${player.dni}/${docType}_${Date.now()}_${cleanFileName}`;
+      
+      const newUrl = await uploadFileAPI(file, 'private_docs', filePath);
+      
+      const updates: any = { [docType]: newUrl };
+      
+      // Si es CEMAD, actualizamos el cemad_status también
+      if (docType === 'medical_url') {
+        updates.cemad_status = 'uploaded';
+      }
+
+      const { error: updateErr } = await supabase.from('players').update(updates).eq('id', player.id);
+      if (updateErr) throw updateErr;
+
+      setJugadores(jugadores.map(j => j.id === player.id ? { ...j, ...updates } : j));
+      toast.success("Documento subido exitosamente", { id: toastId });
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Error al subir el documento", { id: toastId });
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleDocumentSelect = (e: React.ChangeEvent<HTMLInputElement>, field: 'medical_file' | 'payment_file' | 'authorization_file') => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (checkFileSize(file)) {
+        setNuevoJugador(prev => ({ ...prev, [field]: file }));
+      }
+    }
+    e.target.value = '';
+  };
+
+  const finalizeCrop = (croppedFile: File) => {
+    setNuevoJugador(prev => ({ ...prev, photo_file: croppedFile }));
+    setIsCroppingPhoto(false);
+    if (tempPhotoSrc) URL.revokeObjectURL(tempPhotoSrc);
+    setTempPhotoSrc(null);
+  };
+
+  const cancelCrop = () => {
+    setIsCroppingPhoto(false);
+    if (tempPhotoSrc) URL.revokeObjectURL(tempPhotoSrc);
+    setTempPhotoSrc(null);
+  };
 
   useEffect(() => {
     if (clubId) {
@@ -224,21 +374,21 @@ export default function PlantelPage() {
   async function handleAsignarHuerfano(e: React.FormEvent) {
     e.preventDefault();
     if (!asignarSquadId || !asignarModal.huerfano) return toast.error("Seleccione un plantel");
-    
+
     try {
       setUploading(true);
       const { error } = await supabase.from('players').update({
         squad_id: asignarSquadId
       }).eq('id', asignarModal.huerfano.id);
-      
+
       if (error) throw error;
       toast.success("Jugador asignado al plantel exitosamente.");
-      
+
       setAsignarModal({ isOpen: false, huerfano: null });
       setAsignarSquadId('');
       if (clubId) await cargarHuerfanos(clubId);
       if (squadActual && squadActual.id === asignarSquadId) {
-         cargarJugadores(asignarSquadId);
+        cargarJugadores(asignarSquadId);
       }
     } catch (err: any) {
       toast.error(err.message);
@@ -366,51 +516,53 @@ export default function PlantelPage() {
         .select('team_id, teams(name)')
         .eq('dni', dniLimpio);
 
-      const uploadFileAPI = async (file: File, bucketName: string, fileName: string) => {
-        const form = new FormData();
-        form.append('file', file);
-        form.append('bucketName', bucketName);
-        form.append('fileName', fileName);
-        const res = await fetch('/api/upload', { method: 'POST', body: form });
-        if (!res.ok) {
-           const err = await res.json();
-           throw new Error(err.error || "Error subiendo archivo seguro");
-        }
-        const { publicUrl } = await res.json();
-        return publicUrl;
-      };
+      // Only Check mandatory fields
+      if (!nuevoJugador.photo_file) {
+        setUploading(false);
+        return toast.error("La Foto DNI es obligatoria.");
+      }
+      if (!nuevoJugador.payment_file) {
+        setUploading(false);
+        return toast.error("El Comprobante de Pago es obligatorio.");
+      }
+      // CEMAD is optional here!
 
       let photoUrl = null;
       if (nuevoJugador.photo_file) {
         const fileExt = nuevoJugador.photo_file.name.split('.').pop();
-        const fileName = `foto-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        photoUrl = await uploadFileAPI(nuevoJugador.photo_file, 'player-photos', fileName);
+        const fileName = `${clubId}/${nuevoJugador.dni}/avatar-${Date.now()}.${fileExt}`;
+        photoUrl = await uploadFileAPI(nuevoJugador.photo_file, 'public_avatars', fileName);
       }
 
       let paymentUrl = null;
       if (nuevoJugador.payment_file) {
         const fileExt = nuevoJugador.payment_file.name.split('.').pop();
-        const payFileName = `pago-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        paymentUrl = await uploadFileAPI(nuevoJugador.payment_file, 'procedure-files', payFileName);
+        const payFileName = `${clubId}/${nuevoJugador.dni}/pago-${Date.now()}.${fileExt}`;
+        paymentUrl = await uploadFileAPI(nuevoJugador.payment_file, 'private_docs', payFileName);
       }
 
       let medicalUrl = null;
+      let cemadPendiente = true;
+      let cemadStatus = 'unsubmitted';
+
       if (nuevoJugador.medical_file) {
         const fileExt = nuevoJugador.medical_file.name.split('.').pop();
-        const medFileName = `medico-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        medicalUrl = await uploadFileAPI(nuevoJugador.medical_file, 'procedure-files', medFileName);
+        const medFileName = `${clubId}/${nuevoJugador.dni}/medico-${Date.now()}.${fileExt}`;
+        medicalUrl = await uploadFileAPI(nuevoJugador.medical_file, 'private_docs', medFileName);
+        cemadPendiente = false;
+        cemadStatus = 'uploaded';
       }
 
       let authorizationUrl = null;
       if (nuevoJugador.authorization_file) {
         const fileExt = nuevoJugador.authorization_file.name.split('.').pop();
-        const authFileName = `autorizacion-${Date.now()}-${nuevoJugador.dni}.${fileExt}`;
-        authorizationUrl = await uploadFileAPI(nuevoJugador.authorization_file, 'procedure-files', authFileName);
+        const authFileName = `${clubId}/${nuevoJugador.dni}/autorizacion-${Date.now()}.${fileExt}`;
+        authorizationUrl = await uploadFileAPI(nuevoJugador.authorization_file, 'private_docs', authFileName);
       }
 
       if (existingPlayers && existingPlayers.length > 0) {
         const conflict = existingPlayers[0];
-        
+
         // IF player belongs to THIS club, we UPDATE them (useful for transferred players in limbo)
         if (conflict.team_id === clubId) {
           const { error: updateError } = await supabase.from('players').update({
@@ -425,12 +577,14 @@ export default function PlantelPage() {
             ...(paymentUrl && { payment_url: paymentUrl }),
             ...(medicalUrl && { medical_url: medicalUrl }),
             ...(authorizationUrl && { family_authorization_url: authorizationUrl }),
+            cemad_pendiente: cemadPendiente, // update cemad logic
+            cemad_status: cemadStatus,
             status: 'pending' // Regresa a pending si se cambia su data
           }).eq('dni', dniLimpio);
 
           if (updateError) throw updateError;
           toast.success("Jugador reasignado. El pase federal ha sido completado y el jugador ya forma parte de este plantel.");
-          setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
+          setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', gender: 'Femenino', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
           cargarJugadores(squadActual.id);
           setUploading(false);
           return;
@@ -451,22 +605,27 @@ export default function PlantelPage() {
         birth_date: nuevoJugador.birth_date,
         number: nuevoJugador.number ? parseInt(nuevoJugador.number) : null,
         position: nuevoJugador.position,
+        gender: nuevoJugador.gender,
         photo_url: photoUrl,
         payment_url: paymentUrl,
         medical_url: medicalUrl,
         family_authorization_url: authorizationUrl,
+        cemad_pendiente: cemadPendiente,
+        cemad_status: cemadStatus,
         status: 'pending' // Added pending status here, matching Plan.
       }]);
 
       if (error) throw error;
 
       toast.success("Jugador inscripto.");
-      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
+      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', gender: 'Femenino', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
       cargarJugadores(squadActual.id);
 
     } catch (error: any) {
       if (error.code === '23505') {
         toast.error("El jugador con ese DNI ya existe en los registros de la federación.");
+      } else if (error.message?.includes('GENDER_MISMATCH')) {
+        toast.error("❌ ERROR DENEGADO: El género seleccionado para el jugador no coincide con el del plantel oficial (Femenino/Masculino).");
       } else {
         toast.error("Error guardando: " + error.message);
       }
@@ -478,20 +637,49 @@ export default function PlantelPage() {
   async function borrarJugador(id: string) {
     if (!confirm("¿Eliminar definitivamente este jugador y sus anexos?")) return;
     try {
-        const { error } = await supabase.from('players').delete().eq('id', id);
-        if (error) throw error;
-        toast.success("Ficha del jugador eliminada de la base de datos.");
+      const { error } = await supabase.from('players').delete().eq('id', id);
+      if (error) throw error;
+      toast.success("Ficha del jugador eliminada de la base de datos.");
     } catch (err: any) {
-        console.error("Delete Error:", err);
-        if (err.code === '23503') { // Foreign Key Violation
-            toast.error("El jugador no puede ser eliminado porque tiene un trámite de pase FVF asociado. Primero cancele el pase.");
-        } else {
-            toast.error("El sistema bloqueó el borrado: " + err.message);
-        }
+      console.error("Delete Error:", err);
+      if (err.code === '23503') { // Foreign Key Violation
+        toast.error("El jugador no puede ser eliminado porque tiene un trámite de pase FVF asociado. Primero cancele el pase.");
+      } else {
+        toast.error("El sistema bloqueó el borrado: " + err.message);
+      }
     } finally {
-        if (squadActual) cargarJugadores(squadActual.id);
+      if (squadActual) cargarJugadores(squadActual.id);
     }
   }
+
+  const handleDeferredCemad = async (e: React.ChangeEvent<HTMLInputElement>, player: any) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('El CEMAD excede el límite de 10MB.');
+      e.target.value = '';
+      return;
+    }
+
+    const toastId = toast.loading('Subiendo CEMAD pendiente...');
+    try {
+      const fileExt = file.name.split('.').pop();
+      const medFileName = `${clubId}/${player.dni}/medico-diferido-${Date.now()}.${fileExt}`;
+      const medicalUrl = await uploadFileAPI(file, 'private_docs', medFileName);
+
+      const { error } = await supabase.from('players').update({
+        medical_url: medicalUrl,
+        cemad_status: 'uploaded'
+      }).eq('id', player.id);
+
+      if (error) throw error;
+      toast.success('CEMAD subido. Ahora está en revisión.', { id: toastId });
+      if (squadActual) cargarJugadores(squadActual.id);
+    } catch (err: any) {
+      toast.error('Error al subir: ' + err.message, { id: toastId });
+    }
+  };
 
   if (authLoading || loading) return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white">
@@ -555,27 +743,27 @@ export default function PlantelPage() {
                 <ChevronRight className={`transform transition-transform ${isBannerMinimized ? 'rotate-90' : '-rotate-90'}`} />
               </button>
             </div>
-            
+
             {!isBannerMinimized && (
               <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 bg-zinc-950/50">
                 {huerfanos.map(h => (
-                   <div key={h.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex justify-between items-center group">
-                      <div>
-                        <div className="font-bold text-white flex gap-2 items-center text-sm">
-                          {h.name} 
-                          {h.has_debt && <span title="Inhabilitado por deudas transferidas"><Lock size={12} className="text-red-500" /></span>}
-                        </div>
-                        <div className="text-[10px] uppercase font-bold text-zinc-500 mt-1 flex items-center gap-1">
-                           Sugerido: <span className="text-orange-500 font-black bg-orange-500/10 px-1 rounded">{getCategoryName(h.category_id)}</span>
-                        </div>
+                  <div key={h.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex justify-between items-center group">
+                    <div>
+                      <div className="font-bold text-white flex gap-2 items-center text-sm">
+                        {h.name}
+                        {h.has_debt && <span title="Inhabilitado por deudas transferidas"><Lock size={12} className="text-red-500" /></span>}
                       </div>
-                      <button 
-                         onClick={() => setAsignarModal({ isOpen: true, huerfano: h })}
-                         className="px-3 py-1.5 bg-white text-black text-xs font-bold rounded-lg hover:bg-zinc-200 transition shadow-lg shrink-0"
-                      >
-                         Asignar
-                      </button>
-                   </div>
+                      <div className="text-[10px] uppercase font-bold text-zinc-500 mt-1 flex items-center gap-1">
+                        Sugerido: <span className="text-orange-500 font-black bg-orange-500/10 px-1 rounded">{getCategoryName(h.category_id)}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setAsignarModal({ isOpen: true, huerfano: h })}
+                      className="px-3 py-1.5 bg-white text-black text-xs font-bold rounded-lg hover:bg-zinc-200 transition shadow-lg shrink-0"
+                    >
+                      Asignar
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -636,7 +824,7 @@ export default function PlantelPage() {
                 href="/club/equipos/tecnicos"
                 className="px-6 py-3 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 text-white font-bold transition shadow-lg rounded-xl flex items-center gap-2 group"
               >
-                 Cuerpo Técnico
+                Cuerpo Técnico
               </Link>
 
               <button
@@ -778,19 +966,31 @@ export default function PlantelPage() {
                         ${j.status === 'pending'
                           ? 'bg-yellow-500/10 border-yellow-500/50 hover:bg-yellow-500/20 cursor-pointer'
                           : j.status === 'rejected'
-                          ? 'bg-red-500/10 border-red-500/50 hover:bg-red-500/20 cursor-pointer'
-                          : j.has_debt
-                          ? 'bg-zinc-900/50 border-red-900/50 hover:border-red-500/50 opacity-80 cursor-default' /* DEUDA VISUAL */
-                          : 'bg-zinc-900 border-zinc-800/80 hover:border-zinc-700 cursor-default'
+                            ? 'bg-red-500/10 border-red-500/50 hover:bg-red-500/20 cursor-pointer'
+                            : j.has_debt
+                              ? 'bg-zinc-900/50 border-red-900/50 hover:border-red-500/50 opacity-80 cursor-default' /* DEUDA VISUAL */
+                              : (j.status === 'active' && j.cemad_pendiente === true)
+                                ? `bg-zinc-900 border-orange-500 hover:border-orange-400 cursor-default shadow-[0_0_15px_rgba(249,115,22,0.15)] ring-2 ${j.cemad_status === 'uploaded' ? 'ring-yellow-500' : j.cemad_status === 'rejected' ? 'ring-red-500 animate-pulse' : 'ring-orange-500 animate-pulse'}`
+                                : 'bg-zinc-900 border-zinc-800/80 hover:border-zinc-700 cursor-default'
                         }
                       `}
                     >
                       {j.status === 'pending' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500" />}
                       {j.status === 'rejected' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]" />}
 
-                      <div className="w-8 h-8 md:w-10 md:h-10 shrink-0 bg-zinc-800 rounded-full flex items-center justify-center font-black text-zinc-500 text-xs md:text-sm">
-                        {j.number || '#'}
-                      </div>
+                      <label 
+                        className="w-8 h-8 md:w-10 md:h-10 shrink-0 bg-zinc-800 rounded-full flex items-center justify-center font-black text-white text-xs md:text-sm cursor-pointer hover:bg-zinc-700 transition group/avatar relative overflow-hidden ring-1 ring-zinc-700 shrink-0" 
+                        title="Actualizar Foto de Perfil"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input type="file" hidden accept="image/*" onChange={(e) => handleAvatarSelect(e, j)} />
+                        {j.photo_url ? (
+                           <img src={j.photo_url} className="w-full h-full object-cover group-hover/avatar:opacity-30 transition-opacity" alt={j.name} />
+                        ) : (
+                           <span className="group-hover/avatar:opacity-0 text-zinc-500 transition-opacity">{j.number || '#'}</span>
+                        )}
+                        <Camera size={16} className={`absolute text-white ${j.photo_url ? 'opacity-0 group-hover/avatar:opacity-100 transition-opacity' : 'opacity-0 group-hover/avatar:opacity-100 transition-opacity'}`} />
+                      </label>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4 className={`font-bold text-sm md:text-base truncate leading-tight flex items-center gap-2 ${j.status === 'rejected' ? 'text-red-400 line-through opacity-70' : 'text-white'}`}>
@@ -800,6 +1000,11 @@ export default function PlantelPage() {
                           {j.has_debt && (
                             <span className="text-[10px] font-bold border border-red-500/50 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
                               Deuda
+                            </span>
+                          )}
+                          {j.status === 'active' && j.cemad_pendiente === true && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 shadow-sm ${j.cemad_status === 'uploaded' ? 'bg-yellow-500/20 text-yellow-500' : j.cemad_status === 'rejected' ? 'bg-red-500 text-white animate-pulse' : 'bg-orange-500/20 text-orange-500'}`} title={j.cemad_status === 'rejected' ? (j.rejection_reason || 'Rechazado') : ''}>
+                              {j.cemad_status === 'uploaded' ? 'CEMAD en Revisión' : j.cemad_status === 'rejected' ? 'CEMAD Rechazado (Reintentar)' : 'Habilitado pero Falta CEMAD'}
                             </span>
                           )}
                           {j.status === 'pending' && (
@@ -822,10 +1027,33 @@ export default function PlantelPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-1 md:gap-2 shrink-0">
-                        {j.medical_url && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
+                      <div className="flex gap-1 md:gap-2 items-center justify-end shrink-0">
+                        {/* Botón CEMAD diferido o Faltante */}
+                        {((j.status === 'active' && j.cemad_pendiente === true && j.cemad_status !== 'uploaded') || ((j.status === 'pending' || j.status === 'rejected') && !j.medical_url)) && (
+                           <label className="cursor-pointer bg-orange-600 hover:bg-orange-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(234,88,12,0.5)] flex items-center gap-1" title="Subir Alta Médica (CEMAD)">
+                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'medical_url')} />
+                              <Plus size={16} className="shrink-0" /> <FileText size={16} className="hidden md:block shrink-0" />
+                           </label>
+                        )}
+                        {/* Botón Autorización Familiar Faltante (Solo si es pendiente/rechazado y no la tiene) */}
+                        {((j.status === 'pending' || j.status === 'rejected') && !j.family_authorization_url) && (
+                           <label className="cursor-pointer bg-yellow-600 hover:bg-yellow-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(202,138,4,0.5)] flex items-center gap-1" title="Subir Autorización Tutor">
+                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'family_authorization_url')} />
+                              <Plus size={16} className="shrink-0" /> <ShieldCheck size={16} className="hidden md:block shrink-0" />
+                           </label>
+                        )}
+                        {/* Botón Comprobante Faltante */}
+                        {((j.status === 'pending' || j.status === 'rejected') && !j.payment_url) && (
+                           <label className="cursor-pointer bg-green-600 hover:bg-green-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(22,163,74,0.5)] flex items-center gap-1" title="Subir Comprobante de Pago">
+                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'payment_url')} />
+                              <Plus size={16} className="shrink-0" /> <DollarSign size={16} className="hidden md:block shrink-0" />
+                           </label>
+                        )}
+
+                        {j.medical_url && j.cemad_pendiente !== true && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
                         {j.photo_url && <span title="Foto OK"><Camera size={16} className="text-blue-500" /></span>}
                         {j.family_authorization_url && <span title="Autorización Tutor OK"><ShieldCheck size={16} className="text-yellow-500" /></span>}
+                        {j.payment_url && <span title="Comprobante OK"><DollarSign size={16} className="text-green-500" /></span>}
                       </div>
 
                       <button onClick={(e) => { e.stopPropagation(); borrarJugador(j.id); }} className="p-2 md:p-3 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-100 md:opacity-0 group-hover:opacity-100 z-10 shrink-0">
@@ -854,7 +1082,7 @@ export default function PlantelPage() {
                           onChange={e => setNuevoJugador({ ...nuevoJugador, number: e.target.value })}
                         />
                       </div>
-                      <div className="col-span-3">
+                      <div className="col-span-3 lg:col-span-2">
                         <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Nombre Completo</label>
                         <input
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white outline-none focus:border-orange-500 transition-colors"
@@ -862,6 +1090,29 @@ export default function PlantelPage() {
                           value={nuevoJugador.name}
                           onChange={e => setNuevoJugador({ ...nuevoJugador, name: e.target.value })}
                         />
+                      </div>
+                      <div className="col-span-4 lg:col-span-1">
+                        <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Género</label>
+                        <div className="flex bg-zinc-950 border border-zinc-800 rounded-lg p-1 relative h-[42px]">
+                          <div 
+                              className={`absolute inset-y-1 w-[calc(50%-4px)] bg-zinc-800 rounded-md transition-all duration-300 ease-out`}
+                              style={{ left: nuevoJugador.gender === 'Femenino' ? '4px' : 'calc(50%)' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setNuevoJugador({ ...nuevoJugador, gender: 'Femenino' })}
+                            className={`flex-1 text-xs font-bold relative z-10 transition-colors ${nuevoJugador.gender === 'Femenino' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                          >
+                            Fem
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNuevoJugador({ ...nuevoJugador, gender: 'Masculino' })}
+                            className={`flex-1 text-xs font-bold relative z-10 transition-colors ${nuevoJugador.gender === 'Masculino' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                          >
+                            Masc
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -875,8 +1126,8 @@ export default function PlantelPage() {
                           placeholder="Ej: 12345678"
                           value={nuevoJugador.dni}
                           onChange={e => {
-                              const cleanValue = e.target.value.replace(/[^0-9]/g, '');
-                              setNuevoJugador({ ...nuevoJugador, dni: cleanValue });
+                            const cleanValue = e.target.value.replace(/[^0-9]/g, '');
+                            setNuevoJugador({ ...nuevoJugador, dni: cleanValue });
                           }}
                         />
                       </div>
@@ -892,35 +1143,35 @@ export default function PlantelPage() {
                     </div>
 
                     <div className="pt-4 border-t border-zinc-800 space-y-3">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Documentación</p>
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Documentación (Max 10MB c/u)</p>
 
                       <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                         <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><Camera size={16} /></div>
                         <div className="flex-1 overflow-hidden">
-                          <div className="text-xs font-bold text-zinc-300">Foto de Perfil</div>
-                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.photo_file ? nuevoJugador.photo_file.name : 'Subir JPG/PNG'}</div>
+                          <div className="text-xs font-bold text-zinc-300">Foto DNI <span className="text-red-500">*</span></div>
+                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.photo_file ? nuevoJugador.photo_file.name : 'Subir JPG/PNG/PDF'}</div>
                         </div>
-                        <input type="file" hidden accept="image/*" onChange={e => setNuevoJugador({ ...nuevoJugador, photo_file: e.target.files?.[0] || null })} />
+                        <input type="file" hidden accept=".pdf,image/*" onChange={handlePhotoSelect} />
                         {nuevoJugador.photo_file && <CheckCircle size={14} className="text-green-500" />}
                       </label>
 
                       <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                         <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><FileText size={16} /></div>
                         <div className="flex-1 overflow-hidden">
-                          <div className="text-xs font-bold text-zinc-300">Ficha Médica</div>
-                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.medical_file ? nuevoJugador.medical_file.name : 'Subir PDF'}</div>
+                          <div className="text-xs font-bold text-zinc-300">CEMAD (Alta Médica) <span className="text-zinc-500 font-normal text-[10px]">(Opcional ahora)</span></div>
+                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.medical_file ? nuevoJugador.medical_file.name : 'Subir PDF/JPG'}</div>
                         </div>
-                        <input type="file" hidden accept=".pdf,.jpg" onChange={e => setNuevoJugador({ ...nuevoJugador, medical_file: e.target.files?.[0] || null })} />
+                        <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => handleDocumentSelect(e, 'medical_file')} />
                         {nuevoJugador.medical_file && <CheckCircle size={14} className="text-green-500" />}
                       </label>
 
                       <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                         <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><DollarSign size={16} /></div>
                         <div className="flex-1 overflow-hidden">
-                          <div className="text-xs font-bold text-zinc-300">Pago Inscripción</div>
-                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.payment_file ? nuevoJugador.payment_file.name : 'Subir Comprobante'}</div>
+                          <div className="text-xs font-bold text-zinc-300">Comprobante Pago <span className="text-red-500">*</span></div>
+                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.payment_file ? nuevoJugador.payment_file.name : 'Subir PDF/JPG'}</div>
                         </div>
-                        <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => setNuevoJugador({ ...nuevoJugador, payment_file: e.target.files?.[0] || null })} />
+                        <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => handleDocumentSelect(e, 'payment_file')} />
                         {nuevoJugador.payment_file && <CheckCircle size={14} className="text-green-500" />}
                       </label>
 
@@ -931,7 +1182,7 @@ export default function PlantelPage() {
                             <div className="text-xs font-bold text-yellow-500">Declaración Jurada por parte de la Familia</div>
                             <div className="text-[10px] text-zinc-400 truncate">{nuevoJugador.authorization_file ? nuevoJugador.authorization_file.name : 'Subir PDF firmado'}</div>
                           </div>
-                          <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => setNuevoJugador({ ...nuevoJugador, authorization_file: e.target.files?.[0] || null })} />
+                          <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => handleDocumentSelect(e, 'authorization_file')} />
                           {nuevoJugador.authorization_file && <CheckCircle size={14} className="text-green-500" />}
                         </label>
                       )}
@@ -973,14 +1224,26 @@ export default function PlantelPage() {
 
             <div>
               <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Rama / Género</label>
-              <select
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 outline-none focus:border-orange-600 font-bold"
-                value={nuevoSquad.gender}
-                onChange={e => setNuevoSquad({ ...nuevoSquad, gender: e.target.value })}
-              >
-                <option value="Femenino">Femenino</option>
-                <option value="Masculino">Masculino</option>
-              </select>
+              <div className="flex bg-zinc-950 border border-zinc-800 rounded-xl p-1 relative h-[50px]">
+                <div 
+                    className={`absolute inset-y-1 w-[calc(50%-4px)] bg-zinc-800 rounded-lg transition-all duration-300 ease-out`}
+                    style={{ left: nuevoSquad.gender === 'Femenino' ? '4px' : 'calc(50%)' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setNuevoSquad({ ...nuevoSquad, gender: 'Femenino' })}
+                  className={`flex-1 text-sm font-bold relative z-10 transition-colors ${nuevoSquad.gender === 'Femenino' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                  Femenino
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNuevoSquad({ ...nuevoSquad, gender: 'Masculino' })}
+                  className={`flex-1 text-sm font-bold relative z-10 transition-colors ${nuevoSquad.gender === 'Masculino' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                  Masculino
+                </button>
+              </div>
             </div>
 
             <div>
@@ -1001,9 +1264,9 @@ export default function PlantelPage() {
               >
                 <option value="">Sin Asignar / Pendiente...</option>
                 {coaches.map(c => (
-                   <option key={c.id} value={`${c.first_name} ${c.last_name}`}>
-                      {c.first_name} {c.last_name}
-                   </option>
+                  <option key={c.id} value={`${c.first_name} ${c.last_name}`}>
+                    {c.first_name} {c.last_name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1018,39 +1281,57 @@ export default function PlantelPage() {
 
       {asignarModal.isOpen && asignarModal.huerfano && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-           <form onSubmit={handleAsignarHuerfano} className="bg-zinc-900 border border-zinc-800 text-white p-8 rounded-3xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
-              <h3 className="text-xl font-black mb-2 flex items-center gap-2"><UserPlus className="text-orange-500"/> Asignar Jugador</h3>
-              <p className="text-sm text-zinc-400 mb-6 border-b border-zinc-800 pb-4">
-                 <strong className="text-white block text-lg mb-1">{asignarModal.huerfano.name}</strong> 
-                 Categoría Oficial Validada: <span className="text-orange-500 font-bold">{getCategoryName(asignarModal.huerfano.category_id)}</span>
-              </p>
+          <form onSubmit={handleAsignarHuerfano} className="bg-zinc-900 border border-zinc-800 text-white p-8 rounded-3xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-black mb-2 flex items-center gap-2"><UserPlus className="text-orange-500" /> Asignar Jugador</h3>
+            <p className="text-sm text-zinc-400 mb-6 border-b border-zinc-800 pb-4">
+              <strong className="text-white block text-lg mb-1">{asignarModal.huerfano.name}</strong>
+              Categoría Oficial Validada: <span className="text-orange-500 font-bold">{getCategoryName(asignarModal.huerfano.category_id)}</span>
+            </p>
 
-              <div className="mb-8">
-                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Seleccionar Plantel</label>
-                <select 
-                   required
-                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-orange-500 font-bold"
-                   value={asignarSquadId}
-                   onChange={e => setAsignarSquadId(e.target.value)}
-                >
-                   <option value="">Elegir plantel sugerido...</option>
-                   {squads.filter(s => s.category_id === asignarModal.huerfano.category_id).map(s => (
-                      <option value={s.id} key={s.id}>{s.name} ({s.gender})</option>
-                   ))}
-                </select>
-                {squads.filter(s => s.category_id === asignarModal.huerfano.category_id).length === 0 && (
-                   <p className="text-red-500 text-xs mt-3 flex items-start gap-1 bg-red-500/10 p-2 rounded">
-                      <AlertCircle size={14} className="mt-0.5 shrink-0"/> No tienes planteles compatibles con esta categoría matemática. Crea uno antes de asignar.
-                   </p>
-                )}
-              </div>
+            <div className="mb-8">
+              <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Seleccionar Plantel</label>
+              <select
+                required
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white outline-none focus:border-orange-500 font-bold"
+                value={asignarSquadId}
+                onChange={e => setAsignarSquadId(e.target.value)}
+              >
+                <option value="">Elegir plantel sugerido...</option>
+                {squads.filter(s => s.category_id === asignarModal.huerfano.category_id).map(s => (
+                  <option value={s.id} key={s.id}>{s.name} ({s.gender})</option>
+                ))}
+              </select>
+              {squads.filter(s => s.category_id === asignarModal.huerfano.category_id).length === 0 && (
+                <p className="text-red-500 text-xs mt-3 flex items-start gap-1 bg-red-500/10 p-2 rounded">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0" /> No tienes planteles compatibles con esta categoría matemática. Crea uno antes de asignar.
+                </p>
+              )}
+            </div>
 
-              <div className="flex gap-2 justify-end">
-                 <button type="button" onClick={() => { setAsignarModal({ isOpen: false, huerfano: null }); setAsignarSquadId(''); }} className="px-4 py-2 text-zinc-400 font-bold hover:text-white transition">Cancelar</button>
-                 <button type="submit" disabled={uploading || squads.filter(s => s.category_id === asignarModal.huerfano.category_id).length === 0} className="px-6 py-2 bg-white text-black font-black rounded-lg hover:bg-zinc-200 transition disabled:opacity-50">Confirmar</button>
-              </div>
-           </form>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => { setAsignarModal({ isOpen: false, huerfano: null }); setAsignarSquadId(''); }} className="px-4 py-2 text-zinc-400 font-bold hover:text-white transition">Cancelar</button>
+              <button type="submit" disabled={uploading || squads.filter(s => s.category_id === asignarModal.huerfano.category_id).length === 0} className="px-6 py-2 bg-white text-black font-black rounded-lg hover:bg-zinc-200 transition disabled:opacity-50">Confirmar</button>
+            </div>
+          </form>
         </div>
+      )}
+
+      {/* CROPPER MODAL (Z-INDEX SUPERIOR) */}
+      {isCroppingPhoto && tempPhotoSrc && (
+        <ProfileCropperModal 
+          imageSrc={tempPhotoSrc}
+          onClose={cancelCrop}
+          onCropComplete={finalizeCrop}
+        />
+      )}
+
+      {/* CROPPER MODAL AVATAR EXISTENTE */}
+      {avatarCropper.isOpen && avatarCropper.tempUrl && (
+        <ProfileCropperModal 
+          imageSrc={avatarCropper.tempUrl}
+          onClose={() => { setAvatarCropper({ isOpen: false, tempUrl: '' }); setAvatarUploadTarget(null); }}
+          onCropComplete={handleAvatarCropComplete}
+        />
       )}
 
     </div>

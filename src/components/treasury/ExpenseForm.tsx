@@ -15,6 +15,7 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
         amount: '',
         date: new Date().toISOString().split('T')[0],
         description: '',
+        concept: '', // Selector de concepto
         tax_id: '', // CUIT/RUT Obligatorio
         entity_name: '', // Proveedor Obligatorio
         account_id: '',
@@ -60,11 +61,15 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
             }
 
             // 3. Insert Movement
+            const baseDescription = formData.concept === 'Otros'
+                ? formData.description
+                : `${formData.concept} - ${formData.description}`;
+
             const { error: insertError } = await supabase.from('treasury_movements').insert([{
                 type: 'EGRESO',
                 amount: parseFloat(formData.amount.replace(/\./g, '').replace(',', '.') || '0'),
                 date: formData.date,
-                description: formData.description,
+                description: baseDescription,
                 tax_id: formData.tax_id,
                 entity_name: formData.entity_name,
                 account_id: formData.account_id,
@@ -80,6 +85,7 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
                 amount: '',
                 date: new Date().toISOString().split('T')[0],
                 description: '',
+                concept: '',
                 tax_id: '',
                 entity_name: '',
                 account_id: '',
@@ -128,18 +134,37 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Razón Social / Proveedor <span className="text-red-500">*</span></label>
-                        <div className="relative">
-                            <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <input
-                                required
-                                value={formData.entity_name}
-                                onChange={e => setFormData({ ...formData, entity_name: e.target.value })}
-                                placeholder="Nombre del proveedor"
-                                className="w-full pl-10 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-blue outline-none transition-all"
-                            />
-                        </div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">En concepto de... <span className="text-red-500">*</span></label>
+                        <select
+                            required
+                            value={formData.concept}
+                            onChange={e => setFormData({ ...formData, concept: e.target.value })}
+                            className="w-full p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-blue outline-none transition-all text-sm appearance-none"
+                        >
+                            <option value="">Seleccione un concepto</option>
+                            <option value="Honorarios Arbitrales">Honorarios Arbitrales</option>
+                            <option value="Servicios/Mantenimiento">Servicios / Mantenimiento</option>
+                            <option value="Equipamiento">Compra de Equipamiento</option>
+                            <option value="Reintegros">Reintegros</option>
+                            <option value="Otros">Otros (Especifique proveedor)</option>
+                        </select>
                     </div>
+
+                    {formData.concept === 'Otros' && (
+                        <div className="animate-in fade-in slide-in-from-top-2">
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Razón Social / Proveedor <span className="text-red-500">*</span></label>
+                            <div className="relative">
+                                <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    required
+                                    value={formData.entity_name}
+                                    onChange={e => setFormData({ ...formData, entity_name: e.target.value })}
+                                    placeholder="Nombre del proveedor"
+                                    className="w-full pl-10 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-blue outline-none transition-all"
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Comprobante (PDF/Foto)</label>

@@ -20,7 +20,8 @@ export async function POST(req: Request) {
         const { data, error } = await supabase.storage
             .from(bucketName)
             .upload(fileName, file, {
-                upsert: true
+                upsert: true,
+                contentType: file.type // IMPORTANTE: Para evitar que se descargue como octet-stream
             });
 
         if (error) {

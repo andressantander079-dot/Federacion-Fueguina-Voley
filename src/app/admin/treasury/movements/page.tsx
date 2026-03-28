@@ -33,6 +33,19 @@ export default function TreasuryMovementsPage() {
         setLoading(false)
     }
 
+    const handleAnular = async (id: string) => {
+        if (!confirm('¿Está seguro de anular este movimiento? Se generará un movimiento contable de reversión.')) return;
+        setLoading(true);
+        const { error } = await supabase.rpc('reverse_transaction', { p_transaction_id: id });
+        if (error) {
+            alert('Error al anular: ' + error.message);
+        } else {
+            alert('Movimiento anulado correctamente. Se reflejará en el saldo de inmediato.');
+            fetchMovements();
+        }
+        setLoading(false);
+    }
+
     return (
         <div className="p-4 md:p-8 min-h-screen bg-gray-50 dark:bg-black">
 
@@ -98,6 +111,7 @@ export default function TreasuryMovementsPage() {
                                     <th className="p-4">Descripción</th>
                                     <th className="p-4">Entidad</th>
                                     <th className="p-4 text-right">Monto (ARS)</th>
+                                    <th className="p-4 text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
@@ -123,6 +137,16 @@ export default function TreasuryMovementsPage() {
                                         <td className={`p-4 text-right font-bold font-mono ${mov.type === 'INGRESO' ? 'text-emerald-500' : 'text-red-500'
                                             }`}>
                                             {mov.type === 'EGRESO' ? '-' : '+'} ARS $ {mov.amount.toLocaleString('es-AR')}
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            {!mov.description?.startsWith('Anulación') && (
+                                                <button
+                                                    onClick={() => handleAnular(mov.id)}
+                                                    className="px-3 py-1 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 font-bold rounded-lg text-[10px] uppercase transition-colors"
+                                                >
+                                                    Anular
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

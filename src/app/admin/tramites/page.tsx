@@ -7,7 +7,7 @@ import Link from 'next/link';
 import {
    FileText, CheckCircle, XCircle, Clock,
    Search, ArrowLeft, Download, AlertTriangle,
-   Info, AlertOctagon, TrendingUp, Keyboard, Users, Shield, UserCheck, Loader2, FileSignature, X
+   Info, AlertOctagon, TrendingUp, Keyboard, Users, Shield, UserCheck, Loader2, FileSignature, X, ZoomIn, ZoomOut, RotateCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -48,7 +48,7 @@ export default function AdminTramitesPage() {
       // Rechazado: 'rechazado' (tramites), 'rejected' (players)
 
       const s = p.status.toLowerCase();
-      const isPending = s === 'en_revision' || s === 'pending' || s === 'pendiente';
+      const isPending = s === 'pendiente' || s === 'pending' || s === 'pendiente_cemad';
       const isApproved = s === 'aprobado' || s === 'active' || s === 'activo';
       const isRejected = s === 'rechazado' || s === 'rejected';
 
@@ -76,6 +76,7 @@ export default function AdminTramitesPage() {
       const { data: proceduresData } = await supabase
          .from('procedures')
          .select(`*, teams (name, logo_url)`)
+         .is('deleted_at', null)
          .order('created_at', { ascending: false });
 
       // 2. Players (Validations)
@@ -107,16 +108,19 @@ export default function AdminTramitesPage() {
          originalData: p
       }));
 
-      const mappedPlayers: DashboardItem[] = (playersData || []).map((p: any) => ({
-         id: p.id,
-         type: 'player',
-         title: `Validación: ${p.name}`,
-         subtitle: `DNI: ${p.dni}`,
-         status: p.status,
-         date: p.created_at,
-         team_name: p.team?.name || 'Club',
-         originalData: p
-      }));
+      const mappedPlayers: DashboardItem[] = (playersData || []).map((p: any) => {
+         const isCemadUpdate = p.status === 'active' && p.cemad_status === 'uploaded';
+         return {
+            id: p.id,
+            type: 'player',
+            title: isCemadUpdate ? `Actualización CEMAD: ${p.name}` : `Alta Nueva: ${p.name}`,
+            subtitle: `DNI: ${p.dni}`,
+            status: isCemadUpdate ? 'pendiente_cemad' : p.status,
+            date: p.created_at,
+            team_name: p.team?.name || 'Club',
+            originalData: p
+         };
+      });
 
       const mappedReferees: DashboardItem[] = (refereesData || []).map((p: any) => ({
          id: p.id,
@@ -216,9 +220,9 @@ export default function AdminTramitesPage() {
          } else if (selectedItem.type === 'referee') {
             // == ARBITRO ==
             const response = await fetch('/api/admin/approve-referee', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ referee_id: selectedItem.id })
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ referee_id: selectedItem.id })
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Error al aprobar');
@@ -227,9 +231,9 @@ export default function AdminTramitesPage() {
          } else if (selectedItem.type === 'coach') {
             // == COACH ==
             const response = await fetch('/api/admin/approve-coach', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ coach_id: selectedItem.id })
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ coach_id: selectedItem.id })
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Error al aprobar técnico');
@@ -262,7 +266,21 @@ export default function AdminTramitesPage() {
                if (treasuryError) console.error("Error creating treasury movement for player:", treasuryError);
             }
             // Update Player Status
-            await supabase.from('players').update({ status: 'active', rejection_reason: null }).eq('id', selectedItem.id);
+            if (selectedItem.status === 'pendiente_cemad') {
+               await supabase.from('players').update({ 
+                  cemad_status: 'approved', 
+                  cemad_pendiente: false,
+                  rejection_reason: null 
+               }).eq('id', selectedItem.id);
+            } else {
+               await supabase.from('players').update({ 
+                  status: 'active', 
+                  rejection_reason: null,
+                  // If they didn't upload medical_url now, flag them as pendiente
+                  cemad_pendiente: selectedItem.originalData.medical_url ? false : true,
+                  cemad_status: selectedItem.originalData.medical_url ? 'approved' : 'unsubmitted'
+               }).eq('id', selectedItem.id);
+            }
 
             // === FASE 3 MMP: IN-APP NOTIFICATION === (Player)
             const { data: newMessage, error: msgError } = await supabase.from('messages').insert([{
@@ -324,9 +342,9 @@ export default function AdminTramitesPage() {
          } else if (selectedItem.type === 'referee') {
             // == ARBITRO ==
             const response = await fetch('/api/admin/reject-referee', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ referee_id: selectedItem.id })
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ referee_id: selectedItem.id })
             });
             if (!response.ok) throw new Error("Error al rechazar");
 
@@ -334,16 +352,20 @@ export default function AdminTramitesPage() {
          } else if (selectedItem.type === 'coach') {
             // == TÉCNICO ==
             const response = await fetch('/api/admin/reject-coach', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ coach_id: selectedItem.id, reason })
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ coach_id: selectedItem.id, reason })
             });
             if (!response.ok) throw new Error("Error al rechazar técnico");
 
             toast.success("Técnico rechazado y club notificado.");
          } else {
             // Players use 'rejected' status
-            await supabase.from('players').update({ status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
+            if (selectedItem.status === 'pendiente_cemad') {
+               await supabase.from('players').update({ cemad_status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
+            } else {
+               await supabase.from('players').update({ status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
+            }
 
             // Rejection In-App message
             const { data: newMessage } = await supabase.from('messages').insert([{
@@ -379,9 +401,9 @@ export default function AdminTramitesPage() {
 
    // Determine if we should show Actions Footer
    const showActions = selectedItem && (
-      selectedItem.status === 'en_revision' ||
+      selectedItem.status === 'pendiente' ||
       selectedItem.status === 'pending' ||
-      selectedItem.status === 'pendiente'
+      selectedItem.status === 'pendiente_cemad'
    );
 
    if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50">Cargando Sistema...</div>;
@@ -400,11 +422,11 @@ export default function AdminTramitesPage() {
 
             <div className="flex items-center gap-3">
                {/* FILTROS */}
-               <div className="flex bg-zinc-800 p-1 rounded-lg">
-                  <button onClick={() => { setFilterStatus('pendientes'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'pendientes' ? 'bg-zinc-700 text-blue-400 shadow-sm' : 'text-zinc-500'}`}>
+               <div className="flex bg-zinc-800 p-1 rounded-lg items-center gap-1">
+                  <button onClick={() => { setFilterStatus('pendientes'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'pendientes' ? 'bg-zinc-700 text-blue-400 shadow-sm' : 'text-zinc-500 hover:text-white hover:bg-zinc-700/50'}`}>
                      <Clock size={14} /> Pendientes
                   </button>
-                  <button onClick={() => { setFilterStatus('aprobados'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'aprobados' ? 'bg-zinc-700 text-emerald-400 shadow-sm' : 'text-zinc-500'}`}>
+                  <button onClick={() => { setFilterStatus('aprobados'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'aprobados' ? 'bg-zinc-700 text-emerald-400 shadow-sm' : 'text-zinc-500 hover:text-white hover:bg-zinc-700/50'}`}>
                      <CheckCircle size={14} /> Aprobados
                   </button>
                   <button onClick={() => { setFilterStatus('rechazados'); setSelectedItemId(null) }} className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-2 ${filterStatus === 'rechazados' ? 'bg-zinc-700 text-red-400 shadow-sm' : 'text-zinc-500'}`}>
@@ -499,13 +521,13 @@ export default function AdminTramitesPage() {
                         // --- VISTA ARBITRO ---
                         <div className="flex-1 flex flex-col overflow-hidden">
                            <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex flex-col md:flex-row gap-4 md:gap-6 items-start md:items-center flex-shrink-0">
-                               <div className="flex items-center gap-3 w-full md:w-auto md:hidden border-b border-zinc-800/50 pb-3 mb-1">
+                              <div className="flex items-center gap-3 w-full md:w-auto md:hidden border-b border-zinc-800/50 pb-3 mb-1">
                                  <button onClick={() => setSelectedItemId(null)} className="p-2 -ml-2 hover:bg-zinc-800 rounded-full text-zinc-400">
                                     <ArrowLeft size={20} />
                                  </button>
                                  <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Atrás a la lista</span>
-                               </div>
-                               <div className="flex gap-4 items-center">
+                              </div>
+                              <div className="flex gap-4 items-center">
                                  <div className="w-16 h-16 rounded-full bg-zinc-800 overflow-hidden border-2 border-zinc-700 shrink-0 flex items-center justify-center">
                                     <Shield className="w-8 h-8 text-zinc-500" />
                                  </div>
@@ -516,16 +538,16 @@ export default function AdminTramitesPage() {
                                        <span className="bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded text-emerald-500">Alta Administrativa</span>
                                     </div>
                                  </div>
-                               </div>
+                              </div>
                            </div>
                            <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-zinc-950 pb-32 flex flex-col items-center justify-center text-center">
                               <div className="bg-zinc-900 p-8 rounded-2xl border border-zinc-800 max-w-md w-full">
-                                <AlertTriangle className="mx-auto w-12 h-12 text-yellow-500 mb-4" />
-                                <h3 className="text-lg font-bold text-white mb-2">Validación Manual Requerida</h3>
-                                <p className="text-sm text-zinc-400 mb-6">Los candidatos a árbitro envían el comprobante de arancel por canales oficiales (WhatsApp/Email). Verifique la recepción del dinero en la cuenta bancaria de la FVF antes de aprobarlo.</p>
-                                <div className="text-xs font-mono bg-zinc-950 p-3 rounded text-zinc-500 border border-zinc-800">
-                                   Al presionar APROBAR, el árbitro tendrá acceso completo al sistema y se generará un ingreso por el valor del Arancel (Ítem 9).
-                                </div>
+                                 <AlertTriangle className="mx-auto w-12 h-12 text-yellow-500 mb-4" />
+                                 <h3 className="text-lg font-bold text-white mb-2">Validación Manual Requerida</h3>
+                                 <p className="text-sm text-zinc-400 mb-6">Los candidatos a árbitro envían el comprobante de arancel por canales oficiales (WhatsApp/Email). Verifique la recepción del dinero en la cuenta bancaria de la FVF antes de aprobarlo.</p>
+                                 <div className="text-xs font-mono bg-zinc-950 p-3 rounded text-zinc-500 border border-zinc-800">
+                                    Al presionar APROBAR, el árbitro tendrá acceso completo al sistema y se generará un ingreso por el valor del Arancel (Ítem 9).
+                                 </div>
                               </div>
                            </div>
                         </div>
@@ -558,7 +580,7 @@ export default function AdminTramitesPage() {
                            <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-zinc-950 pb-32">
                               <h3 className="text-zinc-400 font-bold uppercase tracking-widest text-xs mb-6 border-b border-zinc-800 pb-2">Documentación Adjunta</h3>
                               <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 w-full max-w-6xl items-start">
-                              
+
                                  {/* 1. FOTO */}
                                  <DocumentCard
                                     title="Foto de Perfil"
@@ -585,8 +607,8 @@ export default function AdminTramitesPage() {
 
                               </div>
                               <div className="mt-8 bg-zinc-900 p-6 rounded-2xl border border-zinc-800 max-w-3xl">
-                                <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-2"><Info size={16} className="text-blue-500"/> Impacto en Tesorería Automático</h4>
-                                <p className="text-sm text-zinc-400">Al aprobar este trámite, el sistema automáticamente generará un ingreso en Tesorería por el valor estipulado en el Tariffario para <strong>Inscripción de Técnicos (Ítem #5)</strong> a nombre del club <strong className="text-zinc-200">{selectedItem.team_name}</strong>. El Técnico quedará habilitado para ser asignado a planteles.</p>
+                                 <h4 className="text-sm font-bold text-white flex items-center gap-2 mb-2"><Info size={16} className="text-blue-500" /> Impacto en Tesorería Automático</h4>
+                                 <p className="text-sm text-zinc-400">Al aprobar este trámite, el sistema automáticamente generará un ingreso en Tesorería por el valor estipulado en el Tariffario para <strong>Inscripción de Técnicos (Ítem #5)</strong> a nombre del club <strong className="text-zinc-200">{selectedItem.team_name}</strong>. El Técnico quedará habilitado para ser asignado a planteles.</p>
                               </div>
                            </div>
                         </div>
@@ -620,7 +642,7 @@ export default function AdminTramitesPage() {
                            <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-zinc-950 pb-32">
                               <h3 className="text-zinc-400 font-bold uppercase tracking-widest text-xs mb-6 border-b border-zinc-800 pb-2">Documentación Adjunta</h3>
                               <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 w-full max-w-6xl items-start">
-                              
+
                                  {/* 0. AUTORIZACION DE MENORES (Condicional) */}
                                  {selectedItem.originalData.birth_date && (
                                     (() => {
@@ -642,7 +664,7 @@ export default function AdminTramitesPage() {
 
                                  {/* 1. FOTO */}
                                  <DocumentCard
-                                    title="Foto de Perfil"
+                                    title="Foto DNI"
                                     url={selectedItem.originalData.photo_url}
                                     type="image"
                                     missingText="Falta Foto"
@@ -650,10 +672,10 @@ export default function AdminTramitesPage() {
 
                                  {/* 2. FICHA MEDICA */}
                                  <DocumentCard
-                                    title="Ficha Médica"
+                                    title="CEMAD (Alta Médica)"
                                     url={selectedItem.originalData.medical_url}
                                     type="document"
-                                    missingText="Falta Ficha Médica"
+                                    missingText="Falta CEMAD (Deuda)"
                                  />
 
                                  {/* 3. COMPROBANTE DE PAGO */}
@@ -685,9 +707,9 @@ export default function AdminTramitesPage() {
                            <button
                               onClick={handleApprove}
                               disabled={processingAction}
-                              className="px-8 py-4 bg-white text-black font-black rounded-xl hover:bg-zinc-200 transition shadow-xl shadow-white/10 flex items-center gap-2 uppercase tracking-wide text-sm transform hover:-translate-y-1 active:translate-y-0"
+                              className={`px-8 py-4 ${selectedItem.status === 'pending' && !selectedItem.originalData.medical_url ? 'bg-orange-600 hover:bg-orange-500' : 'bg-white hover:bg-zinc-200'} text-black font-black rounded-xl hover:bg-zinc-200 transition shadow-xl shadow-white/10 flex items-center gap-2 uppercase tracking-wide text-sm transform hover:-translate-y-1 active:translate-y-0`}
                            >
-                              {processingAction ? <Loader2 className="animate-spin" /> : <><CheckCircle size={20} className="text-green-600" /> Aprobar</>}
+                              {processingAction ? <Loader2 className="animate-spin" /> : <><CheckCircle size={20} className={selectedItem.status === 'pending' && !selectedItem.originalData.medical_url ? 'text-white' : 'text-green-600'} /> {selectedItem.status === 'pending' && !selectedItem.originalData.medical_url ? 'Aprobar (Falta CEMAD)' : 'Aprobar Elemento'}</>}
                            </button>
                         </div>
                      )}
@@ -707,73 +729,179 @@ export default function AdminTramitesPage() {
 
 function DocumentCard({ title, url, type, missingText }: { title: string, url: string | null, type: 'image' | 'document', missingText: string }) {
    const [isModalOpen, setIsModalOpen] = useState(false);
-   
+   const [securedUrl, setSecuredUrl] = useState<string | null>(null);
+
+   const isActuallyImage = url ? !!url.toLowerCase().match(/\.(jpg|jpeg|png|webp|gif)$/) || type === 'image' : type === 'image';
+
+   // Visor Pro States
+   const [scale, setScale] = useState(1);
+   const [rotation, setRotation] = useState(0);
+   const [position, setPosition] = useState({ x: 0, y: 0 });
+   const [isDragging, setIsDragging] = useState(false);
+   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+   useEffect(() => {
+      if (!url) {
+         setSecuredUrl(null);
+         return;
+      }
+      
+      const fetchSecured = async () => {
+         // Detectar si la URL apunta a nuestro bucket restringido (Zero Trust)
+         if (url.includes('private_docs/')) {
+            const pathSegments = url.split('private_docs/');
+            if (pathSegments.length > 1) {
+               const filePath = pathSegments[1].split('?')[0]; 
+               const supabase = createClient();
+               // Generar token temporal de 1 Hora (3600s). Evita descargas forzadas usando download: false
+               const { data } = await supabase.storage.from('private_docs').createSignedUrl(filePath, 3600, { download: false });
+               if (data?.signedUrl) {
+                  setSecuredUrl(data.signedUrl);
+                  return;
+               }
+            }
+         }
+         // Fallback
+         setSecuredUrl(url);
+      };
+
+      fetchSecured();
+   }, [url]);
+
+   useEffect(() => {
+      if (isModalOpen) {
+         // Reset viewer states
+         setScale(1);
+         setRotation(0);
+         setPosition({ x: 0, y: 0 });
+
+         const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setIsModalOpen(false);
+         };
+         window.addEventListener('keydown', handleKeyDown);
+         return () => window.removeEventListener('keydown', handleKeyDown);
+      }
+   }, [isModalOpen]);
+
+   // Dragging Logic
+   const handleMouseDown = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+   };
+
+   const handleMouseMove = (e: React.MouseEvent) => {
+      if (!isDragging) return;
+      setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+   };
+
+   const handleMouseUp = () => setIsDragging(false);
+
+   // Tooling Logic
+   const zoomIn = (e: React.MouseEvent) => { e.stopPropagation(); setScale(prev => Math.min(prev + 0.5, 4)); };
+   const zoomOut = (e: React.MouseEvent) => { e.stopPropagation(); setScale(prev => Math.max(prev - 0.5, 0.5)); };
+   const rotateImage = (e: React.MouseEvent) => { e.stopPropagation(); setRotation(prev => prev + 90); };
+
    return (
       <>
-      <div 
-         onClick={() => url && setIsModalOpen(true)}
-         className={`bg-zinc-900 border-2 border-zinc-800 rounded-2xl overflow-hidden flex flex-col h-40 md:h-48 group transition relative ${url ? 'cursor-pointer hover:border-tdf-blue hover:shadow-[0_0_20px_rgba(43,99,217,0.2)]' : ''}`}>
-         <div className="bg-zinc-950 p-3 border-b border-zinc-800 flex justify-between items-center z-10">
-            <h4 className="font-bold text-zinc-300 text-[11px] uppercase tracking-wider">{title}</h4>
-            {url && (
-               <span className="text-[10px] font-bold text-blue-400 group-hover:text-blue-300 flex items-center gap-1 transition-colors uppercase bg-blue-500/10 px-2 py-0.5 rounded">
-                  <Search size={10} /> Ampliar
-               </span>
-            )}
-         </div>
-
-         <div className="flex-1 relative flex items-center justify-center bg-black p-2 overflow-hidden">
-            {url ? (
-               type === 'image' ? (
-                  <img src={url} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-110 transition duration-500 rounded-lg filter grayscale group-hover:grayscale-0" alt={title} />
-               ) : (
-                  <div className="text-center group-hover:scale-110 transition-transform duration-300">
-                     <FileText size={36} className="text-tdf-blue mb-2 mx-auto filter drop-shadow-[0_0_8px_rgba(43,99,217,0.5)]" />
-                     <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Ver PDF Documento</p>
-                  </div>
-               )
-            ) : (
-               <div className="text-center opacity-30">
-                  <AlertOctagon size={28} className="mx-auto mb-2 text-red-500" />
-                  <p className="font-bold text-[10px] uppercase">{missingText}</p>
-               </div>
-            )}
-         </div>
-      </div>
-
-      {/* DOCUMENT MODAL FULLSCREEN */}
-      {isModalOpen && url && (
-         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/90 backdrop-blur-md p-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="absolute top-4 right-4 md:top-8 md:right-8 flex gap-4 z-50">
-               <a 
-                  href={url} target="_blank" rel="noopener noreferrer" 
-                  className="bg-zinc-800/80 hover:bg-zinc-700 text-white p-3 rounded-xl transition flex items-center justify-center backdrop-blur"
-                  title="Descargar o Abrir en Pestaña Nueva"
-               >
-                  <Download size={20} />
-               </a>
-               <button 
-                  onClick={() => setIsModalOpen(false)}
-                  className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/50 p-3 rounded-xl transition backdrop-blur"
-               >
-                  <X size={20} />
-               </button>
+         <div
+            onClick={() => securedUrl && setIsModalOpen(true)}
+            className={`bg-zinc-900 border-2 border-zinc-800 rounded-2xl overflow-hidden flex flex-col h-40 md:h-48 group transition relative ${securedUrl ? 'cursor-pointer hover:border-tdf-blue hover:shadow-[0_0_20px_rgba(43,99,217,0.2)]' : ''}`}>
+            <div className="bg-zinc-950 p-3 border-b border-zinc-800 flex justify-between items-center z-10">
+               <h4 className="font-bold text-zinc-300 text-[11px] uppercase tracking-wider">{title}</h4>
+               {securedUrl && (
+                  <span className="text-[10px] font-bold text-blue-400 group-hover:text-blue-300 flex items-center gap-1 transition-colors uppercase bg-blue-500/10 px-2 py-0.5 rounded">
+                     <Search size={10} /> Ampliar
+                  </span>
+               )}
             </div>
-            
-            <div className="w-full h-full max-w-5xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col relative mt-16 md:mt-0 max-h-[90vh]">
-               <div className="bg-zinc-950 px-6 py-4 border-b border-zinc-800 flex justify-between items-center z-10">
-                  <h3 className="text-lg font-black text-white">{title}</h3>
-               </div>
-               <div className="flex-1 overflow-hidden bg-zinc-950 p-2 md:p-6 flex justify-center items-center">
-                  {type === 'image' ? (
-                     <img src={url} className="max-w-full max-h-full object-contain rounded-xl shadow-lg" alt={title} />
+
+            <div className="flex-1 relative flex items-center justify-center bg-black p-2 overflow-hidden">
+               {securedUrl ? (
+                  isActuallyImage ? (
+                     <img src={securedUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-110 transition duration-500 rounded-lg filter grayscale group-hover:grayscale-0" alt={title} />
                   ) : (
-                     <iframe src={url} className="w-full h-full rounded-xl bg-white shadow-lg" />
-                  )}
-               </div>
+                     <div className="text-center group-hover:scale-110 transition-transform duration-300">
+                        <FileText size={36} className="text-tdf-blue mb-2 mx-auto filter drop-shadow-[0_0_8px_rgba(43,99,217,0.5)]" />
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Ver PDF Documento</p>
+                     </div>
+                  )
+               ) : (
+                  <div className="text-center opacity-30">
+                     <AlertOctagon size={28} className="mx-auto mb-2 text-red-500" />
+                     <p className="font-bold text-[10px] uppercase">{missingText}</p>
+                  </div>
+               )}
             </div>
          </div>
-      )}
+
+         {/* DOCUMENT MODAL FULLSCREEN CON VISOR PRO */}
+         {isModalOpen && securedUrl && (
+            <div 
+               className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/90 backdrop-blur-md p-4 animate-in fade-in zoom-in-95 duration-200"
+               onClick={() => setIsModalOpen(false)}
+            >
+               <div className="absolute top-4 right-4 md:top-8 md:right-8 flex gap-4 z-50">
+                  <a
+                     href={securedUrl} target="_blank" rel="noopener noreferrer"
+                     onClick={(e) => e.stopPropagation()}
+                     className="bg-zinc-800/80 hover:bg-zinc-700 text-white p-3 rounded-xl transition flex items-center justify-center backdrop-blur shadow-lg"
+                     title="Descargar o Abrir en Pestaña Nueva"
+                  >
+                     <Download size={20} />
+                  </a>
+                  <button
+                     onClick={(e) => { e.stopPropagation(); setIsModalOpen(false); }}
+                     className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/50 p-3 rounded-xl transition backdrop-blur shadow-lg"
+                  >
+                     <X size={20} />
+                  </button>
+               </div>
+
+               <div 
+                  className="w-full h-full max-w-5xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col relative mt-16 md:mt-0 max-h-[90vh]"
+                  onClick={(e) => e.stopPropagation()}
+               >
+                  <div className="bg-zinc-950 px-6 py-4 border-b border-zinc-800 flex justify-between items-center z-10">
+                     <h3 className="text-lg font-black text-white">{title}</h3>
+                     {isActuallyImage && (
+                        <div className="flex gap-2">
+                            <button onClick={zoomOut} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-300 transition" title="Alejar"><ZoomOut size={18} /></button>
+                            <button onClick={zoomIn} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-300 transition" title="Acercar"><ZoomIn size={18} /></button>
+                            <div className="w-px h-6 bg-zinc-700 mx-1 self-center" />
+                            <button onClick={rotateImage} className="p-2 px-3 flex items-center gap-2 bg-zinc-800 hover:bg-tdf-blue rounded-lg text-white font-semibold transition" title="Rotar 90°">
+                               <RotateCw size={18} /> Rotar
+                            </button>
+                        </div>
+                     )}
+                  </div>
+
+                  <div 
+                     className={`flex-1 overflow-hidden bg-black p-2 md:p-6 flex justify-center items-center relative ${isActuallyImage ? 'cursor-move selection:bg-transparent' : ''}`}
+                     onMouseDown={isActuallyImage ? handleMouseDown : undefined}
+                     onMouseUp={isActuallyImage ? handleMouseUp : undefined}
+                     onMouseLeave={isActuallyImage ? handleMouseUp : undefined}
+                     onMouseMove={isActuallyImage ? handleMouseMove : undefined}
+                  >
+                     {isActuallyImage ? (
+                        <img 
+                           src={securedUrl} 
+                           className="max-w-none transition-transform duration-200 ease-out will-change-transform rounded-sm shadow-xl pointer-events-none" 
+                           style={{ 
+                              transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+                              transformOrigin: 'center center',
+                              maxWidth: '100%',
+                              maxHeight: '100%'
+                           }}
+                           alt={title} 
+                        />
+                     ) : (
+                        <embed src={securedUrl} type="application/pdf" className="w-full h-full rounded-xl bg-white shadow-lg pointer-events-auto" />
+                     )}
+                  </div>
+               </div>
+            </div>
+         )}
       </>
    );
 }

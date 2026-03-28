@@ -55,7 +55,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     router.push('/')
                     return
                 }
-                
+
                 // Aplicar el tema escogido por el usuario guardado en la nube
                 if (profile.theme_preference) {
                     setTheme(profile.theme_preference)
@@ -129,7 +129,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Correo Electrónico o DNI
+                                Usuario
                             </label>
                             <input
                                 type="text"
