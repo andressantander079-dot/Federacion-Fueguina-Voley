@@ -662,13 +662,23 @@ export default function AdminTramitesPage() {
                                     })()
                                  )}
 
-                                 {/* 1. FOTO */}
+                                 {/* 1. DOCUMENTO DNI */}
                                  <DocumentCard
-                                    title="Foto DNI"
-                                    url={selectedItem.originalData.photo_url}
-                                    type="image"
-                                    missingText="Falta Foto"
+                                    title="Documento DNI (Frente/Dorso)"
+                                    url={selectedItem.originalData.dni_url}
+                                    type="document"
+                                    missingText="Falta DNI OBLIGATORIO"
                                  />
+
+                                 {/* 1b. FOTO PERFIL OPCIONAL */}
+                                 {selectedItem.originalData.photo_url && (
+                                     <DocumentCard
+                                        title="Foto Perfil"
+                                        url={selectedItem.originalData.photo_url}
+                                        type="image"
+                                        missingText=""
+                                     />
+                                 )}
 
                                  {/* 2. FICHA MEDICA */}
                                  <DocumentCard
