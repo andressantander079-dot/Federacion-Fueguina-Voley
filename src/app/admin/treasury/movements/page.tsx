@@ -118,7 +118,7 @@ export default function TreasuryMovementsPage() {
                                 {movements.map(mov => (
                                     <tr key={mov.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/20 transition-colors group">
                                         <td className="p-4 text-sm font-medium text-slate-600 dark:text-slate-400">
-                                            {new Date(mov.date).toLocaleDateString('es-AR')}
+                                            {mov.date.split('T')[0].split('-').reverse().join('/')}
                                         </td>
                                         <td className="p-4">
                                             <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${mov.type === 'INGRESO' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'

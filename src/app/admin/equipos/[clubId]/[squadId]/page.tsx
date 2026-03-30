@@ -190,21 +190,24 @@ export default function SquadPlayersPage() {
 
             // Use exact same bucket locations as clubs to match Tramites process
             if (newPlayer.photo) {
-                const fileExt = newPlayer.photo.name.split('.').pop()
+                const fileExt = newPlayer.photo.name.split('.').pop() || '';
                 const fileName = `${clubId}/${newPlayer.dni}/avatar-${Date.now()}.${fileExt}`
-                await supabase.storage.from('public_avatars').upload(fileName, newPlayer.photo)
+                const cType = newPlayer.photo.type || (fileExt.toLowerCase() === 'pdf' ? 'application/pdf' : 'image/jpeg');
+                await supabase.storage.from('public_avatars').upload(fileName, newPlayer.photo, { contentType: cType, upsert: true })
                 photoUrl = supabase.storage.from('public_avatars').getPublicUrl(fileName).data.publicUrl
             }
             if (newPlayer.payment) {
-                const fileExt = newPlayer.payment.name.split('.').pop()
+                const fileExt = newPlayer.payment.name.split('.').pop() || '';
                 const payFileName = `${clubId}/${newPlayer.dni}/pago-${Date.now()}.${fileExt}`
-                await supabase.storage.from('private_docs').upload(payFileName, newPlayer.payment)
+                const cType = newPlayer.payment.type || (fileExt.toLowerCase() === 'pdf' ? 'application/pdf' : 'image/jpeg');
+                await supabase.storage.from('private_docs').upload(payFileName, newPlayer.payment, { contentType: cType, upsert: true })
                 paymentUrl = supabase.storage.from('private_docs').getPublicUrl(payFileName).data.publicUrl
             }
             if (newPlayer.medical) {
-                const fileExt = newPlayer.medical.name.split('.').pop()
+                const fileExt = newPlayer.medical.name.split('.').pop() || '';
                 const medFileName = `${clubId}/${newPlayer.dni}/medico-${Date.now()}.${fileExt}`
-                await supabase.storage.from('private_docs').upload(medFileName, newPlayer.medical)
+                const cType = newPlayer.medical.type || (fileExt.toLowerCase() === 'pdf' ? 'application/pdf' : 'image/jpeg');
+                await supabase.storage.from('private_docs').upload(medFileName, newPlayer.medical, { contentType: cType, upsert: true })
                 medicalUrl = supabase.storage.from('private_docs').getPublicUrl(medFileName).data.publicUrl
                 cemadPendiente = false;
                 cemadStatus = 'uploaded';
