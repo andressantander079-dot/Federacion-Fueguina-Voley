@@ -51,11 +51,14 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
             // 2. Upload File (Si existe)
             let proof_url = null
             if (file) {
-                const fileExt = file.name.split('.').pop()
+                const fileExt = file.name.split('.').pop() || '';
                 const fileName = `${Math.random()}.${fileExt}`
                 const filePath = `treasury/${fileName}`
 
-                const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file)
+                const { error: uploadError } = await supabase.storage.from('private_docs').upload(filePath, file, { 
+                    upsert: true,
+                    contentType: file.type || (fileExt.toLowerCase() === 'pdf' ? 'application/pdf' : 'image/jpeg') 
+                })
                 if (uploadError) throw uploadError
                 proof_url = filePath
             }

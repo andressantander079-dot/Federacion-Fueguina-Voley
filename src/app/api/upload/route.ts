@@ -17,11 +17,21 @@ export async function POST(req: Request) {
             process.env.SUPABASE_SERVICE_ROLE_KEY!
         );
 
+        let contentType = file.type;
+        if (!contentType || contentType === 'application/octet-stream') {
+             const ext = fileName.split('.').pop()?.toLowerCase();
+             if (ext === 'pdf') contentType = 'application/pdf';
+             else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+             else if (ext === 'png') contentType = 'image/png';
+             else if (ext === 'webp') contentType = 'image/webp';
+             else contentType = 'image/jpeg'; // fallback
+        }
+
         const { data, error } = await supabase.storage
             .from(bucketName)
             .upload(fileName, file, {
                 upsert: true,
-                contentType: file.type // IMPORTANTE: Para evitar que se descargue como octet-stream
+                contentType: contentType
             });
 
         if (error) {
