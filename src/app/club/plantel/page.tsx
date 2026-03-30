@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign, Lock, Unlock, Plus, Trash, Search, Download, Eye, RefreshCw, X, Pencil, MapPin, Tag, ShieldCheck, Mail, Award, Calendar } from 'lucide-react';
+import { UserPlus, FolderPlus, ChevronRight, Save, Camera, FileText, Trash2, AlertCircle, CheckCircle, Users, Shield, DollarSign, Lock, Unlock, Plus, Trash, Search, Download, Eye, RefreshCw, X, Pencil, MapPin, Tag, ShieldCheck, Mail, Award, Calendar, IdCard } from 'lucide-react';
 import PinPadModal from '@/components/security/PinPadModal';
 import EmptyState from '@/components/ui/EmptyState';
 import { ProfileCropperModal } from '@/components/ui/ProfileCropperModal';
@@ -75,6 +75,7 @@ export default function PlantelPage() {
     gender: 'Femenino',
     license_type: 'Jugador',
     photo_file: null as File | null,
+    dni_file: null as File | null,
     medical_file: null as File | null,
     payment_file: null as File | null,
     authorization_file: null as File | null
@@ -128,14 +129,9 @@ export default function PlantelPage() {
         e.target.value = '';
         return;
       }
-      // If it's a PDF, we bypass the cropper and store it directly.
-      if (file.type === 'application/pdf') {
-         setNuevoJugador(prev => ({ ...prev, photo_file: file }));
-      } else {
-         const imageUrl = URL.createObjectURL(file);
-         setTempPhotoSrc(imageUrl);
-         setIsCroppingPhoto(true);
-      }
+      const imageUrl = URL.createObjectURL(file);
+      setTempPhotoSrc(imageUrl);
+      setIsCroppingPhoto(true);
     }
     // reset input allows picking the same file again if canceled
     e.target.value = '';
@@ -216,7 +212,7 @@ export default function PlantelPage() {
     }
   };
 
-  const handleDocumentSelect = (e: React.ChangeEvent<HTMLInputElement>, field: 'medical_file' | 'payment_file' | 'authorization_file') => {
+  const handleDocumentSelect = (e: React.ChangeEvent<HTMLInputElement>, field: 'medical_file' | 'payment_file' | 'authorization_file' | 'dni_file') => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       if (checkFileSize(file)) {
@@ -517,9 +513,9 @@ export default function PlantelPage() {
         .eq('dni', dniLimpio);
 
       // Only Check mandatory fields
-      if (!nuevoJugador.photo_file) {
+      if (!nuevoJugador.dni_file) {
         setUploading(false);
-        return toast.error("La Foto DNI es obligatoria.");
+        return toast.error("El Documento DNI (foto del frente y dorso o PDF) es obligatorio.");
       }
       if (!nuevoJugador.payment_file) {
         setUploading(false);
@@ -532,6 +528,13 @@ export default function PlantelPage() {
         const fileExt = nuevoJugador.photo_file.name.split('.').pop();
         const fileName = `${clubId}/${nuevoJugador.dni}/avatar-${Date.now()}.${fileExt}`;
         photoUrl = await uploadFileAPI(nuevoJugador.photo_file, 'public_avatars', fileName);
+      }
+
+      let dniUrl = null;
+      if (nuevoJugador.dni_file) {
+        const fileExt = nuevoJugador.dni_file.name.split('.').pop();
+        const dniFileName = `${clubId}/${nuevoJugador.dni}/dni-${Date.now()}.${fileExt}`;
+        dniUrl = await uploadFileAPI(nuevoJugador.dni_file, 'private_docs', dniFileName);
       }
 
       let paymentUrl = null;
@@ -574,6 +577,7 @@ export default function PlantelPage() {
             position: nuevoJugador.position,
             // Only update files if they uploaded new ones during this step, otherwise keep old ones
             ...(photoUrl && { photo_url: photoUrl }),
+            ...(dniUrl && { dni_url: dniUrl }),
             ...(paymentUrl && { payment_url: paymentUrl }),
             ...(medicalUrl && { medical_url: medicalUrl }),
             ...(authorizationUrl && { family_authorization_url: authorizationUrl }),
@@ -584,7 +588,7 @@ export default function PlantelPage() {
 
           if (updateError) throw updateError;
           toast.success("Jugador reasignado. El pase federal ha sido completado y el jugador ya forma parte de este plantel.");
-          setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', gender: 'Femenino', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
+          setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', gender: 'Femenino', photo_file: null, dni_file: null, medical_file: null, payment_file: null, authorization_file: null });
           cargarJugadores(squadActual.id);
           setUploading(false);
           return;
@@ -607,6 +611,7 @@ export default function PlantelPage() {
         position: nuevoJugador.position,
         gender: nuevoJugador.gender,
         photo_url: photoUrl,
+        dni_url: dniUrl,
         payment_url: paymentUrl,
         medical_url: medicalUrl,
         family_authorization_url: authorizationUrl,
@@ -618,7 +623,7 @@ export default function PlantelPage() {
       if (error) throw error;
 
       toast.success("Jugador inscripto.");
-      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', gender: 'Femenino', photo_file: null, medical_file: null, payment_file: null, authorization_file: null });
+      setNuevoJugador({ ...nuevoJugador, name: '', dni: '', birth_date: '', gender: 'Femenino', photo_file: null, dni_file: null, medical_file: null, payment_file: null, authorization_file: null });
       cargarJugadores(squadActual.id);
 
     } catch (error: any) {
@@ -1049,9 +1054,17 @@ export default function PlantelPage() {
                               <Plus size={16} className="shrink-0" /> <DollarSign size={16} className="hidden md:block shrink-0" />
                            </label>
                         )}
+                        {/* Botón DNI Faltante */}
+                        {((j.status === 'pending' || j.status === 'rejected') && !j.dni_url) && (
+                           <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(37,99,235,0.5)] flex items-center gap-1" title="Subir Documento DNI">
+                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'dni_url' as any)} />
+                              <Plus size={16} className="shrink-0" /> <IdCard size={16} className="hidden md:block shrink-0" />
+                           </label>
+                        )}
 
                         {j.medical_url && j.cemad_pendiente !== true && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
-                        {j.photo_url && <span title="Foto OK"><Camera size={16} className="text-blue-500" /></span>}
+                        {j.dni_url ? <span title="DNI Subido"><IdCard size={16} className="text-blue-500" /></span> : <span title="Falta DNI"><IdCard size={16} className="text-zinc-600" /></span>}
+                        {j.photo_url && <span title="Foto de Perfil OK"><Camera size={16} className="text-blue-400" /></span>}
                         {j.family_authorization_url && <span title="Autorización Tutor OK"><ShieldCheck size={16} className="text-yellow-500" /></span>}
                         {j.payment_url && <span title="Comprobante OK"><DollarSign size={16} className="text-green-500" /></span>}
                       </div>
@@ -1143,15 +1156,23 @@ export default function PlantelPage() {
                     </div>
 
                     <div className="pt-4 border-t border-zinc-800 space-y-3">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase">Documentación (Max 10MB c/u)</p>
+                      <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
+                        <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><IdCard size={16} /></div>
+                        <div className="flex-1 overflow-hidden">
+                          <div className="text-xs font-bold text-zinc-300">Documento DNI <span className="text-red-500">*</span></div>
+                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.dni_file ? nuevoJugador.dni_file.name : 'Subir PDF/JPG (Obligatorio)'}</div>
+                        </div>
+                        <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => handleDocumentSelect(e, 'dni_file')} />
+                        {nuevoJugador.dni_file && <CheckCircle size={14} className="text-green-500" />}
+                      </label>
 
                       <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                         <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><Camera size={16} /></div>
                         <div className="flex-1 overflow-hidden">
-                          <div className="text-xs font-bold text-zinc-300">Foto DNI <span className="text-red-500">*</span></div>
-                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.photo_file ? nuevoJugador.photo_file.name : 'Subir JPG/PNG/PDF'}</div>
+                          <div className="text-xs font-bold text-zinc-300">Foto de Perfil <span className="text-zinc-500 font-normal text-[10px]">(Opcional)</span></div>
+                          <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.photo_file ? nuevoJugador.photo_file.name : 'Click para Avatar'}</div>
                         </div>
-                        <input type="file" hidden accept=".pdf,image/*" onChange={handlePhotoSelect} />
+                        <input type="file" hidden accept="image/*" onChange={handlePhotoSelect} />
                         {nuevoJugador.photo_file && <CheckCircle size={14} className="text-green-500" />}
                       </label>
 
