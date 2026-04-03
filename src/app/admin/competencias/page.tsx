@@ -3,13 +3,14 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { Trophy, Plus, Users, Calendar, Filter, CheckCircle, XCircle, Trash2, Archive, RefreshCcw } from 'lucide-react';
+import { Trophy, Plus, Users, Calendar, Filter, CheckCircle, XCircle, Trash2, Archive, RefreshCcw, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function AdminCompetenciasList() {
     const [torneos, setTorneos] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
+    const [viewFilter, setViewFilter] = useState('Todas');
 
     // --- DATOS PARA EL FORMULARIO ---
     const [categorias, setCategorias] = useState<any[]>([]);
@@ -23,7 +24,7 @@ export default function AdminCompetenciasList() {
         gender: 'Masculino',
         season: new Date().getFullYear().toString(),
         point_system: 'fivb',
-        city: 'Todas',
+        city: 'Interprovincial',
         selected_teams: [] as string[]
     });
 
@@ -88,8 +89,12 @@ export default function AdminCompetenciasList() {
 
                 if (teamIds.length > 0) {
                     let query = supabase.from('teams').select('id, name, city').in('id', teamIds);
-                    if (newTourney.city !== 'Todas') {
-                        query = query.eq('city', newTourney.city);
+                    if (newTourney.city !== 'Interprovincial') {
+                        if (newTourney.city === 'Río Grande-Tolhuin') {
+                            query = query.in('city', ['Río Grande', 'Rio Grande', 'Tolhuin']);
+                        } else {
+                            query = query.eq('city', newTourney.city);
+                        }
                     }
                     const { data: teamsData, error: teamsError } = await query;
 
@@ -146,6 +151,7 @@ export default function AdminCompetenciasList() {
                 gender: newTourney.gender,
                 season: newTourney.season,
                 point_system: newTourney.point_system,
+                city: newTourney.city,
                 status: 'borrador'
             }])
             .select()
@@ -184,7 +190,7 @@ export default function AdminCompetenciasList() {
 
         setModalOpen(false);
         setNewTourney({
-            name: '', category_id: '', gender: 'Masculino', season: new Date().getFullYear().toString(), point_system: 'fivb', city: 'Todas', selected_teams: []
+            name: '', category_id: '', gender: 'Masculino', season: new Date().getFullYear().toString(), point_system: 'fivb', city: 'Interprovincial', selected_teams: []
         });
         fetchTorneos();
     };
@@ -234,6 +240,15 @@ export default function AdminCompetenciasList() {
                 </button>
             </div>
 
+            {/* FILTROS GLOBALES */}
+            <div className="flex flex-wrap gap-2 border-b border-zinc-800 pb-4">
+                {['Todas', 'Interprovincial', 'Ushuaia', 'Río Grande-Tolhuin'].map(f => (
+                    <button key={f} onClick={() => setViewFilter(f)} className={`px-4 py-2 font-bold text-xs rounded-lg border transition ${viewFilter === f ? 'bg-tdf-blue text-white border-tdf-blue' : 'bg-transparent text-zinc-500 border-zinc-800 hover:text-white'}`}>
+                        {f === 'Todas' ? 'Todos los Torneos' : f}
+                    </button>
+                ))}
+            </div>
+
             {/* LISTA TORNEOS */}
             {loading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -248,7 +263,7 @@ export default function AdminCompetenciasList() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {torneos.map((t: any) => (
+                    {torneos.filter(t => viewFilter === 'Todas' || t.city === viewFilter).map((t: any) => (
                         <div key={t.id} className="relative group">
                             <Link href={`/admin/competencias/${t.id}`}>
                                 <div className={`bg-zinc-900 p-0 rounded-xl shadow-sm border border-zinc-800 hover:shadow-md hover:border-tdf-blue transition cursor-pointer relative overflow-hidden flex flex-col h-full ${t.status === 'archivado' ? 'opacity-50 grayscale' : ''}`}>
@@ -275,9 +290,13 @@ export default function AdminCompetenciasList() {
                                         </div>
 
                                         <div className="mt-auto space-y-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="px-3 py-1 bg-zinc-950 text-zinc-400 text-xs font-bold rounded-lg border border-zinc-800 uppercase w-full text-center">
+                                            <div className="flex items-center gap-2 w-full justify-between">
+                                                <span className="px-3 py-1 bg-zinc-950 text-zinc-400 text-[10px] font-bold rounded-lg border border-zinc-800 uppercase text-center flex-1">
                                                     {t.category?.name || 'General'}
+                                                </span>
+                                                <span className="px-2 py-1 bg-zinc-950 text-zinc-300 text-[10px] sm:text-[9px] font-black rounded-lg border border-zinc-700 uppercase flex items-center justify-center gap-1 flex-1 shrink-0">
+                                                    <MapPin size={10} className={t.city === 'Interprovincial' ? 'text-yellow-500' : 'text-tdf-blue'} />
+                                                    <span className="truncate">{t.city || 'Interprovincial'}</span>
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2">
@@ -375,9 +394,9 @@ export default function AdminCompetenciasList() {
                                             value={newTourney.city}
                                             onChange={e => setNewTourney({ ...newTourney, city: e.target.value })}
                                         >
-                                            <option value="Todas">Todas las ciudades</option>
+                                            <option value="Interprovincial">Interprovincial (Todas)</option>
                                             <option value="Ushuaia">Ushuaia</option>
-                                            <option value="Río Grande">Río Grande</option>
+                                            <option value="Río Grande-Tolhuin">Río Grande - Tolhuin</option>
                                         </select>
                                     </div>
                                 </div>

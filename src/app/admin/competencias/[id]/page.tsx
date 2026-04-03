@@ -33,6 +33,7 @@ export default function DetalleTorneoPage() {
    const [modalPartido, setModalPartido] = useState(false);
 
    // FORMULARIO
+   const [isCustomRound, setIsCustomRound] = useState(false);
    const [nuevoPartido, setNuevoPartido] = useState({
       home_team_id: '',
       away_team_id: '',
@@ -118,13 +119,21 @@ export default function DetalleTorneoPage() {
       try {
          const { data: conflictosRound, error: errorRound } = await supabase
             .from('matches')
-            .select('id')
+            .select('id, home_team_id, away_team_id')
             .eq('tournament_id', id)
             .eq('round', round)
             .or(`home_team_id.eq.${homeId},away_team_id.eq.${homeId},home_team_id.eq.${awayId},away_team_id.eq.${awayId}`);
 
          if (errorRound) { console.error("Error BD Round:", errorRound); return null; }
-         if (conflictosRound && conflictosRound.length > 0) return `⚠️ ERROR: Uno de los equipos ya tiene partido programado en la ${round}.`;
+         if (conflictosRound && conflictosRound.length > 0) {
+             const conflict = conflictosRound[0];
+             let ofensorId = '';
+             if (conflict.home_team_id === homeId || conflict.away_team_id === homeId) ofensorId = homeId;
+             else if (conflict.home_team_id === awayId || conflict.away_team_id === awayId) ofensorId = awayId;
+             
+             const nombreEquipo = equiposInscriptos.find(e => e.id === ofensorId)?.name || 'El equipo';
+             return `El ${nombreEquipo}, ya jugó la ${round}.`;
+         }
 
          const isoDate = new Date(fechaHora).toISOString();
          const { data: conflictosHora, error: errorHora } = await supabase
@@ -201,6 +210,13 @@ export default function DetalleTorneoPage() {
          </div>
       </div>
    );
+
+   const existentesRondas = Array.from(new Set([...partidosOficiales, ...partidosPendientes].map(m => m.round).filter(Boolean))).sort((a: any, b: any) => {
+       const numA = parseInt(a.match(/\d+/) || '0');
+       const numB = parseInt(b.match(/\d+/) || '0');
+       return numA - numB;
+   });
+   if (existentesRondas.length === 0) existentesRondas.push('Fecha 1');
 
    return (
       <div className="min-h-screen bg-zinc-950 p-6 md:p-10 text-white">
@@ -412,8 +428,29 @@ export default function DetalleTorneoPage() {
                      <div>
                         <label className="text-xs font-bold text-zinc-500 uppercase block mb-1.5 ml-1">Jornada / Fecha</label>
                         <div className="relative">
-                           <Calendar size={18} className="absolute left-3 top-3.5 text-zinc-500" />
-                           <input className="w-full bg-zinc-950 border border-zinc-800 p-3 pl-10 rounded-xl font-bold text-white outline-none focus:border-tdf-blue focus:ring-1 focus:ring-tdf-blue placeholder-zinc-700" placeholder="Ej: Fecha 1" value={nuevoPartido.round} onChange={e => setNuevoPartido({ ...nuevoPartido, round: e.target.value })} required />
+                           <Calendar size={18} className="absolute left-3 top-3.5 text-zinc-500 z-10" />
+                           {!isCustomRound ? (
+                              <select className="w-full bg-zinc-950 border border-zinc-800 p-3 pl-10 rounded-xl font-bold text-white outline-none focus:border-tdf-blue focus:ring-1 focus:ring-tdf-blue appearance-none cursor-pointer"
+                                 value={nuevoPartido.round} 
+                                 onChange={e => {
+                                     if (e.target.value === 'ADD_NEW') {
+                                         setIsCustomRound(true);
+                                         setNuevoPartido({ ...nuevoPartido, round: '' });
+                                     } else {
+                                         setNuevoPartido({ ...nuevoPartido, round: e.target.value });
+                                     }
+                                 }} 
+                                 required
+                              >
+                                 {existentesRondas.map((r: string) => <option key={r} value={r}>{r}</option>)}
+                                 <option value="ADD_NEW">+ Agregar Fecha Faltante...</option>
+                              </select>
+                           ) : (
+                              <div className="flex">
+                                 <input className="w-full bg-zinc-950 border border-zinc-800 p-3 pl-10 rounded-l-xl font-bold text-white outline-none focus:border-tdf-blue focus:ring-1 focus:ring-tdf-blue placeholder-zinc-700" placeholder="Ej: Fecha 3" value={nuevoPartido.round} onChange={e => setNuevoPartido({ ...nuevoPartido, round: e.target.value })} required autoFocus />
+                                 <button type="button" onClick={() => { setIsCustomRound(false); setNuevoPartido({ ...nuevoPartido, round: existentesRondas[0] || 'Fecha 1' }); }} className="bg-zinc-800 px-4 rounded-r-xl text-zinc-400 hover:text-white font-bold transition">✕</button>
+                              </div>
+                           )}
                         </div>
                      </div>
                      <div className="grid grid-cols-2 gap-4">

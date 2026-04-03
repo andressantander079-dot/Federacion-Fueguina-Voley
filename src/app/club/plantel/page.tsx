@@ -1089,6 +1089,8 @@ export default function PlantelPage() {
                       <div className="col-span-1">
                         <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Dorsal</label>
                         <input
+                          required
+                          type="number"
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-center font-bold text-white outline-none focus:border-orange-500 transition-colors"
                           placeholder="#"
                           value={nuevoJugador.number}
