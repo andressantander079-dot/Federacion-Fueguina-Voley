@@ -101,7 +101,7 @@ export default function RefereeDashboard() {
                                     {/* Header Info */}
                                     <div className="flex items-center gap-2 mb-6 text-zinc-400 text-xs font-bold uppercase tracking-widest">
                                         <span className="text-tdf-orange"><Clock size={12} /></span>
-                                        <span>{formatArgentinaDateLiteral(matchItem.match.scheduled_time, { weekday: 'short', day: 'numeric' }).split(',')[0]} - {formatArgentinaTimeLiteral(matchItem.match.scheduled_time)} HS</span>
+                                        <span>{formatArgentinaDateLiteral(matchItem.match.scheduled_time).split(',').slice(0, 2).join(',')} - {formatArgentinaTimeLiteral(matchItem.match.scheduled_time)} HS</span>
                                         <span className="w-1 h-1 bg-zinc-700 rounded-full"></span>
                                         <span>{matchItem.match.court_name || 'A Confirmar'}</span>
                                     </div>

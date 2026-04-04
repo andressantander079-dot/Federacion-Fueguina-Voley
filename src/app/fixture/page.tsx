@@ -18,8 +18,9 @@ export default function FixturePage() {
   // Selected Filters
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [selectedGender, setSelectedGender] = useState<string>('');
+  const [selectedCity, setSelectedCity] = useState<string>('Todas');
   const [selectedTournamentId, setSelectedTournamentId] = useState<string>('');
-  const [tournaments, setTournaments] = useState<any[]>([]); // Tournaments matching cat/gender
+  const [tournaments, setTournaments] = useState<any[]>([]); // Tournaments matching cat/gender/city
 
   // Active Data
   const [activeTournament, setActiveTournament] = useState<any>(null);
@@ -54,12 +55,12 @@ export default function FixturePage() {
     loadInitialData();
   }, []);
 
-  // 2. Fetch Tournaments when Category/Gender changes
+  // 2. Fetch Tournaments when Category/Gender/City changes
   useEffect(() => {
-    if (selectedCategoryId && selectedGender) {
+    if (selectedCategoryId && selectedGender && selectedCity) {
       fetchTournaments();
     }
-  }, [selectedCategoryId, selectedGender]);
+  }, [selectedCategoryId, selectedGender, selectedCity]);
 
   // 3. Set Active Tournament details when ID changes
   useEffect(() => {
@@ -76,13 +77,19 @@ export default function FixturePage() {
 
   async function fetchTournaments() {
     setLoadingDetails(true); // Small loading indicator for select update
-    const { data } = await supabase
+    let query = supabase
       .from('tournaments')
       .select('*, category:categories(id, name)')
       .eq('category_id', selectedCategoryId)
       .eq('gender', selectedGender)
       .neq('status', 'archivado') // Show all except archived
       .order('created_at', { ascending: false });
+
+    if (selectedCity !== 'Todas') {
+      query = query.eq('city', selectedCity);
+    }
+    
+    const { data } = await query;
 
     if (data) {
       setTournaments(data);
@@ -169,9 +176,9 @@ export default function FixturePage() {
           </p>
         </header>
 
-        {/* FILTERS - Category First approach (Like Posiciones) */}
+        {/* FILTERS - Add City Filter and format to 4 Cols */}
         <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
 
             {/* 1. Category */}
             <div>
@@ -201,7 +208,25 @@ export default function FixturePage() {
               </select>
             </div>
 
-            {/* 3. Tournament (Filtered by Cat/Gender) */}
+            {/* 3. Region/City */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 ml-1">Región</label>
+              <div className="relative">
+                <MapPin size={18} className="absolute left-3 top-3.5 text-slate-400" />
+                <select
+                  className="w-full bg-slate-100 dark:bg-black/50 text-slate-900 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 font-bold outline-none focus:border-tdf-orange transition appearance-none cursor-pointer"
+                  value={selectedCity}
+                  onChange={e => setSelectedCity(e.target.value)}
+                >
+                  <option value="Todas" className="text-slate-900 dark:text-white">Todas</option>
+                  <option value="Interprovincial" className="text-slate-900 dark:text-white">Interprovincial</option>
+                  <option value="Ushuaia" className="text-slate-900 dark:text-white">Ushuaia</option>
+                  <option value="Río Grande-Tolhuin" className="text-slate-900 dark:text-white">Río Gde - Tolhuin</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 4. Tournament (Filtered by Cat/Gender/City) */}
             <div>
               <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 ml-1">Torneo</label>
               <div className="relative">
@@ -346,17 +371,19 @@ export default function FixturePage() {
                               </div>
 
                               {/* TEAMS */}
-                              <div className="flex-1 w-full grid grid-cols-3 items-center gap-4">
-                                <div className={`flex items-center gap-3 justify-end font-bold truncate ${m.home_score > m.away_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
-                                  <span className="hidden md:inline">{m.home_team?.name}</span>
-                                  <span className="md:hidden">{m.home_team?.name.slice(0, 3).toUpperCase()}</span>
+                              <div className="flex-1 w-full flex items-center justify-between gap-2 overflow-hidden px-2">
+                                {/* HOME TEAM */}
+                                <div className={`flex items-center gap-2 justify-end font-bold flex-1 min-w-0 ${m.home_score > m.away_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
+                                  <span className="truncate hidden sm:block text-right">{m.home_team?.name}</span>
+                                  <span className="truncate sm:hidden text-right">{m.home_team?.name.substring(0, 8)}...</span>
                                   {m.home_team?.shield_url && (
-                                    <img src={m.home_team.shield_url} className="w-8 h-8 object-contain" alt="" />
+                                    <img src={m.home_team.shield_url} className="w-8 h-8 object-contain shrink-0" alt="" />
                                   )}
                                 </div>
 
-                                <div className="flex justify-center">
-                                  <div className={`px-4 py-1.5 rounded-lg font-mono font-bold text-sm shadow-inner min-w-[80px] text-center ${m.status === 'finalizado' ? 'bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white' : (m.status === 'live' || m.status === 'en_curso') ? 'bg-red-500 text-white animate-pulse cursor-pointer hover:bg-red-600' : 'bg-blue-50 dark:bg-blue-900/20 text-tdf-blue dark:text-blue-400'}`}>
+                                {/* SCORE/VS */}
+                                <div className="flex justify-center shrink-0 mx-2">
+                                  <div className={`px-4 py-1.5 rounded-lg font-mono font-bold text-sm shadow-inner min-w-[70px] text-center ${m.status === 'finalizado' ? 'bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white' : (m.status === 'live' || m.status === 'en_curso') ? 'bg-red-500 text-white animate-pulse cursor-pointer hover:bg-red-600' : 'bg-blue-50 dark:bg-blue-900/20 text-tdf-blue dark:text-blue-400'}`}>
                                     {(m.status === 'live' || m.status === 'en_curso') ? (
                                       <a href={`/vivo/${m.id}`} className="flex items-center justify-center gap-1">LIVE</a>
                                     ) : (
@@ -365,12 +392,13 @@ export default function FixturePage() {
                                   </div>
                                 </div>
 
-                                <div className={`flex items-center gap-3 justify-start font-bold truncate ${m.away_score > m.home_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
+                                {/* AWAY TEAM */}
+                                <div className={`flex items-center gap-2 justify-start font-bold flex-1 min-w-0 ${m.away_score > m.home_score ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-500'}`}>
                                   {m.away_team?.shield_url && (
-                                    <img src={m.away_team.shield_url} className="w-8 h-8 object-contain" alt="" />
+                                    <img src={m.away_team.shield_url} className="w-8 h-8 object-contain shrink-0" alt="" />
                                   )}
-                                  <span className="hidden md:inline">{m.away_team?.name}</span>
-                                  <span className="md:hidden">{m.away_team?.name.slice(0, 3).toUpperCase()}</span>
+                                  <span className="truncate hidden sm:block text-left">{m.away_team?.name}</span>
+                                  <span className="truncate sm:hidden text-left">{m.away_team?.name.substring(0, 8)}...</span>
                                 </div>
                               </div>
 

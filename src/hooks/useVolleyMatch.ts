@@ -31,6 +31,7 @@ export type SetData = {
 };
 
 export type MatchState = {
+    bestOfSets: number;
     sets: SetData[];
     currentSetIdx: number;
     posHome: (Player | null)[]; // 6 positions (0=P1, 1=P6, 2=P5, 3=P4, 4=P3, 5=P2)
@@ -67,6 +68,7 @@ export type MatchState = {
 
 export function useVolleyMatch(initialState?: Partial<MatchState>) {
     // State
+    const [bestOfSets, setBestOfSets] = useState<number>(initialState?.bestOfSets || 3);
     const [sets, setSets] = useState<SetData[]>(initialState?.sets || [{ number: 1, home: 0, away: 0, finished: false }]);
     const [currentSetIdx, setCurrentSetIdx] = useState(initialState?.currentSetIdx || 0);
 
@@ -94,16 +96,17 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
     const snapshot = useCallback(() => {
         const state = {
-            sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog
+            bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog
         };
         setHistory(prev => [...prev, JSON.stringify(state)]);
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog]);
+    }, [bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog]);
 
     const undo = () => {
         if (history.length === 0) return;
         const lastStateStr = history[history.length - 1];
         const lastState = JSON.parse(lastStateStr);
 
+        setBestOfSets(lastState.bestOfSets || 3);
         setSets(lastState.sets);
         setCurrentSetIdx(lastState.currentSetIdx);
         setPosHome(lastState.posHome);
@@ -139,15 +142,8 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         const currentHome = sets[currentSetIdx].home;
         const currentAway = sets[currentSetIdx].away;
         
-        // Detectar si es un set decisivo (Tie-Break)
-        let homeWonSets = 0;
-        let awayWonSets = 0;
-        for (let i = 0; i < currentSetIdx; i++) {
-            if (sets[i].home > sets[i].away) homeWonSets++;
-            else if (sets[i].away > sets[i].home) awayWonSets++;
-        }
-        const isTieBreak = (homeWonSets === 1 && awayWonSets === 1 && currentSetIdx === 2) || 
-                           (homeWonSets === 2 && awayWonSets === 2 && currentSetIdx === 4);
+        // Detectar si es un set decisivo (Tie-Break) basado en si es Mejor de 3 o 5
+        const isTieBreak = bestOfSets === 5 ? currentSetIdx === 4 : currentSetIdx === 2;
         
         const targetScore = isTieBreak ? 15 : 25;
 
@@ -340,14 +336,14 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         setSets(prev => {
             const copy = [...prev];
             copy[currentSetIdx].finished = true;
-            // Add next if needed (up to 5)
-            if (copy.length < 5) {
+            // Add next if needed (up to 5 or 3, dynamic boundary later but let sets grow as needed logic in UI)
+            if (copy.length < bestOfSets) {
                 copy.push({ number: copy.length + 1, home: 0, away: 0, finished: false });
             }
             return copy;
         });
 
-        if (currentSetIdx < 4) {
+        if (currentSetIdx < bestOfSets - 1) {
             setCurrentSetIdx(prev => prev + 1);
             setSubsCount({ home: 0, away: 0 }); // Reset subs for new set
             setSubHistory([]); // Clear history for new set
@@ -359,6 +355,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
     // Helpers to set initial state from DB
     const setAllState = (state: Partial<MatchState>) => {
+        if (state.bestOfSets !== undefined) setBestOfSets(state.bestOfSets);
         if (state.sets) setSets(state.sets);
         if (state.currentSetIdx !== undefined) setCurrentSetIdx(state.currentSetIdx);
         if (state.posHome) setPosHome(state.posHome.length === 6 ? state.posHome : [...state.posHome, ...Array(6 - state.posHome.length).fill(null)] as (Player | null)[]);
@@ -389,10 +386,10 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     };
 
     return {
-        sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
+        bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
         servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog,
         addPoint, subtractPoint, substitutePlayer, finishSet, undo,
-        setAllState, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
+        setAllState, setBestOfSets, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
         initPositions, addPlayerToBench, moveToCourt, removeFromCourt, removePlayerFromMatch,
         requestTimeout: (team: TeamSide) => {
             snapshot();

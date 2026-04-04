@@ -25,7 +25,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const params = useParams();
     const matchId = matchIdOverride || (params.id as string);
 
-    const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
+    const { bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
         moveToCourt, removeFromCourt, removePlayerFromMatch,
         blockedPlayers, blockPlayer, unblockSetPlayers, sanctionsLog, addSanction,
         timeouts, requestTimeout, subsCount, subHistory
@@ -59,6 +59,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     // --- STAFF & CIERRE ---
     const [referees, setReferees] = useState<any[]>([]);
     const [staff, setStaff] = useState({ ref1: '', ref2: '', scorer: '', coachHome: '', ayTecHome: '', coachAway: '', ayTecAway: '' });
+    const [clubCoachesHome, setClubCoachesHome] = useState<string[]>([]);
+    const [clubCoachesAway, setClubCoachesAway] = useState<string[]>([]);
 
     const [closingFlow, setClosingFlow] = useState(false);
     const [closingStep, setClosingStep] = useState(0);
@@ -88,6 +90,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [showRostersModal, setShowRostersModal] = useState(false);
     const [fullRosters, setFullRosters] = useState<{ home: any[], away: any[] }>({ home: [], away: [] });
 
+    // --- W.O. (WALK OVER) ---
+    const [woModalOpen, setWoModalOpen] = useState(false);
+    const [woWinner, setWoWinner] = useState<'home' | 'away' | null>(null);
+    const [woObservations, setWoObservations] = useState('');
 
     // Load Lineups from DB
     const loadLineups = async () => {
@@ -245,7 +251,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 home_team:teams!home_team_id(id, name, shield_url),
                 away_team:teams!away_team_id(id, name, shield_url),
                 category:categories(id, name),
-                tournament:tournaments!tournament_id(gender)
+                tournament:tournaments!tournament_id(gender, best_of_sets)
             `).eq('id', matchId).single();
 
             if (error) {
@@ -281,12 +287,22 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                 const rawDateStr = data.scheduled_time;
 
+                // Formato de fecha completo: "Jue, 04 Abr"
+                const formattedDate = rawDateStr
+                    ? (() => {
+                        const full = formatArgentinaDateLiteral(rawDateStr);
+                        // Retorna solo la parte de día y mes ("Jue, 04 Abr"), sin la hora
+                        const parts = full.split(',');
+                        return parts.slice(0, 2).join(',').trim();
+                    })()
+                    : 'A CONFIRMAR';
+
                 setTeamsInfo({
                     home: homeInfo,
                     away: awayInfo,
                     // @ts-ignore
                     category: catInfo?.name || 'Voley',
-                    date: rawDateStr ? formatArgentinaDateLiteral(rawDateStr) : 'A CONFIRMAR',
+                    date: formattedDate,
                     time: rawDateStr ? formatArgentinaTimeLiteral(rawDateStr) : 'A CONFIRMAR',
                     phase: data.round || 'Fase Regular',
                     gym: data.court_name || 'Polivalente',
@@ -294,38 +310,74 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     gender: tournInfo?.gender || 'S/D'
                 });
 
-                // Auto-fill Coaches from Squads
-                if (hTeam?.id && catInfo?.id && tournInfo?.gender) {
-                    const { data: homeSquad } = await supabase.from('squads')
+                // Auto-fill Coaches from Squads (squads usa team_id = hTeam.id)
+                if (hTeam?.id) {
+                    // Traer todos los entrenadores del equipo local por team_id
+                    const { data: allHomeSquads } = await supabase
+                        .from('squads')
                         .select('coach_name')
-                        .eq('club_id', hTeam.id)
-                        .eq('category_id', catInfo.id)
-                        .eq('gender', tournInfo.gender)
-                        .single();
+                        .eq('team_id', hTeam.id);
+                    const homeSet = new Set<string>();
+                    allHomeSquads?.forEach(s => {
+                        if (s.coach_name) homeSet.add(s.coach_name);
+                    });
+                    setClubCoachesHome(Array.from(homeSet));
 
-                    let awaySquadData = null;
-                    if (aTeam?.id) {
-                        const { data: awaySquad } = await supabase.from('squads')
-                            .select('coach_name')
-                            .eq('club_id', aTeam.id)
-                            .eq('category_id', catInfo.id)
-                            .eq('gender', tournInfo.gender)
-                            .single();
-                        awaySquadData = awaySquad;
+                    // Auto-fill DT Local con el primero que encuentre
+                    if (allHomeSquads && allHomeSquads.length > 0) {
+                        setStaff(prev => ({
+                            ...prev,
+                            coachHome: prev.coachHome || allHomeSquads[0]?.coach_name || ''
+                        }));
                     }
-
-                    setStaff(prev => ({
-                        ...prev,
-                        coachHome: prev.coachHome || homeSquad?.coach_name || '',
-                        coachAway: prev.coachAway || awaySquadData?.coach_name || ''
-                    }));
                 }
 
-                // ✅ Hidratar estado de planilla guardado si existe (para partidos reprogramados después de suspensión)
+                if (aTeam?.id) {
+                    // Traer todos los entrenadores del equipo visitante por team_id
+                    const { data: allAwaySquads } = await supabase
+                        .from('squads')
+                        .select('coach_name')
+                        .eq('team_id', aTeam.id);
+                    const awaySet = new Set<string>();
+                    allAwaySquads?.forEach(s => {
+                        if (s.coach_name) awaySet.add(s.coach_name);
+                    });
+                    setClubCoachesAway(Array.from(awaySet));
+
+                    // Auto-fill DT Visitante
+                    if (allAwaySquads && allAwaySquads.length > 0) {
+                        setStaff(prev => ({
+                            ...prev,
+                            coachAway: prev.coachAway || allAwaySquads[0]?.coach_name || ''
+                        }));
+                    }
+                }
+
+                const fetchedBestOfSets = tournInfo?.best_of_sets || 3;
+
+                // ✅ Regla: siempre arrancar desde Set 1 si el partido NO fue iniciado todavía.
+                // Solo restaurar estado previo si el partido está live o suspendido (en curso).
                 if (!readOnly) {
-                    const { data: matchWithSheet } = await supabase.from('matches').select('sheet_data').eq('id', matchId).single();
-                    if (matchWithSheet?.sheet_data && Object.keys(matchWithSheet.sheet_data).length > 0) {
-                        hydrateMatchState(matchWithSheet.sheet_data);
+                    const matchIsInProgress = data.status === 'live' || data.status === 'en_curso' || data.status === 'suspendido';
+
+                    if (matchIsInProgress) {
+                        // Partido ya iniciado: restaurar desde donde quedó
+                        const { data: matchWithSheet } = await supabase.from('matches').select('sheet_data').eq('id', matchId).single();
+                        if (matchWithSheet?.sheet_data && Object.keys(matchWithSheet.sheet_data).length > 0) {
+                            hydrateMatchState(matchWithSheet.sheet_data, fetchedBestOfSets);
+                        } else {
+                            setAllState({ bestOfSets: fetchedBestOfSets });
+                        }
+                    } else {
+                        // Partido PROGRAMADO (no iniciado): siempre Set 1, posiciones vacías
+                        setAllState({
+                            bestOfSets: fetchedBestOfSets,
+                            sets: [{ number: 1, home: 0, away: 0, finished: false }],
+                            currentSetIdx: 0,
+                            posHome: Array(6).fill(null),
+                            posAway: Array(6).fill(null),
+                            servingTeam: null,
+                        });
                     }
                 }
             }
@@ -402,11 +454,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
 
     // Data Normalizer Helper
-    const hydrateMatchState = (data: any) => {
+    const hydrateMatchState = (data: any, fallbackBestOfSets?: number) => {
         if (!data) return;
 
         // Map DB snake_case to Hook camelCase
         const normalizedState = {
+            bestOfSets: fallbackBestOfSets || data.metadata?.bestOfSets || 3,
             sets: data.sets_history || data.sets,
             currentSetIdx: data.current_set_idx, // check if this matches save key
             posHome: data.pos_home || data.posHome,
@@ -505,7 +558,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         blocked_players: blockedPlayers,
         sanctionsLog,
         staff,
-        metadata: { category: teamsInfo?.category || 'Voley' }
+        metadata: { 
+            category: teamsInfo?.category || 'Voley',
+            bestOfSets
+        }
     });
 
     const handleSanction = (type: 'yellow' | 'red' | 'expulsion' | 'disqualify') => {
@@ -587,7 +643,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 sanctionsLog,
                 metadata: {
                     category: teamsInfo?.category || 'Voley',
-                    competition: 'Torneo Oficial'
+                    competition: 'Torneo Oficial',
+                    bestOfSets
                 }
             };
 
@@ -796,6 +853,43 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         }
     };
 
+    const handleWalkover = (absentTeam: 'home' | 'away') => {
+        if (!woObservations.trim()) {
+            alert('Debe completar las observaciones antes de confirmar el W.O.');
+            return;
+        }
+        const winnerTeam = absentTeam === 'home' ? 'away' : 'home';
+        const absentName = absentTeam === 'home' ? (teamsInfo?.home.name || 'Local') : (teamsInfo?.away.name || 'Visita');
+        const winnerName = winnerTeam === 'home' ? (teamsInfo?.home.name || 'Local') : (teamsInfo?.away.name || 'Visita');
+
+        // Construir resultado: 3 sets ganados por el equipo que sí se presentó, 0 al que no
+        const woSets = Array.from({ length: 3 }, (_, i) => ({
+            number: i + 1,
+            home: winnerTeam === 'home' ? 25 : 0,
+            away: winnerTeam === 'away' ? 25 : 0,
+            finished: true
+        }));
+
+        // Setear estado final
+        setAllState({
+            sets: woSets,
+            currentSetIdx: 2,
+        });
+        setMatchStatus('finished');
+
+        // Observaciones automáticas + lo que escribió el árbitro
+        const autoObs = `[W.O.] ${absentName} no se presentó al partido. Resultado por W.O.: ${winnerName} gana 3-0.`;
+        setObservations(`${autoObs}\n\n${woObservations.trim()}`);
+
+        // Actualizar estado en DB
+        if (matchId && matchId !== 'test') {
+            supabase.from('matches').update({ status: 'finalizado' }).eq('id', matchId);
+        }
+
+        setWoModalOpen(false);
+        setClosingFlow(true);  // Va directo al flujo de cierre (observaciones + firmas + planilla)
+    };
+
     const handleTimeout = (team: 'home' | 'away') => {
         if (timeouts[team] >= 2) {
             if (confirm(`El equipo ya consumió sus 2 tiempos muertos permitidos en este set. ¿Conceder tiempo muerto adicional/excepcional?`)) {
@@ -909,7 +1003,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     // --- COMPONENTE CAMISETA ---
     const Jersey = ({ player, team, isPos1 }: { player: any, team: 'home' | 'away', isPos1?: boolean }) => {
-        if (!player) return <div className="w-14 h-14 bg-slate-100 rounded-full animate-pulse" />;
+        if (!player) return (
+            <div className="relative flex flex-col items-center">
+                <div className="w-16 h-14 flex items-center justify-center rounded-xl border-dashed border-2 border-slate-300 bg-slate-50/50">
+                    <span className="font-bold text-[10px] text-slate-400 -rotate-12">VACANTE</span>
+                </div>
+            </div>
+        );
         const isServing = servingTeam === team && isPos1;
         return (
             <div onClick={() => !readOnly && handleJerseyClick(player, team)} className={`relative flex flex-col items-center group ${!readOnly ? 'cursor-pointer' : ''}`}>
@@ -944,12 +1044,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
             {/* HEADER APP (Con Logout) */}
             <header className={`bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-20 ${closingStep === 4 ? 'hidden' : ''}`}>
-                <div className="flex gap-4 items-center">
-                    <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Calendar size={14} /> {teamsInfo?.date || 'HOY'}</div>
-                    <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase"><Clock size={14} /> {teamsInfo?.time?.slice(0, 5) || '20:00'}</div>
-                    <div className="flex items-center gap-2 text-blue-600 text-xs font-black uppercase bg-blue-50 px-3 py-1 rounded-full"><Trophy size={14} /> {teamsInfo?.phase || teamsInfo?.category || 'Fase Regular'}</div>
+                <div className="flex gap-3 items-center flex-wrap">
+                    <div className="flex items-center gap-2 text-slate-600 text-xs font-bold uppercase"><Calendar size={14} /> {teamsInfo?.date || 'A CONFIRMAR'}</div>
+                    <div className="flex items-center gap-2 text-slate-600 text-xs font-bold uppercase"><Clock size={14} /> {teamsInfo?.time || '- : -'}</div>
+                    <div className="flex items-center gap-2 text-blue-700 text-xs font-black uppercase bg-blue-50 px-3 py-1 rounded-full border border-blue-100"><Trophy size={12} /> {teamsInfo?.phase || 'Fase Regular'}</div>
+                    {teamsInfo?.category && (
+                        <div className="flex items-center gap-2 text-emerald-700 text-xs font-black uppercase bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100"><Users size={12} /> {teamsInfo.category}</div>
+                    )}
+                    <div className="flex items-center gap-2 text-orange-600 text-xs font-black uppercase bg-orange-50 px-3 py-1 rounded-full border border-orange-100">Al Mejor de {bestOfSets} Sets</div>
                     <button onClick={() => setShowRostersModal(true)} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 text-xs font-bold uppercase transition"><Users size={14} /> Planteles</button>
-
                 </div>
 
                 <div className="flex items-center gap-6">
@@ -990,7 +1093,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         <div className="relative">
                             <select
                                 value={matchStatus}
-                                onChange={handleStatusChange}
+                                onChange={(e) => {
+                                    if (e.target.value === 'live' && (posHome.filter(Boolean).length < 5 || posAway.filter(Boolean).length < 5)) {
+                                        alert("No se puede iniciar el encuentro. Ambos equipos deben tener al menos 5 jugadores en cancha.");
+                                        return;
+                                    }
+                                    handleStatusChange(e);
+                                }}
                                 className={`appearance-none bg-transparent font-black text-xs uppercase pl-3 pr-8 py-1 rounded-full cursor-pointer outline-none transition border-2 ${matchStatus === 'live'
                                     ? 'border-green-500 text-green-700 bg-green-50 animate-pulse'
                                     : 'border-slate-200 text-slate-500 hover:border-slate-300'
@@ -1027,15 +1136,19 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <aside className="w-full md:w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden order-2 md:order-1 h-[500px] md:h-auto">
                     <div className="p-4 bg-blue-600 flex flex-col items-center gap-2 relative overflow-hidden shrink-0">
                         {/* Header Logo Local */}
-                        <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
-                            <span className="font-black text-2xl text-blue-600 absolute inset-0 flex items-center justify-center">{teamsInfo?.home.name?.charAt(0) || 'L'}</span>
-                            {teamsInfo?.home.shield && (
+                        <div className="w-16 h-16 bg-white rounded-full shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
+                            {teamsInfo?.home.shield ? (
                                 <img
                                     src={teamsInfo.home.shield}
-                                    className="w-full h-full object-contain relative z-10"
-                                    onError={(e) => e.currentTarget.style.display = 'none'}
+                                    alt={teamsInfo.home.name || 'Local'}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; (e.currentTarget.nextElementSibling as HTMLElement)?.style?.setProperty('display', 'flex'); }}
                                 />
-                            )}
+                            ) : null}
+                            <span
+                                className="font-black text-2xl text-blue-600 absolute inset-0 flex items-center justify-center"
+                                style={{ display: teamsInfo?.home.shield ? 'none' : 'flex' }}
+                            >{teamsInfo?.home.name?.charAt(0) || 'L'}</span>
                         </div>
                         <h2 className="font-black text-white text-center leading-tight z-10 relative">{teamsInfo?.home.name || 'LOCAL'}</h2>
 
@@ -1072,7 +1185,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     {/* DT LOCAL INPUTS */}
                     <div className="p-3 bg-blue-50/50 border-t border-blue-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
                         <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Cuerpo Técnico L</label>
-                        <input disabled className="w-full bg-slate-200/50 border border-blue-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none transition cursor-not-allowed" placeholder="DT No Asignado" value={staff.coachHome || ''} readOnly />
+                        <input list="homeCoaches" disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none focus:border-blue-400 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir o seleccionar DT..." value={staff.coachHome || ''} onChange={e => setStaff({ ...staff, coachHome: e.target.value })} />
+                        <datalist id="homeCoaches">
+                            {clubCoachesHome.map((c, i) => <option key={i} value={c} />)}
+                        </datalist>
                         <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-blue-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir Ayudante Técnico..." value={staff.ayTecHome || ''} onChange={e => setStaff({ ...staff, ayTecHome: e.target.value })} />
                     </div>
                 </aside>
@@ -1085,8 +1201,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div className="text-6xl font-black text-blue-600">{sets[currentSetIdx].home}</div>
                                 {!readOnly && (
                                     <div className="flex gap-2">
-                                        <button onClick={() => addPoint('home')} className="bg-blue-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition">+</button>
-                                        <button onClick={() => subtractPoint('home')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200">-</button>
+                                        <button disabled={matchStatus !== 'live' || posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6} onClick={() => addPoint('home')} className="bg-blue-600 outline-none text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
+                                        <button disabled={matchStatus !== 'live'} onClick={() => subtractPoint('home')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
                                     </div>
                                 )}
                                 <div className="flex gap-1 mt-2">
@@ -1108,9 +1224,21 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 {!readOnly && (
                                     <>
                                         {!sets[currentSetIdx].finished ? (
-                                            <button onClick={() => finishSet()} className="w-full py-1 bg-slate-800 text-white rounded text-xs font-bold hover:bg-slate-700 transition">Cerrar Set</button>
+                                            <button onClick={() => {
+                                                if (posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6) {
+                                                    alert("Ambos equipos deben tener los 6 jugadores en cancha para cerrar el set.");
+                                                    return;
+                                                }
+                                                finishSet();
+                                            }} className="w-full py-1 bg-slate-800 text-white rounded text-xs font-bold hover:bg-slate-700 transition">Cerrar Set</button>
                                         ) : (
-                                            <button onClick={() => finishSet()} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 transition">Iniciar Set {sets.length + 1}</button>
+                                            <button onClick={() => {
+                                                if (posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6) {
+                                                    alert("Atención: Ambos equipos deben tener los 6 jugadores en cancha para iniciar el set.");
+                                                    return;
+                                                }
+                                                finishSet();
+                                            }} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 transition">Iniciar Set {sets.length + 1}</button>
                                         )}
                                         <button onClick={() => setServingTeam(prev => prev === 'home' ? 'away' : 'home')} className="flex items-center justify-center gap-1 text-[10px] text-slate-400 mt-1 uppercase"><ArrowRightLeft size={10} /> Saque</button>
                                     </>
@@ -1120,8 +1248,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div className="text-6xl font-black text-red-600">{sets[currentSetIdx].away}</div>
                                 {!readOnly && (
                                     <div className="flex gap-2">
-                                        <button onClick={() => addPoint('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition">+</button>
-                                        <button onClick={() => subtractPoint('away')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200">-</button>
+                                        <button disabled={matchStatus !== 'live' || posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6} onClick={() => addPoint('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
+                                        <button disabled={matchStatus !== 'live'} onClick={() => subtractPoint('away')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
                                     </div>
                                 )}
                                 <div className="flex gap-1 mt-2">
@@ -1174,9 +1302,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     </div>
 
-                    <div className="flex justify-end pt-4 pb-10 gap-4">
+                    <div className="flex justify-end pt-4 pb-10 gap-3 flex-wrap">
                         {!readOnly && (
                             <>
+                                <button
+                                    onClick={() => { setWoWinner(null); setWoObservations(''); setWoModalOpen(true); }}
+                                    className="bg-purple-700 text-white px-5 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-purple-800 transition"
+                                >
+                                    <X size={16} /> W.O.
+                                </button>
                                 <button onClick={handleSuspendMatch} className="bg-orange-600 text-white px-6 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-orange-700 transition"><AlertTriangle size={16} /> Suspender</button>
                                 <button onClick={() => setClosingFlow(true)} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-black transition"><Check size={16} /> Finalizar Encuentro</button>
                             </>
@@ -1188,15 +1322,19 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <aside className="w-full md:w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden order-3 md:order-3 h-[500px] md:h-auto">
                     <div className="p-4 bg-red-600 flex flex-col items-center gap-2 relative overflow-hidden shrink-0">
                         {/* Header Logo Visita */}
-                        <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
-                            <span className="font-black text-2xl text-red-600 absolute inset-0 flex items-center justify-center">{teamsInfo?.away.name?.charAt(0) || 'V'}</span>
-                            {teamsInfo?.away.shield && (
+                        <div className="w-16 h-16 bg-white rounded-full shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
+                            {teamsInfo?.away.shield ? (
                                 <img
                                     src={teamsInfo.away.shield}
-                                    className="w-full h-full object-contain relative z-10"
-                                    onError={(e) => e.currentTarget.style.display = 'none'}
+                                    alt={teamsInfo.away.name || 'Visita'}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; (e.currentTarget.nextElementSibling as HTMLElement)?.style?.setProperty('display', 'flex'); }}
                                 />
-                            )}
+                            ) : null}
+                            <span
+                                className="font-black text-2xl text-red-600 absolute inset-0 flex items-center justify-center"
+                                style={{ display: teamsInfo?.away.shield ? 'none' : 'flex' }}
+                            >{teamsInfo?.away.name?.charAt(0) || 'V'}</span>
                         </div>
                         <h2 className="font-black text-white text-center leading-tight z-10 relative">{teamsInfo?.away.name || 'VISITA'}</h2>
 
@@ -1233,7 +1371,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     {/* DT VISITA INPUTS */}
                     <div className="p-3 bg-red-50/50 border-t border-red-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
                         <label className="text-[10px] font-black text-red-600 uppercase tracking-widest px-1">Cuerpo Técnico V</label>
-                        <input disabled className="w-full bg-slate-200/50 border border-red-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none transition cursor-not-allowed" placeholder="DT No Asignado" value={staff.coachAway || ''} readOnly />
+                        <input list="awayCoaches" disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none focus:border-red-400 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir o seleccionar DT..." value={staff.coachAway || ''} onChange={e => setStaff({ ...staff, coachAway: e.target.value })} />
+                        <datalist id="awayCoaches">
+                            {clubCoachesAway.map((c, i) => <option key={i} value={c} />)}
+                        </datalist>
                         <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-red-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir Ayudante Técnico..." value={staff.ayTecAway || ''} onChange={e => setStaff({ ...staff, ayTecAway: e.target.value })} />
                     </div>
                 </aside>
@@ -1375,6 +1516,97 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     </div>
                 </div>
             )}
+            {/* --- MODAL W.O. (WALK OVER) --- */}
+            {woModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/70 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+                        {/* Header */}
+                        <div className="bg-purple-700 p-5 text-white text-center">
+                            <div className="text-3xl font-black tracking-widest mb-1">W.O.</div>
+                            <div className="text-sm font-bold opacity-80 uppercase tracking-wider">Walk Over — Equipo Ausente</div>
+                        </div>
+
+                        <div className="p-6 flex flex-col gap-5">
+                            {/* Paso 1: seleccionar equipo ausente */}
+                            <div>
+                                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">¿Qué equipo no se presentó?</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => setWoWinner('home')}  // Local no se presentó
+                                        className={`p-4 rounded-2xl border-2 font-black text-sm transition flex flex-col items-center gap-1 ${
+                                            woWinner === 'home'
+                                                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                                                : 'border-slate-200 hover:border-blue-300 text-slate-600'
+                                        }`}
+                                    >
+                                        {teamsInfo?.home.shield && (
+                                            <img src={teamsInfo.home.shield} className="w-10 h-10 object-contain rounded-full" onError={e => e.currentTarget.style.display='none'} />
+                                        )}
+                                        <span>Local</span>
+                                        <span className="text-[10px] font-bold text-slate-400">{teamsInfo?.home.name || 'LOCAL'}</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setWoWinner('away')}  // Visita no se presentó
+                                        className={`p-4 rounded-2xl border-2 font-black text-sm transition flex flex-col items-center gap-1 ${
+                                            woWinner === 'away'
+                                                ? 'border-red-600 bg-red-50 text-red-700'
+                                                : 'border-slate-200 hover:border-red-300 text-slate-600'
+                                        }`}
+                                    >
+                                        {teamsInfo?.away.shield && (
+                                            <img src={teamsInfo.away.shield} className="w-10 h-10 object-contain rounded-full" onError={e => e.currentTarget.style.display='none'} />
+                                        )}
+                                        <span>Visita</span>
+                                        <span className="text-[10px] font-bold text-slate-400">{teamsInfo?.away.name || 'VISITA'}</span>
+                                    </button>
+                                </div>
+                                {woWinner && (
+                                    <div className="mt-3 text-center text-xs font-black text-purple-700 bg-purple-50 px-4 py-2 rounded-xl border border-purple-200">
+                                        ✅ Gana: {woWinner === 'home' ? (teamsInfo?.away.name || 'Visita') : (teamsInfo?.home.name || 'Local')} — Resultado 3-0
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Paso 2: observaciones obligatorias */}
+                            <div>
+                                <label className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2 block">
+                                    Observaciones del Árbitro <span className="text-red-500">*</span>
+                                </label>
+                                <textarea
+                                    rows={4}
+                                    placeholder="Ej: El equipo Local no se hizo presente a los 30 minutos de la hora pactada. Se aguardó el tiempo reglamentario..."
+                                    value={woObservations}
+                                    onChange={e => setWoObservations(e.target.value)}
+                                    className={`w-full border-2 rounded-xl px-3 py-2 text-sm text-slate-700 outline-none resize-none transition ${
+                                        woObservations.trim() ? 'border-green-400 focus:border-green-500' : 'border-slate-200 focus:border-purple-400'
+                                    }`}
+                                />
+                                {!woObservations.trim() && (
+                                    <p className="text-[10px] text-red-500 font-bold mt-1">Campo obligatorio para proceder.</p>
+                                )}
+                            </div>
+
+                            {/* Botones de acción */}
+                            <div className="flex flex-col gap-2">
+                                <button
+                                    disabled={!woWinner || !woObservations.trim()}
+                                    onClick={() => woWinner && handleWalkover(woWinner)}
+                                    className="w-full bg-purple-700 hover:bg-purple-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black py-4 rounded-2xl text-sm shadow-lg transition flex items-center justify-center gap-2"
+                                >
+                                    <Check size={18} /> Confirmar W.O. y Cerrar Planilla
+                                </button>
+                                <button
+                                    onClick={() => setWoModalOpen(false)}
+                                    className="w-full text-slate-400 hover:text-slate-600 font-bold py-2 text-xs uppercase tracking-wider transition"
+                                >
+                                    Cancelar y Volver
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* --- DT SIGNATURE MODAL --- */}
             {dtSignModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex flex-col items-center justify-center p-4 backdrop-blur-sm">

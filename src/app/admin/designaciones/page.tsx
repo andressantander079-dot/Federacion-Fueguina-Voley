@@ -9,6 +9,7 @@ export default function DesignationsPage() {
     const [matches, setMatches] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [referees, setReferees] = useState<any[]>([])
+    const [activeTab, setActiveTab] = useState<'pendientes' | 'finalizados'>('pendientes')
 
     // Selection state
     const [selectedMatch, setSelectedMatch] = useState<any | null>(null)
@@ -32,8 +33,8 @@ export default function DesignationsPage() {
             .from('matches')
             .select(`
                 *,
-                home_team:teams!home_team_id(id, name),
-                away_team:teams!away_team_id(id, name),
+                home_team:teams!home_team_id(id, name, shield_url),
+                away_team:teams!away_team_id(id, name, shield_url),
                 category:categories(name),
                 match_officials(
                     id, role, status, user_id,
@@ -159,8 +160,26 @@ export default function DesignationsPage() {
                 <p className="text-slate-500 dark:text-slate-400">Asignación de cuerpo arbitral para partidos programados.</p>
             </header>
 
+            {/* TAB SYSTEM */}
+            <div className="flex border-b border-gray-200 dark:border-zinc-800 mb-6 relative">
+                <button
+                    onClick={() => setActiveTab('pendientes')}
+                    className={`pb-4 px-6 font-bold text-sm transition-colors relative z-10 ${activeTab === 'pendientes' ? 'text-tdf-blue flex items-center gap-2' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-2'}`}
+                >
+                    <Clock size={16} /> Pendientes
+                    {activeTab === 'pendientes' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-tdf-blue rounded-t-full"></div>}
+                </button>
+                <button
+                    onClick={() => setActiveTab('finalizados')}
+                    className={`pb-4 px-6 font-bold text-sm transition-colors relative z-10 ${activeTab === 'finalizados' ? 'text-green-500 flex items-center gap-2' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-2'}`}
+                >
+                    <CheckCircle size={16} /> Finalizados
+                    {activeTab === 'finalizados' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-500 rounded-t-full"></div>}
+                </button>
+            </div>
+
             <div className="grid grid-cols-1 gap-4">
-                {matches.map(match => (
+                {matches.filter(m => activeTab === 'finalizados' ? m.status === 'finalizado' : m.status !== 'finalizado').map(match => (
                     <div key={match.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
 
                         {/* Match Info */}
@@ -170,10 +189,22 @@ export default function DesignationsPage() {
                                 <span className="flex items-center gap-1"><Calendar size={12} /> {new Date(match.scheduled_time).toLocaleDateString()}</span>
                                 <span className="flex items-center gap-1"><Clock size={12} /> {new Date(match.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
-                            <div className="flex items-center gap-4 mt-2">
-                                <div className="text-right flex-1 font-black text-slate-800 dark:text-white text-lg">{match.home_team.name}</div>
-                                <div className="text-slate-300 font-black">VS</div>
-                                <div className="text-left flex-1 font-black text-slate-800 dark:text-white text-lg">{match.away_team.name}</div>
+                            <div className="flex items-center gap-2 mt-2 w-full justify-between overflow-hidden">
+                                <div className="flex items-center justify-end gap-2 text-right flex-1 min-w-0">
+                                    <div className="truncate font-black text-slate-800 dark:text-white text-base md:text-lg">{match.home_team.name}</div>
+                                    {match.home_team.shield_url && (
+                                        <img src={match.home_team.shield_url} className="w-6 h-6 object-contain shrink-0" alt="" />
+                                    )}
+                                </div>
+                                
+                                <div className="text-slate-300 font-black shrink-0 px-2">VS</div>
+                                
+                                <div className="flex items-center justify-start gap-2 text-left flex-1 min-w-0">
+                                    {match.away_team.shield_url && (
+                                        <img src={match.away_team.shield_url} className="w-6 h-6 object-contain shrink-0" alt="" />
+                                    )}
+                                    <div className="truncate font-black text-slate-800 dark:text-white text-base md:text-lg">{match.away_team.name}</div>
+                                </div>
                             </div>
                             <div className="text-xs text-slate-500 mt-2 flex items-center gap-1">
                                 <MapPin size={12} /> {match.court_name || 'Cancha a confirmar'}
@@ -211,10 +242,10 @@ export default function DesignationsPage() {
                     </div>
                 ))}
             </div>
-            {matches.length === 0 && !loading && (
+            {matches.filter(m => activeTab === 'finalizados' ? m.status === 'finalizado' : m.status !== 'finalizado').length === 0 && !loading && (
                 <div className="text-center py-20 bg-white dark:bg-zinc-900 rounded-xl border border-dashed border-gray-300 dark:border-zinc-800">
-                    <p className="text-slate-500 font-bold">No hay partidos programados (próximos o últimas 24hs).</p>
-                    <button onClick={() => fetchMatches()} className="mt-4 text-blue-600 font-bold text-sm hover:underline">Recargar</button>
+                    <p className="text-slate-500 font-bold">No hay partidos {activeTab} en esta vista.</p>
+                    <button onClick={() => fetchMatches()} className="mt-4 text-blue-600 font-bold text-sm hover:underline">Recargar servidor</button>
                 </div>
             )}
 

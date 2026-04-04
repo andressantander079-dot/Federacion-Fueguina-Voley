@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, Users, Plus, Edit, Shield, Save, X } from 'lucide-react'
+import { ChevronLeft, Users, Plus, Edit, Shield, Save, X, Pencil, Camera, CheckCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { ProfileCropperModal } from '@/components/ui/ProfileCropperModal'
 
 type Squad = {
     id: string
@@ -48,6 +49,31 @@ export default function ClubDetailsPage() {
     const [newSquadName, setNewSquadName] = useState('')
     const [newSquadCoach, setNewSquadCoach] = useState('')
     const [newSquadGender, setNewSquadGender] = useState('Femenino')
+
+    // Editing States
+    const [isEditingClub, setIsEditingClub] = useState(false)
+    const [tempClubName, setTempClubName] = useState('')
+    const [editingSquadId, setEditingSquadId] = useState<string | null>(null)
+    const [tempSquadName, setTempSquadName] = useState('')
+
+    // Cropper States
+    const [isCroppingShield, setIsCroppingShield] = useState(false)
+    const [tempShieldSrc, setTempShieldSrc] = useState<string | null>(null)
+
+    // A helper to upload files (same strategy used across app)
+    const uploadFileAPI = async (file: File, bucket: string, path: string) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('bucket', bucket)
+        formData.append('path', path)
+        const res = await fetch('/api/upload', { method: 'POST', body: formData })
+        if (!res.ok) {
+            const err = await res.json()
+            throw new Error(err.error || 'Failed to upload')
+        }
+        const { publicUrl } = await res.json()
+        return publicUrl
+    }
 
     useEffect(() => {
         const fetchData = async () => {
@@ -130,6 +156,68 @@ export default function ClubDetailsPage() {
         }
     }
 
+    const saveClubName = async () => {
+        if (!tempClubName.trim() || !club || tempClubName === club.name) {
+            setIsEditingClub(false)
+            return
+        }
+        try {
+            const { error } = await supabase.from('teams').update({ name: tempClubName }).eq('id', club.id)
+            if (error) throw error
+            setClub({ ...club, name: tempClubName })
+            setIsEditingClub(false)
+        } catch (error: any) {
+            alert('Error guardando nombre del club: ' + error.message)
+        }
+    }
+
+    const saveSquadName = async (squadId: string) => {
+        if (!tempSquadName.trim()) {
+            setEditingSquadId(null)
+            return
+        }
+        try {
+            const { error } = await supabase.from('squads').update({ name: tempSquadName }).eq('id', squadId)
+            if (error) throw error
+            setSquads(squads.map(s => s.id === squadId ? { ...s, name: tempSquadName } : s))
+            setEditingSquadId(null)
+        } catch (error: any) {
+            alert('Error guardando nombre del plantel: ' + error.message)
+        }
+    }
+
+    const handleShieldSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            const file = e.target.files[0]
+            const imageUrl = URL.createObjectURL(file)
+            setTempShieldSrc(imageUrl)
+            setIsCroppingShield(true)
+        }
+        e.target.value = ''
+    }
+
+    const handleShieldCropComplete = async (croppedFile: File) => {
+        setIsCroppingShield(false)
+        if (tempShieldSrc) URL.revokeObjectURL(tempShieldSrc)
+        setTempShieldSrc(null)
+
+        try {
+            const cleanFileName = croppedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '')
+            const filePath = `${clubId}/shield_${Date.now()}_${cleanFileName}`
+            
+            // Subimos al bucket public_avatars o teams si existiera. Asumimos public_avatars que usamos p/ perfiles.
+            const publicUrl = await uploadFileAPI(croppedFile, 'public_avatars', filePath)
+            
+            const { error } = await supabase.from('teams').update({ shield_url: publicUrl }).eq('id', clubId)
+            if (error) throw error
+
+            setClub(prev => prev ? { ...prev, shield_url: publicUrl } : prev)
+        } catch (err: any) {
+            console.error(err)
+            alert('Error subiendo el escudo: ' + err.message)
+        }
+    }
+
     const toggleInscriptionPayment = async () => {
         if (!club) return
         if (!confirm(`¿Estás seguro de cambiar el estado de pago de inscripción de ${club.name}?`)) return
@@ -208,27 +296,61 @@ export default function ClubDetailsPage() {
                     <ChevronLeft size={16} /> Volver a Clubes
                 </Link>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="flex flex-col sm:flex-row items-center sm:items-start md:items-center gap-4 sm:gap-6 text-center sm:text-left">
-                        <div className="w-24 h-24 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center shrink-0">
+                    <div className="flex flex-col sm:flex-row items-center sm:items-start md:items-center gap-4 sm:gap-6 text-center sm:text-left relative">
+                        <div className="relative group w-24 h-24 bg-white dark:bg-zinc-800 rounded-full shadow-sm border-2 border-white dark:border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer hover:shadow-lg transition-shadow">
                             {club.shield_url ? (
-                                <img src={club.shield_url} alt={club.name} className="w-16 h-16 object-contain" />
+                                <img src={club.shield_url} alt={club.name} className="w-full h-full object-cover rounded-full" />
                             ) : (
                                 <Shield className="w-10 h-10 text-gray-300" />
                             )}
+                            <label className="absolute inset-0 bg-black/50 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                <Camera size={20} className="mb-1" />
+                                <span className="text-[10px] font-bold text-center px-1 leading-tight">Cambiar<br/>Escudo</span>
+                                <input type="file" accept="image/*" className="hidden" onChange={handleShieldSelect} />
+                            </label>
                         </div>
                         <div>
-                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex flex-col sm:flex-row items-center gap-3">
-                                {club.name}
-                                {club.has_paid_inscription ? (
+                            <div className="flex flex-col sm:flex-row items-center gap-3">
+                                {isEditingClub ? (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={tempClubName}
+                                            onChange={e => setTempClubName(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && saveClubName()}
+                                            className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white bg-white dark:bg-zinc-800 border-b-2 border-tdf-blue outline-none py-1 px-2 rounded-t"
+                                            autoFocus
+                                        />
+                                        <button onClick={saveClubName} className="p-2 text-white bg-green-500 rounded-lg hover:bg-green-600 transition">
+                                            <CheckCircle size={18} />
+                                        </button>
+                                        <button onClick={() => setIsEditingClub(false)} className="p-2 text-white bg-red-500 rounded-lg hover:bg-red-600 transition">
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 relative group">
+                                        {club.name}
+                                        <button 
+                                            onClick={() => { setTempClubName(club.name); setIsEditingClub(true); }}
+                                            className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-tdf-blue focus:opacity-100"
+                                            title="Editar Nombre del Club"
+                                        >
+                                            <Pencil size={18} />
+                                        </button>
+                                    </h1>
+                                )}
+                                {!isEditingClub && club.has_paid_inscription && (
                                     <span className="bg-green-100 text-green-700 border border-green-200 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1">
                                         <Shield size={12} /> Inscripción OK
                                     </span>
-                                ) : (
+                                )}
+                                {!isEditingClub && !club.has_paid_inscription && (
                                     <span className="bg-red-100 text-red-700 border border-red-200 text-xs px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1">
                                         <Shield size={12} /> Sin Pago Anual
                                     </span>
                                 )}
-                            </h1>
+                            </div>
                             <p className="text-gray-500 mt-2 sm:mt-0">{club.city}</p>
                         </div>
                     </div>
@@ -280,11 +402,37 @@ export default function ClubDetailsPage() {
                             className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-white/5 rounded-xl p-6 hover:shadow-lg hover:border-tdf-blue/30 transition-all group"
                         >
                             <div className="flex justify-between items-start mb-4">
-                                <div className="space-y-1">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-tdf-blue transition-colors">
-                                        {squad.name}
-                                    </h3>
-                                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md inline-block ${squad.gender === 'Masculino' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'}`}>
+                                <div className="space-y-1 relative max-w-[70%]">
+                                    {editingSquadId === squad.id ? (
+                                        <div className="flex items-center gap-1 mb-1">
+                                            <input
+                                                type="text"
+                                                autoFocus
+                                                value={tempSquadName}
+                                                onChange={e => setTempSquadName(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && saveSquadName(squad.id)}
+                                                onClick={e => e.preventDefault()} // prevent link navigation
+                                                className="text-sm font-bold text-gray-900 dark:text-white bg-white dark:bg-zinc-800 border-b-2 border-tdf-blue outline-none py-1 px-1 w-full"
+                                            />
+                                            <button onClick={(e) => { e.preventDefault(); saveSquadName(squad.id); }} className="text-green-500 shrink-0"><CheckCircle size={16}/></button>
+                                            <button onClick={(e) => { e.preventDefault(); setEditingSquadId(null); }} className="text-red-500 shrink-0"><X size={16}/></button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2 group/title">
+                                            <h3 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-tdf-blue transition-colors truncate">
+                                                {squad.name}
+                                            </h3>
+                                            <button 
+                                                onClick={(e) => { e.preventDefault(); setTempSquadName(squad.name); setEditingSquadId(squad.id); }}
+                                                className="text-slate-400 opacity-0 group-hover/title:opacity-100 hover:text-tdf-orange shrink-0 transition-opacity"
+                                                title="Renombrar plantel"
+                                            >
+                                                <Pencil size={14} />
+                                            </button>
+                                        </div>
+                                    )}
+                                    
+                                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md inline-block mt-1 ${squad.gender === 'Masculino' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'}`}>
                                         Rama {squad.gender || 'Femenino'}
                                     </span>
                                 </div>
@@ -401,6 +549,19 @@ export default function ClubDetailsPage() {
                     </div>
                 </div>
             )}
+            {/* Photo Cropper Modal */}
+            {isCroppingShield && tempShieldSrc && (
+                <ProfileCropperModal
+                    imageSrc={tempShieldSrc}
+                    onClose={() => {
+                        setIsCroppingShield(false)
+                        URL.revokeObjectURL(tempShieldSrc)
+                        setTempShieldSrc(null)
+                    }}
+                    onCropComplete={handleShieldCropComplete}
+                />
+            )}
+
         </div>
     )
 }
