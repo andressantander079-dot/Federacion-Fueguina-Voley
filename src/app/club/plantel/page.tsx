@@ -65,6 +65,16 @@ export default function PlantelPage() {
     gender: 'Femenino'
   });
 
+  // Editor states
+  const [isEditingClubName, setIsEditingClubName] = useState(false);
+  const [tempClubName, setTempClubName] = useState('');
+  const [editingSquadId, setEditingSquadId] = useState<string | null>(null);
+  const [tempSquadName, setTempSquadName] = useState('');
+
+  // Logo Cropper States
+  const [tempShieldSrc, setTempShieldSrc] = useState<string | null>(null);
+  const [isCroppingShield, setIsCroppingShield] = useState(false);
+
   // Nuevo Jugador Form
   const [nuevoJugador, setNuevoJugador] = useState({
     name: '',
@@ -272,38 +282,90 @@ export default function PlantelPage() {
     }
   }
 
-  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files || e.target.files.length === 0) return;
     if (!clubId) return toast.error("No se detectó el Club ID.");
 
     const file = e.target.files[0];
+    if (!checkFileSize(file)) {
+      e.target.value = '';
+      return;
+    }
+
+    const imageUrl = URL.createObjectURL(file);
+    setTempShieldSrc(imageUrl);
+    setIsCroppingShield(true);
+    e.target.value = '';
+  }
+
+  async function handleShieldCropComplete(croppedFile: File) {
+    if (!clubId) return;
     setUploadingLogo(true);
+    const toastId = toast.loading('Subiendo escudo circular...');
+
+    setIsCroppingShield(false);
+    if (tempShieldSrc) URL.revokeObjectURL(tempShieldSrc);
+    setTempShieldSrc(null);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `logo-${clubId}-${Date.now()}.${fileExt}`;
+      const cleanExt = croppedFile.name.split('.').pop() || 'png';
+      const cleanFileName = `logo-${clubId}-${Date.now()}.${cleanExt}`;
 
       // 1. Upload to Storage
-      const { error: uploadError } = await supabase.storage.from('club-logos').upload(fileName, file);
+      const { error: uploadError } = await supabase.storage.from('club-logos').upload(cleanFileName, croppedFile);
       if (uploadError) throw uploadError;
 
       // 2. Get Public URL
-      const { data: { publicUrl } } = supabase.storage.from('club-logos').getPublicUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage.from('club-logos').getPublicUrl(cleanFileName);
 
       // 3. Update Teams Table
       const { error: dbError } = await supabase.from('teams').update({ shield_url: publicUrl }).eq('id', clubId);
       if (dbError) throw dbError;
 
       setClubLogo(publicUrl);
-      window.location.reload();
+      toast.success("Escudo actualizado correctamente", { id: toastId });
 
     } catch (error: any) {
       console.error("Error uploading logo:", error);
-      toast.error("Error al subir el escudo: " + error.message);
+      toast.error("Error al subir el escudo: " + error.message, { id: toastId });
     } finally {
       setUploadingLogo(false);
     }
   }
+
+  const saveClubName = async () => {
+    if (!tempClubName.trim() || tempClubName === clubName) {
+      setIsEditingClubName(false);
+      return;
+    }
+    const toastId = toast.loading('Actualizando nombre del club...');
+    try {
+      const { error } = await supabase.from('teams').update({ name: tempClubName }).eq('id', clubId);
+      if (error) throw error;
+      setClubName(tempClubName);
+      toast.success("Nombre actualizado", { id: toastId });
+      setIsEditingClubName(false);
+    } catch (error: any) {
+      toast.error('Error al guardar nombre: ' + error.message, { id: toastId });
+    }
+  };
+
+  const saveSquadName = async (squadId: string) => {
+    if (!tempSquadName.trim()) {
+      setEditingSquadId(null);
+      return;
+    }
+    const toastId = toast.loading('Actualizando nombre del plantel...');
+    try {
+      const { error } = await supabase.from('squads').update({ name: tempSquadName }).eq('id', squadId);
+      if (error) throw error;
+      setSquads(squads.map(s => s.id === squadId ? { ...s, name: tempSquadName } : s));
+      toast.success("Nombre de plantel actualizado", { id: toastId });
+      setEditingSquadId(null);
+    } catch (error: any) {
+      toast.error('Error al guardar: ' + error.message, { id: toastId });
+    }
+  };
 
   async function cargarSquads(idEquipo: string) {
     const { data } = await supabase
@@ -777,19 +839,18 @@ export default function PlantelPage() {
 
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12 animate-in fade-in slide-in-from-top-4 duration-700">
           <div className="flex items-center gap-6">
-            <div className="relative group">
+            <div className="relative group w-24 h-24 shrink-0 cursor-pointer" onClick={() => document.getElementById('logo-upload')?.click()}>
               <div
-                onClick={() => document.getElementById('logo-upload')?.click()}
-                className="w-24 h-24 bg-zinc-900 border border-zinc-800 rounded-3xl flex items-center justify-center shadow-2xl overflow-hidden cursor-pointer hover:border-orange-500 transition-colors relative"
+                className="w-full h-full bg-zinc-900 border-2 border-zinc-800 rounded-full flex items-center justify-center shadow-2xl overflow-hidden hover:border-orange-500 transition-colors relative"
               >
                 {clubLogo ? (
-                  <img src={clubLogo} alt="Escudo Club" className="w-full h-full object-cover" />
+                  <img src={clubLogo} alt="Escudo Club" className="w-full h-full object-cover rounded-full" />
                 ) : (
-                  <Shield size={48} className="text-white" strokeWidth={1.5} />
+                  <Shield size={48} className="text-zinc-700" strokeWidth={1} />
                 )}
-                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full z-10">
                   <Camera size={24} className="text-white mb-1" />
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">Editar</span>
+                  <span className="text-[9px] font-bold text-white uppercase tracking-wider text-center px-1">Cambiar<br/>Escudo</span>
                 </div>
               </div>
               <input
@@ -807,10 +868,34 @@ export default function PlantelPage() {
               )}
             </div>
 
-            <div>
-              <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight leading-none mb-2">
-                {clubName}
-              </h1>
+            <div className="flex-1">
+              <div className="flex items-center flex-wrap gap-2 mb-2">
+                {isEditingClubName ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      className="text-3xl md:text-5xl font-black text-white bg-zinc-900 border-b-2 border-orange-500 outline-none w-full max-w-[400px] px-2 py-1"
+                      value={tempClubName}
+                      onChange={(e) => setTempClubName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && saveClubName()}
+                      autoFocus
+                    />
+                    <button onClick={saveClubName} className="p-2 text-white bg-green-600 rounded-lg shrink-0"><CheckCircle size={20}/></button>
+                    <button onClick={() => setIsEditingClubName(false)} className="p-2 text-white bg-red-600 rounded-lg shrink-0"><X size={20}/></button>
+                  </div>
+                ) : (
+                  <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight leading-none group relative pr-8 flex items-center">
+                    {clubName}
+                    <button 
+                      onClick={() => { setTempClubName(clubName); setIsEditingClubName(true); }}
+                      className="text-zinc-600 hover:text-orange-500 opacity-0 group-hover:opacity-100 transition-opacity absolute right-0 ml-2"
+                      title="Renombrar club"
+                    >
+                      <Pencil size={20} />
+                    </button>
+                  </h1>
+                )}
+              </div>
               <p className="text-zinc-500 text-lg font-medium">{clubCity}</p>
             </div>
           </div>
@@ -865,9 +950,44 @@ export default function PlantelPage() {
                 return (
                   <div
                     key={squad.id}
-                    onClick={() => abrirSquad(squad)}
                     className={cardClasses}
                   >
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-bl-full -z-10 group-hover:scale-110 transition-transform duration-500" />
+                    
+                    <div className="flex justify-between items-start mb-4">
+                      {editingSquadId === squad.id ? (
+                          <div className="flex items-center gap-1 w-full max-w-[80%]">
+                              <input
+                                  type="text"
+                                  autoFocus
+                                  value={tempSquadName}
+                                  onChange={e => setTempSquadName(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && saveSquadName(squad.id)}
+                                  className="text-sm font-bold text-white bg-zinc-800 border-b-2 border-orange-500 outline-none w-full px-1 py-1"
+                              />
+                              <button onClick={() => saveSquadName(squad.id)} className="text-green-500 hover:text-green-400 p-1 shrink-0"><CheckCircle size={16}/></button>
+                              <button onClick={() => setEditingSquadId(null)} className="text-red-500 hover:text-red-400 p-1 shrink-0"><X size={16}/></button>
+                          </div>
+                      ) : (
+                          <div className="flex items-center gap-2 group/title max-w-[80%]">
+                            <h3 className="text-xl font-bold text-white tracking-tight break-words uppercase flex items-center gap-2 truncate" onClick={() => abrirSquad(squad)}>
+                              {squad.name}
+                            </h3>
+                            <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setTempSquadName(squad.name); setEditingSquadId(squad.id); }}
+                                className="text-zinc-600 hover:text-orange-500 opacity-0 group-hover/title:opacity-100 transition-opacity p-1 shrink-0"
+                                title="Renombrar plantel"
+                            >
+                                <Pencil size={14} />
+                            </button>
+                          </div>
+                      )}
+                      
+                      <div className="bg-zinc-950 p-2 rounded-xl group-hover:bg-orange-500 transition-colors shrink-0" onClick={() => abrirSquad(squad)}>
+                        <Users className="text-zinc-500 group-hover:text-white transition-colors" size={20} />
+                      </div>
+                    </div>
+
                     <div className="flex flex-col-reverse sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
                       <div className="space-y-1">
                         <h3 className={`font-extrabold text-xl transition-colors ${isMale ? 'text-white' : 'text-white group-hover:text-orange-500'}`}>
@@ -877,7 +997,6 @@ export default function PlantelPage() {
                           {catName}
                         </h4>
                         <div className="flex items-center gap-2">
-                          <p className="text-zinc-500 text-sm font-medium">{squad.name}</p>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${isMale ? 'bg-white text-black' : 'bg-pink-500/20 text-pink-500'}`}>
                             {squad.gender || 'Femenino'}
                           </span>
@@ -1354,6 +1473,19 @@ export default function PlantelPage() {
           imageSrc={avatarCropper.tempUrl}
           onClose={() => { setAvatarCropper({ isOpen: false, tempUrl: '' }); setAvatarUploadTarget(null); }}
           onCropComplete={handleAvatarCropComplete}
+        />
+      )}
+
+      {/* MODAL RECORTE DE ESCUDO DEL CLUB */}
+      {isCroppingShield && tempShieldSrc && (
+        <ProfileCropperModal
+          imageSrc={tempShieldSrc}
+          onClose={() => {
+            setIsCroppingShield(false);
+            if (tempShieldSrc) URL.revokeObjectURL(tempShieldSrc);
+            setTempShieldSrc(null);
+          }}
+          onCropComplete={handleShieldCropComplete}
         />
       )}
 

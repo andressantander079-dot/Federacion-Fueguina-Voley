@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Trophy, Medal, AlertCircle, Loader2, Frown } from 'lucide-react';
+import { Trophy, Medal, AlertCircle, Loader2, Frown, MapPin } from 'lucide-react';
 
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -14,6 +14,9 @@ export default function PosicionesPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedGender, setSelectedGender] = useState<string>('Femenino');
+  const [selectedCity, setSelectedCity] = useState<string>('Todas');
+  const [selectedTournament, setSelectedTournament] = useState<string>(''); // specific tournament selection
+  const [tournamentsList, setTournamentsList] = useState<any[]>([]); // To populate the dropdown
 
   // Estado de carga y datos
   const [loading, setLoading] = useState(true);
@@ -24,12 +27,24 @@ export default function PosicionesPage() {
     fetchInitialData();
   }, []);
 
-  // Cada vez que cambien los filtros, buscamos el torneo correspondiente
+  // Cada vez que cambien los filtros principales, actualizamos la lista de torneos.
   useEffect(() => {
-    if (selectedCategory && selectedGender) {
-      fetchTournamentAndStandings();
+    if (selectedCategory && selectedGender && selectedCity) {
+      fetchTournamentsList();
     }
-  }, [selectedCategory, selectedGender]);
+  }, [selectedCategory, selectedGender, selectedCity]);
+
+  // Si seleccionamos o cambia selectedTournament, renderizar la tabla
+  useEffect(() => {
+    if (selectedTournament) {
+      const active = tournamentsList.find(t => t.id === selectedTournament);
+      setActiveTournament(active);
+      fetchStandings(selectedTournament);
+    } else {
+       setStandings([]);
+       setActiveTournament(null);
+    }
+  }, [selectedTournament, tournamentsList]);
 
   async function fetchInitialData() {
     const { data: cats } = await supabase.from('categories').select('*').order('name');
@@ -39,31 +54,44 @@ export default function PosicionesPage() {
     }
   }
 
-  async function fetchTournamentAndStandings() {
+  async function fetchTournamentsList() {
+    setLoading(true);
+    let query = supabase
+      .from('tournaments')
+      .select('*')
+      .eq('category_id', selectedCategory)
+      .eq('gender', selectedGender)
+      .neq('status', 'archivado') // Ignoramos archivados
+      .order('created_at', { ascending: false });
+      
+    if(selectedCity !== 'Todas'){
+       query = query.eq('city', selectedCity);
+    }
+
+    const { data: tournaments } = await query;
+
+    if (!tournaments || tournaments.length === 0) {
+        setTournamentsList([]);
+        setSelectedTournament('');
+        setLoading(false);
+        return; 
+    }
+    
+    setTournamentsList(tournaments);
+    if (!selectedTournament || !tournaments.find(t => t.id === selectedTournament)) {
+        // Auto-select latest if unset or unmatching
+        setSelectedTournament(tournaments[0].id);
+    } else {
+        // Just leave the selection, will trigger fetchStandings naturally
+        setLoading(false);
+    }
+  }
+
+  async function fetchStandings(tournamentId: string) {
     setLoading(true);
     setStandings([]);
-    setActiveTournament(null);
 
     try {
-      // 1. Buscar Torneo ACTIVO que coincida con los filtros
-      // Priorizamos 'activo', sino el más reciente creado.
-      const { data: tournaments } = await supabase
-        .from('tournaments')
-        .select('*')
-        .eq('category_id', selectedCategory)
-        .eq('gender', selectedGender)
-        .neq('status', 'archivado') // Ignoramos archivados
-        .order('created_at', { ascending: false });
-
-      if (!tournaments || tournaments.length === 0) {
-        setLoading(false);
-        return; // No hay torneo
-      }
-
-      // Tomamos el primero (el más nuevo o activo)
-      const tournament = tournaments[0];
-      setActiveTournament(tournament);
-
       // 2. Traer Partidos Finalizados de este torneo
       const { data: matches } = await supabase
         .from('matches')
@@ -77,14 +105,14 @@ export default function PosicionesPage() {
                     home_team:teams!home_team_id(id, name, shield_url),
                     away_team:teams!away_team_id(id, name, shield_url)
                 `)
-        .eq('tournament_id', tournament.id)
+        .eq('tournament_id', tournamentId)
         .eq('status', 'finalizado');
 
       // 3. Traer Equipos Inscriptos (para inicializar la tabla con 0 puntos)
       const { data: inscribedTeams } = await supabase
         .from('tournament_teams')
         .select('team_id, team:teams(id, name, shield_url)')
-        .eq('tournament_id', tournament.id);
+        .eq('tournament_id', tournamentId);
 
       // 4. Calcular Tabla
       const table = new Map();
@@ -207,39 +235,78 @@ export default function PosicionesPage() {
           </p>
         </header>
 
-        {/* FILTROS */}
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 mb-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        {/* FILTROS NUEVOS SIMILARES AL FIXTURE */}
+        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
 
-            {/* Selector Categoría */}
-            <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide w-full sm:w-auto">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition whitespace-nowrap ${selectedCategory === cat.id
-                    ? 'bg-tdf-blue text-white'
-                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
-                    }`}
-                >
-                  {cat.name}
-                </button>
-              ))}
+            {/* 1. Category */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 ml-1">Categoría</label>
+              <select
+                className="w-full bg-slate-100 dark:bg-black/50 text-slate-900 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 font-bold outline-none focus:border-tdf-orange transition appearance-none cursor-pointer"
+                value={selectedCategory}
+                onChange={e => setSelectedCategory(e.target.value)}
+              >
+                {categories.map((c: any) => (
+                  <option key={c.id} value={c.id} className="text-slate-900 dark:text-white">{c.name}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Selector Rama */}
-            <div className="flex gap-2 border-t sm:border-t-0 sm:border-l border-slate-100 dark:border-white/5 pt-3 sm:pt-0 sm:pl-3">
-              {['Femenino', 'Masculino', 'Mixto'].map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setSelectedGender(r)}
-                  className={`px-3 py-1 rounded text-xs font-bold uppercase tracking-wider ${selectedGender === r ? 'bg-slate-800 dark:bg-white text-white dark:text-black' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                    }`}
-                >
-                  {r}
-                </button>
-              ))}
+            {/* 2. Gender */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 ml-1">Rama</label>
+              <select
+                className="w-full bg-slate-100 dark:bg-black/50 text-slate-900 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl py-3 px-4 font-bold outline-none focus:border-tdf-orange transition appearance-none cursor-pointer"
+                value={selectedGender}
+                onChange={e => setSelectedGender(e.target.value)}
+              >
+                {['Femenino', 'Masculino', 'Mixto'].map((g) => (
+                  <option key={g} value={g} className="text-slate-900 dark:text-white">{g}</option>
+                ))}
+              </select>
             </div>
+
+            {/* 3. Region/City */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 ml-1">Región</label>
+              <div className="relative">
+                <MapPin size={18} className="absolute left-3 top-3.5 text-slate-400" />
+                <select
+                  className="w-full bg-slate-100 dark:bg-black/50 text-slate-900 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 font-bold outline-none focus:border-tdf-orange transition appearance-none cursor-pointer"
+                  value={selectedCity}
+                  onChange={e => setSelectedCity(e.target.value)}
+                >
+                  <option value="Todas" className="text-slate-900 dark:text-white">Todas</option>
+                  <option value="Interprovincial" className="text-slate-900 dark:text-white">Interprovincial</option>
+                  <option value="Ushuaia" className="text-slate-900 dark:text-white">Ushuaia</option>
+                  <option value="Río Grande-Tolhuin" className="text-slate-900 dark:text-white">Río Gde - Tolhuin</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 4. Tournament */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 ml-1">Torneo</label>
+              <div className="relative">
+                <Trophy size={18} className="absolute left-3 top-3.5 text-slate-400" />
+                <select
+                  className="w-full bg-slate-100 dark:bg-black/50 text-slate-900 dark:text-white border border-slate-200 dark:border-white/10 rounded-xl py-3 pl-10 pr-4 font-bold outline-none focus:border-tdf-orange transition appearance-none cursor-pointer disabled:opacity-50"
+                  value={selectedTournament}
+                  onChange={e => setSelectedTournament(e.target.value)}
+                  disabled={tournamentsList.length === 0}
+                >
+                  {tournamentsList.length === 0 ? (
+                    <option>No hay torneos</option>
+                  ) : (
+                    tournamentsList.map(t => (
+                      <option key={t.id} value={t.id} className="text-slate-900 dark:text-white">{t.name}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
           </div>
         </div>
 

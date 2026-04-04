@@ -24,6 +24,7 @@ export default function AdminCompetenciasList() {
         gender: 'Masculino',
         season: new Date().getFullYear().toString(),
         point_system: 'fivb',
+        best_of_sets: 3,
         city: 'Interprovincial',
         selected_teams: [] as string[]
     });
@@ -151,6 +152,7 @@ export default function AdminCompetenciasList() {
                 gender: newTourney.gender,
                 season: newTourney.season,
                 point_system: newTourney.point_system,
+                best_of_sets: newTourney.best_of_sets,
                 city: newTourney.city,
                 status: 'borrador'
             }])
@@ -190,7 +192,7 @@ export default function AdminCompetenciasList() {
 
         setModalOpen(false);
         setNewTourney({
-            name: '', category_id: '', gender: 'Masculino', season: new Date().getFullYear().toString(), point_system: 'fivb', city: 'Interprovincial', selected_teams: []
+            name: '', category_id: '', gender: 'Masculino', season: new Date().getFullYear().toString(), point_system: 'fivb', best_of_sets: 3, city: 'Interprovincial', selected_teams: []
         });
         fetchTorneos();
     };
@@ -401,15 +403,27 @@ export default function AdminCompetenciasList() {
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-xs font-black text-zinc-500 uppercase mb-2 ml-1">Sistema de Puntos</label>
-                                    <select className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 font-bold text-white outline-none cursor-pointer"
-                                        value={newTourney.point_system}
-                                        onChange={e => setNewTourney({ ...newTourney, point_system: e.target.value })}
-                                    >
-                                        <option value="fivb">FIVB Oficial (3, 2, 1, 0)</option>
-                                        <option value="simple">Simple (Ganador 2pts, Perdedor 1pt)</option>
-                                    </select>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                    <div>
+                                        <label className="block text-xs font-black text-zinc-500 uppercase mb-2 ml-1">Sistema de Puntos</label>
+                                        <select className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 font-bold text-white outline-none cursor-pointer"
+                                            value={newTourney.point_system}
+                                            onChange={e => setNewTourney({ ...newTourney, point_system: e.target.value })}
+                                        >
+                                            <option value="fivb">FIVB Oficial (3, 2, 1, 0)</option>
+                                            <option value="simple">Simple (Ganador 2pts, Perdedor 1pt)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-black text-orange-500 uppercase mb-2 ml-1">Formato de Partido</label>
+                                        <select className="w-full bg-zinc-900 border border-zinc-800 border-b-2 border-b-orange-500 rounded-lg px-4 py-3 font-bold text-white outline-none cursor-pointer"
+                                            value={newTourney.best_of_sets}
+                                            onChange={e => setNewTourney({ ...newTourney, best_of_sets: Number(e.target.value) })}
+                                        >
+                                            <option value={3}>Mejor de 3 Sets</option>
+                                            <option value={5}>Mejor de 5 Sets</option>
+                                        </select>
+                                    </div>
                                 </div>
 
                                 {/* SELECCIÓN DINÁMICA DE EQUIPOS */}
