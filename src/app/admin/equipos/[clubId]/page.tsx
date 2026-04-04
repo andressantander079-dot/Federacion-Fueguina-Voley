@@ -162,10 +162,16 @@ export default function ClubDetailsPage() {
             return
         }
         try {
+            // 1. Actualizar en teams (fuente de verdad principal)
             const { error } = await supabase.from('teams').update({ name: tempClubName }).eq('id', club.id)
             if (error) throw error
+
+            // 2. Sincronizar en profiles para que el club vea el nombre actualizado en su acceso
+            await supabase.from('profiles').update({ full_name: tempClubName }).eq('club_id', club.id)
+
             setClub({ ...club, name: tempClubName })
             setIsEditingClub(false)
+            alert('✅ Nombre del club actualizado correctamente.')
         } catch (error: any) {
             alert('Error guardando nombre del club: ' + error.message)
         }
