@@ -1201,8 +1201,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div className="text-6xl font-black text-blue-600">{sets[currentSetIdx].home}</div>
                                 {!readOnly && (
                                     <div className="flex gap-2">
-                                        <button disabled={matchStatus !== 'live' || posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6} onClick={() => addPoint('home')} className="bg-blue-600 outline-none text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
-                                        <button disabled={matchStatus !== 'live'} onClick={() => subtractPoint('home')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
+                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => addPoint('home')} className="bg-blue-600 outline-none text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
+                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => subtractPoint('home')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
                                     </div>
                                 )}
                                 <div className="flex gap-1 mt-2">
@@ -1225,18 +1225,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     <>
                                         {!sets[currentSetIdx].finished ? (
                                             <button onClick={() => {
-                                                if (posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6) {
-                                                    alert("Ambos equipos deben tener los 6 jugadores en cancha para cerrar el set.");
-                                                    return;
-                                                }
                                                 finishSet();
                                             }} className="w-full py-1 bg-slate-800 text-white rounded text-xs font-bold hover:bg-slate-700 transition">Cerrar Set</button>
                                         ) : (
                                             <button onClick={() => {
-                                                if (posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6) {
-                                                    alert("Atención: Ambos equipos deben tener los 6 jugadores en cancha para iniciar el set.");
-                                                    return;
-                                                }
                                                 finishSet();
                                             }} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 transition">Iniciar Set {sets.length + 1}</button>
                                         )}
@@ -1248,8 +1240,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div className="text-6xl font-black text-red-600">{sets[currentSetIdx].away}</div>
                                 {!readOnly && (
                                     <div className="flex gap-2">
-                                        <button disabled={matchStatus !== 'live' || posHome.filter(Boolean).length < 6 || posAway.filter(Boolean).length < 6} onClick={() => addPoint('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
-                                        <button disabled={matchStatus !== 'live'} onClick={() => subtractPoint('away')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
+                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => addPoint('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
+                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => subtractPoint('away')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
                                     </div>
                                 )}
                                 <div className="flex gap-1 mt-2">

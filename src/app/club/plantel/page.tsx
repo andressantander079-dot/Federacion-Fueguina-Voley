@@ -263,12 +263,17 @@ export default function PlantelPage() {
 
       if (profile?.full_name) setClubName(profile.full_name);
 
-      // Fetch Logo and City from Teams table
-      const { data: teamData } = await supabase.from('teams').select('shield_url, city, has_paid_inscription').eq('id', id).single();
+      // Fetch Logo, Name and City from Teams table (source of truth for club name)
+      const { data: teamData } = await supabase.from('teams').select('name, shield_url, city, has_paid_inscription').eq('id', id).single();
       if (teamData) {
+        // teams.name es la fuente de verdad para el nombre del club
+        if (teamData.name) setClubName(teamData.name);
+        else if (profile?.full_name) setClubName(profile.full_name);
         if (teamData.shield_url) setClubLogo(teamData.shield_url);
         if (teamData.city) setClubCity(teamData.city);
         setHasPaidInscription(!!teamData.has_paid_inscription);
+      } else if (profile?.full_name) {
+        setClubName(profile.full_name);
       }
       await cargarSquads(id);
       await cargarHuerfanos(id);
@@ -340,10 +345,17 @@ export default function PlantelPage() {
     }
     const toastId = toast.loading('Actualizando nombre del club...');
     try {
-      const { error } = await supabase.from('teams').update({ name: tempClubName }).eq('id', clubId);
-      if (error) throw error;
+      // 1. Actualizar en teams (fuente de verdad para competencias y planillas)
+      const { error: teamsError } = await supabase.from('teams').update({ name: tempClubName }).eq('id', clubId);
+      if (teamsError) throw teamsError;
+
+      // 2. Actualizar en profiles para que el sidebar y bienvenida también reflejen el cambio
+      if (profile?.id) {
+        await supabase.from('profiles').update({ full_name: tempClubName }).eq('id', profile.id);
+      }
+
       setClubName(tempClubName);
-      toast.success("Nombre actualizado", { id: toastId });
+      toast.success('✅ Nombre actualizado correctamente', { id: toastId });
       setIsEditingClubName(false);
     } catch (error: any) {
       toast.error('Error al guardar nombre: ' + error.message, { id: toastId });
