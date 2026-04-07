@@ -178,21 +178,21 @@ export default function PosicionesPage() {
             if (setsHome > setsAway) {
               home.pg++;
               away.pp++;
-              // Puntos
-              if (setsHome === 3 && (setsAway === 0 || setsAway === 1)) {
-                home.pts += 3;
-              } else if (setsHome === 3 && setsAway === 2) {
+              // Puntos universales (FIVB) independientemente de si es al mejor de 3 o 5 sets
+              if (setsHome - setsAway === 1) { // Tie-break (3-2 ó 2-1)
                 home.pts += 2;
                 away.pts += 1;
+              } else { // Victoria clara (3-0, 3-1, ó 2-0)
+                home.pts += 3;
               }
-            } else {
+            } else if (setsAway > setsHome) {
               away.pg++;
               home.pp++;
-              if (setsAway === 3 && (setsHome === 0 || setsHome === 1)) {
-                away.pts += 3;
-              } else if (setsAway === 3 && setsHome === 2) {
+              if (setsAway - setsHome === 1) { // Tie-break (2-3 ó 1-2)
                 away.pts += 2;
                 home.pts += 1;
+              } else { // Victoria clara (0-3, 1-3, ó 0-2)
+                away.pts += 3;
               }
             }
           }
