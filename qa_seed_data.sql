@@ -24,7 +24,7 @@ BEGIN
 
     -- 2. Jugador Menor (Sin Deuda)
     INSERT INTO public.players (id, team_id, name, dni, birth_date, gender, status, has_debt)
-    VALUES (player_minor, team_a, 'QA Menor Sin Deuda', '99999992', '2015-01-01', 'Femenino', 'activo', false);
+    VALUES (player_minor, team_a, 'QA Menor Sin Deuda', '99999992', '2017-01-01', 'Femenino', 'activo', false);
 
     -- 3. Jugador con Deuda (Pase en Curso desde Team A hacia Team B)
     INSERT INTO public.players (id, team_id, name, dni, birth_date, gender, status, has_debt)

@@ -81,16 +81,18 @@ export function calculateStandings(matches: Match[], pointSystem: string, partic
         // Points Calculation
         if (pointSystem === 'fivb') {
             if (winnerIsHome) {
-                if (swAway <= 1) stats[m.home_team_id].pts += 3; // 3-0 or 3-1
-                else {
-                    stats[m.home_team_id].pts += 2; // 3-2
+                if (swHome - swAway === 1) { // 3-2 or 2-1 (Tie-break)
+                    stats[m.home_team_id].pts += 2;
                     stats[m.away_team_id].pts += 1;
+                } else { // 3-0, 3-1, or 2-0 (Clear win)
+                    stats[m.home_team_id].pts += 3;
                 }
             } else {
-                if (swHome <= 1) stats[m.away_team_id].pts += 3; // 0-3 or 1-3
-                else {
-                    stats[m.away_team_id].pts += 2; // 2-3
+                if (swAway - swHome === 1) { // 2-3 or 1-2 (Tie-break)
+                    stats[m.away_team_id].pts += 2;
                     stats[m.home_team_id].pts += 1;
+                } else { // 0-3, 1-3, or 0-2 (Clear win)
+                    stats[m.away_team_id].pts += 3;
                 }
             }
         } else {
