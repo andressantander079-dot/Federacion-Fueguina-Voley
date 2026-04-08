@@ -9,6 +9,8 @@ export default function RefereeReportsPage() {
     const supabase = createClient()
     const [loading, setLoading] = useState(true)
     const [expandedMatch, setExpandedMatch] = useState<string | null>(null)
+    const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7))
+    const [allData, setAllData] = useState<any[]>([])
 
     const [stats, setStats] = useState({
         totalMatches: 0,
@@ -22,10 +24,14 @@ export default function RefereeReportsPage() {
     })
 
     useEffect(() => {
-        fetchStats()
+        fetchData()
     }, [])
 
-    const fetchStats = async () => {
+    useEffect(() => {
+        if (allData.length > 0) processStats(allData, selectedMonth)
+    }, [allData, selectedMonth])
+
+    const fetchData = async () => {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
@@ -52,16 +58,27 @@ export default function RefereeReportsPage() {
             .order('created_at', { ascending: false })
 
         if (data) {
-            // Arrays for frequencies
-            const daysCount: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 } // Sun to Sat
-            const categoriesCount: Record<string, number> = {}
-            const clubsCount: Record<string, number> = {}
-
             const validData = data.filter((item: any) => item.match && !Array.isArray(item.match))
+            setAllData(validData)
+            processStats(validData, selectedMonth)
+        }
+        setLoading(false)
+    }
 
-            validData.forEach((item: any) => {
-                const match = item.match
-                const scheduledDate = new Date(match.scheduled_time)
+    const processStats = (validData: any[], currentMonth: string) => {
+        const daysCount: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
+        const categoriesCount: Record<string, number> = {}
+        const clubsCount: Record<string, number> = {}
+
+        // Filter validData for the month
+        const monthData = validData.filter(item => item.match?.scheduled_time.startsWith(currentMonth))
+
+        // Create statistics based on MONTH data for insights
+        const analysisData = monthData.length > 0 ? monthData : validData;
+
+        analysisData.forEach((item: any) => {
+            const match = item.match
+            const scheduledDate = new Date(match.scheduled_time)
 
                 // 1. Day Frequency
                 daysCount[scheduledDate.getDay()] += 1
@@ -89,7 +106,6 @@ export default function RefereeReportsPage() {
             const totalMatches = validData.length
             const totalIncome = validData.reduce((sum, item) => sum + (item.fee_amount || 0), 0)
 
-            const monthData = validData.filter((item: any) => item.match?.scheduled_time >= firstDayOfMonth)
             const monthMatches = monthData.length
             const monthIncome = monthData.reduce((sum: any, item: any) => sum + (item.fee_amount || 0), 0)
 
@@ -101,10 +117,8 @@ export default function RefereeReportsPage() {
                 favoriteDay: peak > 0 ? daysMap[topDayIdx] : '-',
                 favoriteCategory: topCatName,
                 topClubs: sortedClubs,
-                history: validData
+                history: monthData
             })
-        }
-        setLoading(false)
     }
 
     if (loading) return (
@@ -122,9 +136,17 @@ export default function RefereeReportsPage() {
 
             {/* KPI Cards (Financial) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gradient-to-br from-zinc-900 to-black p-5 rounded-2xl border border-zinc-800 shadow-xl relative overflow-hidden">
+                <div className="bg-gradient-to-br from-zinc-900 to-black p-5 rounded-2xl border border-zinc-800 shadow-xl relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-16 h-16 bg-zinc-800/50 rounded-full blur-xl -mr-6 -mt-6"></div>
-                    <p className="text-zinc-500 text-[10px] font-black uppercase tracking-wider mb-2 relative z-10">Partidos (Mes)</p>
+                    <div className="flex justify-between items-center mb-2 relative z-10">
+                        <p className="text-zinc-500 text-[10px] font-black uppercase tracking-wider">Partidos (Mes)</p>
+                        <input 
+                            type="month" 
+                            className="bg-transparent text-tdf-orange text-[10px] uppercase font-bold border-b border-tdf-orange/30 outline-none w-24 cursor-pointer"
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                        />
+                    </div>
                     <div className="text-3xl font-black text-white relative z-10">{stats.monthMatches}</div>
                 </div>
                 <div className="bg-gradient-to-br from-zinc-900 to-black p-5 rounded-2xl border border-zinc-800 shadow-xl relative overflow-hidden">
@@ -182,12 +204,19 @@ export default function RefereeReportsPage() {
                 </div>
             )}
 
-            {/* Timeline / History */}
             <div>
-                <h3 className="text-lg font-black text-white mb-4">Historial de Planillas</h3>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-black text-white">Historial de Planillas</h3>
+                    <input 
+                        type="month" 
+                        className="bg-zinc-900 text-zinc-400 border border-zinc-800 rounded px-2 py-1 text-xs outline-none focus:border-tdf-orange"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                    />
+                </div>
                 {stats.history.length === 0 ? (
                     <div className="bg-zinc-900 border border-dashed border-zinc-800 rounded-2xl p-8 text-center text-zinc-500">
-                        Aún no tienes planillas finalizadas.
+                        Aún no tienes planillas finalizadas en {selectedMonth.split('-').reverse().join('-')}.
                     </div>
                 ) : (
                     <div className="space-y-3">

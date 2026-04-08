@@ -29,7 +29,8 @@ export default function RefereeDashboard() {
                     id, scheduled_time, court_name, status,
                     home_team:teams!home_team_id(name, shield_url),
                     away_team:teams!away_team_id(name, shield_url),
-                    category:categories(name)
+                    category:categories(name),
+                    tournament:tournaments(gender)
                 )
             `)
             .eq('user_id', uid)
@@ -115,12 +116,14 @@ export default function RefereeDashboard() {
                                                     : <span className="font-black text-2xl text-zinc-600">{matchItem.match.home_team.name.charAt(0)}</span>
                                                 }
                                             </div>
-                                            <span className="text-xs font-bold text-white text-center leading-tight">{matchItem.match.home_team.name}</span>
+                                            <span className="text-[10px] sm:text-xs font-bold text-white text-center leading-tight line-clamp-2 w-full px-1">{matchItem.match.home_team.name}</span>
                                         </div>
 
                                         <div className="flex flex-col items-center gap-1">
                                             <span className="text-3xl font-black text-zinc-700 italic">VS</span>
-                                            <span className="text-[10px] font-bold text-zinc-500 uppercase bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">{matchItem.match.category.name}</span>
+                                            <span className="text-[9px] sm:text-[10px] font-bold text-zinc-500 uppercase bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-center max-w-[80px] line-clamp-2">
+                                                {matchItem.match.category?.name} {matchItem.match.tournament?.gender?.charAt(0)}
+                                            </span>
                                         </div>
 
                                         <div className="flex flex-col items-center gap-2 w-1/3">
@@ -130,7 +133,7 @@ export default function RefereeDashboard() {
                                                     : <span className="font-black text-2xl text-zinc-600">{matchItem.match.away_team.name.charAt(0)}</span>
                                                 }
                                             </div>
-                                            <span className="text-xs font-bold text-white text-center leading-tight">{matchItem.match.away_team.name}</span>
+                                            <span className="text-[10px] sm:text-xs font-bold text-white text-center leading-tight line-clamp-2 w-full px-1">{matchItem.match.away_team.name}</span>
                                         </div>
                                     </div>
 

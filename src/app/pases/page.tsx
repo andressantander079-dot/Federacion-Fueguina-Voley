@@ -199,7 +199,9 @@ export default function PasesFamiliaPage() {
                 
                 <div className="text-center mb-10">
                     <img src="/logo-fvf.png" alt="FVF" className="w-20 h-20 object-contain mx-auto mb-4 bg-white rounded-2xl p-2 shadow-lg" />
-                    <h1 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight">Acta Oficial de Traspaso</h1>
+                    <h1 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight">
+                    {pase.tipo_pase === 'prestamo' ? 'Acta Oficial de Préstamo' : 'Acta Oficial de Traspaso'}
+                </h1>
                     <p className="text-zinc-500 font-bold tracking-widest text-xs mt-2 uppercase">Federación de Voley Fueguina</p>
                 </div>
                 
@@ -213,7 +215,9 @@ export default function PasesFamiliaPage() {
 
                     <div className="hidden md:flex flex-col items-center px-4">
                         <div className="text-tdf-blue opacity-50 mb-1">→</div>
-                        <span className="bg-zinc-800 text-zinc-400 text-[10px] font-bold px-3 py-1 rounded-full border border-zinc-700">PASE</span>
+                        <span className="bg-zinc-800 text-zinc-400 text-[10px] font-bold px-3 py-1 rounded-full border border-zinc-700">
+                            {pase.tipo_pase === 'prestamo' ? 'PRÉSTAMO' : 'PASE'}
+                        </span>
                     </div>
 
                     <div className="text-center md:text-left flex flex-col items-center md:items-start">
@@ -268,7 +272,7 @@ export default function PasesFamiliaPage() {
                         />
                     </div>
                     <p className="text-sm text-zinc-400 leading-relaxed md:text-justify">
-                        En mi carácter de {minor ? 'Padre/Madre/Tutor y' : ''} titular de los datos enunciados, <strong className="text-white">PRESTO EXPRESO CONSENTIMIENTO</strong> para concretar la transferencia de mis derechos federativos y deportivos desde el club de origen hacia el club solicitante en el marco del reglamento oficial de la Federación de Voley Fueguina. Toda firma digital estampada aquí es vinculante y reviste carácter de declaración jurada.
+                        En mi carácter de {minor ? 'Padre/Madre/Tutor y' : ''} titular de los datos enunciados, <strong className="text-white">PRESTO EXPRESO CONSENTIMIENTO</strong> para concretar {pase.tipo_pase === 'prestamo' ? 'el préstamo temporal de mis derechos deportivos desde el club de origen hacia el club solicitante, en carácter de cesión gratuita y temporal,' : 'la transferencia de mis derechos federativos y deportivos desde el club de origen hacia el club solicitante,'} en el marco del reglamento oficial de la Federación de Voley Fueguina. Toda firma digital estampada aquí es vinculante y reviste carácter de declaración jurada.
                     </p>
                 </label>
 
