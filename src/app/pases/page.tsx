@@ -122,7 +122,7 @@ export default function PasesFamiliaPage() {
             const { error } = await supabase
                 .from('tramites_pases')
                 .update({
-                    estado: 'esperando_federacion', // Pasa a fase final
+                    estado: 'auditoria_final_fvf', // Todas las firmas completas → va a auditoría final FVF
                     firma_jugador: playerSignature,
                     firma_tutor: isMinor() ? tutorSignature : null,
                     dni_tutor: isMinor() ? tutorDni : null,
