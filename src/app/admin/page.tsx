@@ -159,6 +159,9 @@ export default function AdminDashboardPage() {
     useEffect(() => {
         fetchCounts();
 
+        // Refresh automático cada 30 segundos como respaldo
+        const interval = setInterval(fetchCounts, 30000);
+
         // Suscripción Realtime para actualización automática de contadores
         const channel = supabase
             .channel('admin-dashboard-counts')
@@ -174,9 +177,11 @@ export default function AdminDashboardPage() {
             .subscribe();
 
         return () => {
+            clearInterval(interval);
             supabase.removeChannel(channel);
         };
     }, []);
+
 
     async function fetchCounts() {
         try {
@@ -208,11 +213,11 @@ export default function AdminDashboardPage() {
                 .from('teams')
                 .select('*', { count: 'exact', head: true });
 
-            // 4. Torneos Activos
+            // 4. Torneos (todos los que no están finalizados)
             const { count: tournamentCount } = await supabase
                 .from('tournaments')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'active');
+                .not('status', 'in', '("finalizado","cancelado")');
 
             // 5. Jugadores
             const { count: playerCount } = await supabase
@@ -525,7 +530,7 @@ export default function AdminDashboardPage() {
                     <div className="text-4xl font-black text-tdf-orange mb-1">
                         {loading ? <Loader2 className="animate-spin" /> : counts.torneos}
                     </div>
-                    <div className="text-xs font-bold text-slate-400 uppercase">Torneos Activos</div>
+                    <div className="text-xs font-bold text-slate-400 uppercase">Torneos</div>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-white/5">
                     <div className="text-4xl font-black text-orange-900 dark:text-white mb-1">

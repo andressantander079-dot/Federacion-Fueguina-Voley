@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Search, User, Shield, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Search, User, Shield, AlertCircle, CheckCircle, Loader2, ArrowRight } from 'lucide-react';
 import { useClubAuth } from '@/hooks/useClubAuth';
 import SignaturePad from '@/components/ui/SignaturePad';
 import { useSettings } from '@/hooks/useSettings';
@@ -38,6 +38,7 @@ export default function SolicitarPasePage() {
         return age < 18;
     };
     // Form State
+    const [tipoPase, setTipoPase] = useState<'definitivo' | 'prestamo'>('definitivo');
     const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [signature, setSignature] = useState('');
     const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -112,8 +113,13 @@ export default function SolicitarPasePage() {
     };
 
     const handleSubmitPase = async () => {
-        if (!player || !clubId || !acceptedTerms || !signature || !receiptFile) {
-            alert("Atención: Debe adjuntar de manera OBLIGATORIA el comprobante de pago.");
+        const requiresReceipt = tipoPase === 'definitivo';
+        if (!player || !clubId || !acceptedTerms || !signature) {
+            alert("Complete todos los campos obligatorios.");
+            return;
+        }
+        if (requiresReceipt && !receiptFile) {
+            alert("Atención: El pase definitivo requiere adjuntar el comprobante de pago.");
             return;
         }
         
@@ -135,18 +141,22 @@ export default function SolicitarPasePage() {
                 return;
             }
 
-            // Subir comprobante a storage
-            const fileExt = receiptFile.name.split('.').pop();
-            const fileName = `pase-${player.dni}-${Date.now()}.${fileExt}`;
-            const { error: uploadError } = await supabase.storage
-                .from('procedure-files')
-                .upload(`pases/${fileName}`, receiptFile);
-            
-            if (uploadError) throw new Error('Error al subir comprobante: ' + uploadError.message);
-            
-            const { data: { publicUrl } } = supabase.storage
-                .from('procedure-files')
-                .getPublicUrl(`pases/${fileName}`);
+            let publicUrl = null;
+            // Solo subir comprobante si es pase definitivo
+            if (tipoPase === 'definitivo' && receiptFile) {
+                const fileExt = receiptFile.name.split('.').pop();
+                const fileName = `pase-${player.dni}-${Date.now()}.${fileExt}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('procedure-files')
+                    .upload(`pases/${fileName}`, receiptFile);
+                
+                if (uploadError) throw new Error('Error al subir comprobante: ' + uploadError.message);
+                
+                const { data: urlData } = supabase.storage
+                    .from('procedure-files')
+                    .getPublicUrl(`pases/${fileName}`);
+                publicUrl = urlData.publicUrl;
+            }
 
             // Create new Pass Request en Paso 2 de la Maquina
             const { error: insertError } = await supabase
@@ -157,12 +167,15 @@ export default function SolicitarPasePage() {
                     origen_club_id: player.team_id,
                     estado: 'revision_inicial_fvf',
                     firma_solicitante: signature,
+                    tipo_pase: tipoPase,
                     comprobante_url: publicUrl
                 });
 
             if (insertError) throw insertError;
 
-            setSuccessMessage(`Solicitud de pase iniciada correctamente para ${player.name}. El trámite ha sido enviado a la Federación para su Revisión Inicial de Pagos.`);
+            setSuccessMessage(`Solicitud de ${
+                tipoPase === 'prestamo' ? 'préstamo' : 'pase'
+            } iniciada correctamente para ${player.name}. El trámite ha sido enviado a la Federación para su Revisión Inicial.`);
             
         } catch (error: any) {
             console.error("Error al crear pase:", error);
@@ -199,13 +212,42 @@ export default function SolicitarPasePage() {
                 <Link href="/club/tramites" className="p-2 hover:bg-zinc-800 rounded-full transition">
                     <ArrowLeft size={20} className="text-zinc-400 hover:text-white" />
                 </Link>
-                <div>
-                    <h1 className="font-black text-xl leading-tight">Solicitar Pase Oficial</h1>
+            <div>
+                    <h1 className="font-black text-xl leading-tight">
+                        {tipoPase === 'prestamo' ? 'Solicitar Pase a Préstamo' : 'Solicitar Pase Oficial'}
+                    </h1>
                     <p className="text-xs text-tdf-blue font-bold uppercase tracking-wider">Fase 1: Identificación y Firma</p>
                 </div>
             </div>
 
             <div className="max-w-3xl mx-auto p-6 mt-6">
+
+                {/* Tipo de Pase Selector */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-6 shadow-xl">
+                    <p className="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-4">Tipo de Trámite</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={() => { setTipoPase('definitivo'); setReceiptFile(null); }}
+                            className={`flex flex-col gap-2 p-4 rounded-2xl border-2 text-left transition ${
+                                tipoPase === 'definitivo' ? 'border-tdf-blue bg-tdf-blue/10' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'
+                            }`}
+                        >
+                            <span className="font-black text-white">Pase Definitivo</span>
+                            <span className="text-xs text-zinc-400">Requiere comprobante de pago. El jugador se transfiere de club de manera permanente.</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setTipoPase('prestamo'); setReceiptFile(null); }}
+                            className={`flex flex-col gap-2 p-4 rounded-2xl border-2 text-left transition ${
+                                tipoPase === 'prestamo' ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'
+                            }`}
+                        >
+                            <span className="font-black text-white flex items-center gap-2">Préstamo <span className="text-[10px] bg-emerald-500 text-black font-black px-2 py-0.5 rounded-full">GRATIS</span></span>
+                            <span className="text-xs text-zinc-400">Sin costo. El jugador se cede temporalmente al club solicitante conservando su padrón en origen.</span>
+                        </button>
+                    </div>
+                </div>
                 
                 {/* Paso 1: Busqueda */}
                 <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 mb-8 shadow-xl">
@@ -271,7 +313,8 @@ export default function SolicitarPasePage() {
                             </div>
                         </div>
 
-                        {/* Paso 2.5: Costos y Condiciones BANCARIAS */}
+                        {/* Paso 2.5: Costos (solo si es Pase Definitivo) */}
+                        {tipoPase === 'definitivo' ? (
                         <div className="bg-zinc-950 p-6 md:p-8 rounded-2xl border border-zinc-800 mb-8 border-l-4 border-l-tdf-orange">
                             <h3 className="font-bold text-tdf-orange mb-4 flex items-center gap-2">
                                 <AlertCircle size={20} /> Arancel Federativo Obligatorio
@@ -293,7 +336,7 @@ export default function SolicitarPasePage() {
                                 </div>
                             </div>
                             
-                            {/* UPLOAD TICKET COMPROBANTE - REQUISITO NUEVO MÓDULO 3 */}
+                            {/* UPLOAD TICKET COMPROBANTE */}
                             <div className="mt-8 border-t border-zinc-800/50 pt-6">
                                 <label className="block font-bold text-white mb-2 flex items-center gap-2">
                                     <CheckCircle size={16} className={receiptFile ? "text-green-500" : "text-zinc-600"}/> 
@@ -308,6 +351,15 @@ export default function SolicitarPasePage() {
                                 />
                             </div>
                         </div>
+                        ) : (
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-6 mb-8 flex items-center gap-4">
+                            <CheckCircle className="text-emerald-400 shrink-0" size={32} />
+                            <div>
+                                <p className="font-black text-emerald-400 text-lg">Préstamo Gratuito — $0</p>
+                                <p className="text-sm text-zinc-400">Este trámite no tiene costo. No se requiere comprobante de pago. El jugador quedará disponible en tu plantel una vez firmado el acta por todas las partes.</p>
+                            </div>
+                        </div>
+                        )}
 
                         {/* Paso 3: Firma y Condiciones */}
                         <div className="bg-zinc-950 rounded-2xl p-6 md:p-8 border border-zinc-800">
@@ -339,10 +391,10 @@ export default function SolicitarPasePage() {
 
                             <button
                                 onClick={handleSubmitPase}
-                                disabled={!acceptedTerms || !signature || !receiptFile || isSubmitting}
+                                disabled={!acceptedTerms || !signature || (tipoPase === 'definitivo' && !receiptFile) || isSubmitting}
                                 className="w-full mt-8 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 text-white font-black py-4 rounded-xl text-lg shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:shadow-[0_0_30px_rgba(22,163,74,0.5)] transition flex justify-center items-center gap-2"
                             >
-                                {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : 'Confirmar e Iniciar Solicitud Formal'}
+                                {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : `Confirmar e Iniciar ${tipoPase === 'prestamo' ? 'Préstamo' : 'Solicitud de Pase'}`}
                             </button>
                         </div>
 
