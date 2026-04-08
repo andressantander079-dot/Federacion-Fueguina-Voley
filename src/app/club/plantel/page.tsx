@@ -716,8 +716,19 @@ export default function PlantelPage() {
   async function borrarJugador(id: string) {
     if (!confirm("¿Eliminar definitivamente este jugador y sus anexos?")) return;
     try {
-      const { error } = await supabase.from('players').delete().eq('id', id);
+      const { error, count } = await supabase
+        .from('players')
+        .delete({ count: 'exact' })
+        .eq('id', id);
+
       if (error) throw error;
+
+      if (count === 0) {
+        // RLS bloqueó silenciosamente el borrado
+        toast.error("No tienes permisos para eliminar este jugador o el jugador ya fue eliminado.");
+        return;
+      }
+
       toast.success("Ficha del jugador eliminada de la base de datos.");
     } catch (err: any) {
       console.error("Delete Error:", err);
