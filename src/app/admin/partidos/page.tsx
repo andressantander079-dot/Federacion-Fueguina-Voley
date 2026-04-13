@@ -14,15 +14,31 @@ interface MatchDay {
 }
 
 export default function AgendaSemanalPage() {
+    const [allMatches, setAllMatches] = useState<any[]>([]);
     const [matchDays, setMatchDays] = useState<MatchDay[]>([]);
     const [loading, setLoading] = useState(true);
+    const [categories, setCategories] = useState<string[]>([]);
+    const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
     const supabase = createClient();
 
     useEffect(() => {
         fetchWeekMatches();
     }, []);
 
+    useEffect(() => {
+        groupMatches();
+    }, [allMatches, selectedCategory]);
+
+    const formatCategoryGender = (catName?: string, gender?: string) => {
+        let suffix = '';
+        if (gender === 'Femenino') suffix = ' Fem';
+        if (gender === 'Masculino') suffix = ' Masc';
+        if (gender === 'Mixto') suffix = ' Mixto';
+        return `${catName || 'Torneo'}${suffix}`;
+    };
+
     async function fetchWeekMatches() {
+        setLoading(true);
         const now = new Date();
         // Inicio de la semana actual (lunes)
         const startOfWeek = new Date(now);
@@ -42,7 +58,8 @@ export default function AgendaSemanalPage() {
                 *,
                 home_team:home_team_id(name, shield_url),
                 away_team:away_team_id(name, shield_url),
-                category:category_id(name)
+                category:category_id(name),
+                tournament:tournament_id(gender)
             `)
             .or(`status.eq.programado,status.eq.en_curso,status.eq.suspendido`)
             .gte('scheduled_time', startOfWeek.toISOString())
@@ -55,9 +72,28 @@ export default function AgendaSemanalPage() {
             return;
         }
 
+        // Process data
+        const processedData = (data || []).map(match => ({
+            ...match,
+            displayCategory: formatCategoryGender(match.category?.name, match.tournament?.gender)
+        }));
+
+        setAllMatches(processedData);
+
+        // Extract unique categories
+        const uniqueCats = Array.from(new Set(processedData.map(m => m.displayCategory))).sort();
+        setCategories(uniqueCats);
+        setLoading(false);
+    }
+
+    function groupMatches() {
+        const filtered = selectedCategory === 'Todas' 
+            ? allMatches 
+            : allMatches.filter(m => m.displayCategory === selectedCategory);
+
         // Agrupar por día
         const grouped: Record<string, MatchDay> = {};
-        (data || []).forEach(match => {
+        filtered.forEach(match => {
             const d = new Date(match.scheduled_time);
             const key = d.toISOString().split('T')[0]; // YYYY-MM-DD
             if (!grouped[key]) {
@@ -75,7 +111,6 @@ export default function AgendaSemanalPage() {
         });
 
         setMatchDays(Object.values(grouped));
-        setLoading(false);
     }
 
     return (
@@ -94,13 +129,25 @@ export default function AgendaSemanalPage() {
                         </h1>
                         <p className="text-sm text-slate-500 dark:text-zinc-500 mt-0.5">Todos los partidos programados para esta semana</p>
                     </div>
-                    <button
-                        onClick={() => { setLoading(true); fetchWeekMatches(); }}
-                        className="p-2 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-white transition"
-                        title="Actualizar"
-                    >
-                        <RefreshCw size={16} />
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <select 
+                            value={selectedCategory} 
+                            onChange={(e) => setSelectedCategory(e.target.value)}
+                            className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 rounded-lg px-3 py-1.5 text-sm font-bold outline-none focus:ring-2 focus:ring-tdf-blue appearance-none cursor-pointer"
+                        >
+                            <option value="Todas">Todas las categorías</option>
+                            {categories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => { fetchWeekMatches(); }}
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-white transition"
+                            title="Actualizar"
+                        >
+                            <RefreshCw size={16} />
+                        </button>
+                    </div>
                 </div>
 
                 {loading ? (
@@ -165,7 +212,7 @@ export default function AgendaSemanalPage() {
                                                                 </span>
                                                             )}
                                                             <span className="text-[11px] font-bold text-blue-600 dark:text-tdf-blue">
-                                                                {match.category?.name || 'Torneo'}
+                                                                {match.displayCategory}
                                                             </span>
                                                         </div>
                                                         <span className="flex items-center gap-1 text-[11px] text-slate-400 dark:text-zinc-600">

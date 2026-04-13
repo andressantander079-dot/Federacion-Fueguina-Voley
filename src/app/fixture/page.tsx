@@ -1,15 +1,28 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { calculateStandings } from '@/lib/tournamentUtils';
 import { Trophy, Calendar, Filter, MapPin, Clock } from 'lucide-react';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
+import MatchDetailsModal from '@/components/fixture/MatchDetailsModal';
+
+function MatchDetailsHandler() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
+    const matchId = searchParams.get('match_details');
+    if (!matchId) return null;
+    return <MatchDetailsModal matchId={matchId} onClose={() => router.push(pathname, { scroll: false })} />;
+}
 
 export default function FixturePage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
 
   // Independent Filter Data
@@ -164,6 +177,9 @@ export default function FixturePage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-black font-sans text-slate-800 dark:text-slate-100 flex flex-col">
       <Navbar />
+      <Suspense fallback={null}>
+        <MatchDetailsHandler />
+      </Suspense>
 
       <main className="flex-grow pt-28 px-6 max-w-7xl mx-auto w-full">
         {/* STANDARD HEADER */}
@@ -359,8 +375,17 @@ export default function FixturePage() {
                         } else {
                           // Render Match
                           const m = item.data;
+                          const isMatchFinished = m.status === 'finalizado';
                           return (
-                            <div key={m.id} className="bg-white dark:bg-zinc-900 p-5 hover:bg-slate-50 dark:hover:bg-white/5 transition flex flex-col md:flex-row items-center gap-6 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
+                            <div 
+                                key={m.id} 
+                                onClick={() => {
+                                    if (isMatchFinished) {
+                                        router.push(`${pathname}?match_details=${m.id}`, { scroll: false });
+                                    }
+                                }}
+                                className={`bg-white dark:bg-zinc-900 p-5 transition flex flex-col md:flex-row items-center gap-6 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm ${isMatchFinished ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 hover:border-tdf-orange/50 hover:shadow-md' : 'hover:bg-slate-50 dark:hover:bg-white/5'}`}
+                            >
                               {/* DATE & TIME */}
                               <div className="flex md:flex-col items-center gap-2 md:gap-1 min-w-[80px] text-slate-500 dark:text-slate-400">
                                 <span className="text-xs font-bold uppercase">{formatArgentinaDateLiteral(m.scheduled_time).split(',')[1]}</span>
