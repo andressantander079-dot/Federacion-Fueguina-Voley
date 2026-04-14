@@ -201,12 +201,17 @@ export default function PosicionesPage() {
 
       // Convertir a Array y Ordenar
       const sortedTable = Array.from(table.values()).sort((a, b) => {
+        // 1. Puntos
         if (b.pts !== a.pts) return b.pts - a.pts;
-        // Diferencia de Sets
-        const diffA = a.sf - a.sc;
-        const diffB = b.sf - b.sc;
-        if (diffB !== diffA) return diffB - diffA;
-        // Ratio Sets
+        // 2. Diferencia de Puntos (PF - PC) — DESEMPATE PRINCIPAL
+        const difA = a.pf - a.pc;
+        const difB = b.pf - b.pc;
+        if (difB !== difA) return difB - difA;
+        // 3. Diferencia de Sets (backup)
+        const setDiffA = a.sf - a.sc;
+        const setDiffB = b.sf - b.sc;
+        if (setDiffB !== setDiffA) return setDiffB - setDiffA;
+        // 4. Ratio Sets (último recurso)
         const ratioA = a.sc === 0 ? a.sf : a.sf / a.sc;
         const ratioB = b.sc === 0 ? b.sf : b.sf / b.sc;
         return ratioB - ratioA;
@@ -342,6 +347,7 @@ export default function PosicionesPage() {
                       <th className="px-4 py-3 font-bold text-center hidden sm:table-cell">PG</th>
                       <th className="px-4 py-3 font-bold text-center hidden sm:table-cell">PP</th>
                       <th className="px-4 py-3 font-bold text-center text-slate-400">Sets</th>
+                      <th className="px-4 py-3 font-bold text-center text-amber-500" title="Diferencia de Puntos: Puntos a Favor menos Puntos en Contra">DIF</th>
                       <th className="px-4 py-3 font-bold text-center text-slate-400">Puntos (PF-PC)</th>
                     </tr>
                   </thead>
@@ -373,6 +379,16 @@ export default function PosicionesPage() {
                         <td className="px-4 py-4 text-center text-slate-400 text-xs font-bold">
                           {row.sf}-{row.sc}
                         </td>
+                        <td className="px-4 py-4 text-center text-xs font-bold whitespace-nowrap">
+                          {(() => {
+                            const dif = row.pf - row.pc;
+                            return (
+                              <span className={dif > 0 ? 'text-amber-500' : dif < 0 ? 'text-red-400' : 'text-slate-400'}>
+                                {dif > 0 ? '+' : ''}{dif}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="px-4 py-4 text-center text-xs font-semibold whitespace-nowrap">
                           <span className="text-green-600 dark:text-green-500">{row.pf}</span> - <span className="text-red-500 dark:text-red-400">{row.pc}</span>
                         </td>
@@ -380,7 +396,7 @@ export default function PosicionesPage() {
                     ))}
                     {standings.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="text-center py-10 text-slate-400 font-medium">Aún no hay partidos jugados.</td>
+                        <td colSpan={9} className="text-center py-10 text-slate-400 font-medium">Aún no hay partidos jugados.</td>
                       </tr>
                     )}
                   </tbody>
@@ -391,8 +407,8 @@ export default function PosicionesPage() {
             <div className="mt-4 flex items-start gap-2 text-xs text-slate-400 px-2">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <p>
-                PTS: Puntos • PJ: Jugados • PG: Ganados • PP: Perdidos •
-                Se suman 3 pts por 3-0/3-1 y 2 pts por 3-2.
+                PTS: Puntos • PJ: Jugados • PG: Ganados • PP: Perdidos • DIF: Diferencia de Puntos (PF-PC) — Criterio de desempate si igualan en PTS •
+                Se suman 3 pts por victoria clara (3-0/3-1) y 2 pts por tie-break (3-2).
               </p>
             </div>
           </>

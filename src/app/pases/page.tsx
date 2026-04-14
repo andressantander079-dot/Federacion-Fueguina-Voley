@@ -272,7 +272,7 @@ export default function PasesFamiliaPage() {
                         />
                     </div>
                     <p className="text-sm text-zinc-400 leading-relaxed md:text-justify">
-                        En mi carácter de {minor ? 'Padre/Madre/Tutor y' : ''} titular de los datos enunciados, <strong className="text-white">PRESTO EXPRESO CONSENTIMIENTO</strong> para concretar {pase.tipo_pase === 'prestamo' ? 'el préstamo temporal de mis derechos deportivos desde el club de origen hacia el club solicitante, en carácter de cesión gratuita y temporal,' : 'la transferencia de mis derechos federativos y deportivos desde el club de origen hacia el club solicitante,'} en el marco del reglamento oficial de la Federación de Voley Fueguina. Toda firma digital estampada aquí es vinculante y reviste carácter de declaración jurada.
+                        En mi carácter de {minor ? 'Padre/Madre/Tutor y' : ''} titular de los datos enunciados, <strong className="text-white">PRESTO EXPRESO CONSENTIMIENTO</strong> para concretar {pase.tipo_pase === 'prestamo' ? `el préstamo temporal de mis derechos deportivos desde el club de origen hacia el club solicitante desde el ${pase.fecha_desde ? new Date(pase.fecha_desde).toLocaleDateString('es-AR') : 'S/D'} hasta el ${pase.fecha_hasta ? new Date(pase.fecha_hasta).toLocaleDateString('es-AR') : 'S/D'}, en carácter de cesión gratuita y temporal,` : 'la transferencia de mis derechos federativos y deportivos desde el club de origen hacia el club solicitante,'} en el marco del reglamento oficial de la Federación de Voley Fueguina. Toda firma digital estampada aquí es vinculante y reviste carácter de declaración jurada.
                     </p>
                 </label>
 

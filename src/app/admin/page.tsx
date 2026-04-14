@@ -165,7 +165,7 @@ export default function AdminDashboardPage() {
         // Suscripción Realtime para actualización automática de contadores
         const channel = supabase
             .channel('admin-dashboard-counts')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => fetchCounts())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => fetchCounts())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tramites_pases' }, () => fetchCounts())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'procedures' }, () => fetchCounts())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => fetchCounts())
@@ -187,9 +187,10 @@ export default function AdminDashboardPage() {
         try {
             // 1. Mensajes sin leer / abiertos
             const { count: msgCount } = await supabase
-                .from('tickets')
+                .from('messages')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'abierto');
+                .eq('type', 'consulta')
+                .eq('read', false);
 
             // 2. Trámites Pendientes (Global)
             const [

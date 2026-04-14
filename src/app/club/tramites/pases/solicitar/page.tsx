@@ -39,6 +39,8 @@ export default function SolicitarPasePage() {
     };
     // Form State
     const [tipoPase, setTipoPase] = useState<'definitivo' | 'prestamo'>('definitivo');
+    const [fechaDesde, setFechaDesde] = useState('');
+    const [fechaHasta, setFechaHasta] = useState('');
     const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [signature, setSignature] = useState('');
     const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -118,6 +120,20 @@ export default function SolicitarPasePage() {
             alert("Complete todos los campos obligatorios.");
             return;
         }
+        if (tipoPase === 'prestamo') {
+            if (!fechaDesde || !fechaHasta) {
+                alert("Debe seleccionar las fechas de inicio y fin del préstamo temporal.");
+                return;
+            }
+            if (new Date(fechaHasta) <= new Date(fechaDesde)) {
+                alert("La fecha de finalización debe ser posterior a la fecha de inicio.");
+                return;
+            }
+            if (new Date(fechaHasta).getFullYear() !== new Date(fechaDesde).getFullYear() || new Date(fechaDesde).getFullYear() !== new Date().getFullYear()) {
+                alert("El préstamo temporal no puede pasar al siguiente año ni iniciarse en un año diferente al actual. Debe finalizar dentro del mismo año calendario.");
+                return;
+            }
+        }
         if (requiresReceipt && !receiptFile) {
             alert("Atención: El pase definitivo requiere adjuntar el comprobante de pago.");
             return;
@@ -168,7 +184,9 @@ export default function SolicitarPasePage() {
                     estado: 'revision_inicial_fvf',
                     firma_solicitante: signature,
                     tipo_pase: tipoPase,
-                    comprobante_url: publicUrl
+                    comprobante_url: publicUrl,
+                    fecha_desde: tipoPase === 'prestamo' ? fechaDesde : null,
+                    fecha_hasta: tipoPase === 'prestamo' ? fechaHasta : null
                 });
 
             if (insertError) throw insertError;
@@ -243,8 +261,8 @@ export default function SolicitarPasePage() {
                                 tipoPase === 'prestamo' ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'
                             }`}
                         >
-                            <span className="font-black text-white flex items-center gap-2">Préstamo <span className="text-[10px] bg-emerald-500 text-black font-black px-2 py-0.5 rounded-full">GRATIS</span></span>
-                            <span className="text-xs text-zinc-400">Sin costo. El jugador se cede temporalmente al club solicitante conservando su padrón en origen.</span>
+                            <span className="font-black text-white flex items-center gap-2">Préstamo Temporal <span className="text-[10px] bg-emerald-500 text-black font-black px-2 py-0.5 rounded-full">GRATIS</span></span>
+                            <span className="text-xs text-zinc-400">Sin costo. El jugador se cede temporalmente de un día al otro. No se permite pasar al siguiente año.</span>
                         </button>
                     </div>
                 </div>
@@ -352,11 +370,33 @@ export default function SolicitarPasePage() {
                             </div>
                         </div>
                         ) : (
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-6 mb-8 flex items-center gap-4">
-                            <CheckCircle className="text-emerald-400 shrink-0" size={32} />
-                            <div>
-                                <p className="font-black text-emerald-400 text-lg">Préstamo Gratuito — $0</p>
-                                <p className="text-sm text-zinc-400">Este trámite no tiene costo. No se requiere comprobante de pago. El jugador quedará disponible en tu plantel una vez firmado el acta por todas las partes.</p>
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-6 mb-8 flex flex-col gap-4">
+                            <div className="flex items-center gap-4 border-b border-emerald-500/20 pb-4">
+                                <CheckCircle className="text-emerald-400 shrink-0" size={32} />
+                                <div>
+                                    <p className="font-black text-emerald-400 text-lg">Préstamo Temporal Gratuito — $0</p>
+                                    <p className="text-sm text-zinc-400">No se requiere comprobante de pago. Exija obligatoriamente las fechas temporales pactadas.</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-emerald-500 uppercase tracking-wider mb-2 block">Fecha de Inicio del Préstamo</label>
+                                    <input 
+                                        type="date"
+                                        value={fechaDesde}
+                                        onChange={e => setFechaDesde(e.target.value)}
+                                        className="w-full bg-zinc-950 border border-emerald-500/30 rounded-xl px-4 py-3 text-white font-bold outline-none focus:border-emerald-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-emerald-500 uppercase tracking-wider mb-2 block">Fecha de Fin (Lim: 31/12/2026)</label>
+                                    <input 
+                                        type="date"
+                                        value={fechaHasta}
+                                        onChange={e => setFechaHasta(e.target.value)}
+                                        className="w-full bg-zinc-950 border border-emerald-500/30 rounded-xl px-4 py-3 text-white font-bold outline-none focus:border-emerald-500"
+                                    />
+                                </div>
                             </div>
                         </div>
                         )}
@@ -377,7 +417,11 @@ export default function SolicitarPasePage() {
                                     />
                                 </div>
                                 <p className="text-sm text-zinc-400 group-hover:text-zinc-300 transition leading-relaxed">
-                                    En mi carácter de autoridad del club solicitante, pido formalmente la transferencia de los derechos federativos del jugador detallado. <strong className="text-white">Al firmar asumo la responsabilidad institucional del inicio de este trámite oficial.</strong>
+                                    {tipoPase === 'prestamo' ? (
+                                        <>En mi carácter de autoridad del club solicitante, pido formalmente la transferencia de los derechos federativos del jugador detallado <strong>del {fechaDesde ? new Date(fechaDesde).toLocaleDateString('es-AR') : '___'} al {fechaHasta ? new Date(fechaHasta).toLocaleDateString('es-AR') : '___'}</strong> ya que es un pase a préstamo. <strong className="text-white">Al firmar asumo la responsabilidad institucional del inicio de este trámite oficial.</strong></>
+                                    ) : (
+                                        <>En mi carácter de autoridad del club solicitante, pido formalmente la transferencia de los derechos federativos del jugador detallado. <strong className="text-white">Al firmar asumo la responsabilidad institucional del inicio de este trámite oficial.</strong></>
+                                    )}
                                 </p>
                             </label>
 

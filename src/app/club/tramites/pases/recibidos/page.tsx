@@ -282,8 +282,15 @@ export default function PasesRecibidosPage() {
                                             <div>
                                                 <p className="text-xs font-bold text-tdf-blue uppercase tracking-wider mb-1">Club Solicitante:</p>
                                                 <p className="text-xl font-black text-white leading-tight">{pase.solicitante?.name}</p>
-                                                <div className="mt-2 text-sm text-zinc-400 flex items-center gap-2">
-                                                    <User size={14}/> <strong>{pase.player?.name}</strong> • {pase.player?.dni}
+                                                <div className="mt-2 text-sm text-zinc-400 flex flex-col gap-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <User size={14}/> <strong>{pase.player?.name}</strong> • {pase.player?.dni}
+                                                    </div>
+                                                    {pase.tipo_pase === 'prestamo' && (
+                                                        <div className="text-[10px] border border-emerald-500/20 uppercase font-black tracking-widest text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded w-fit mt-1">
+                                                            Temporal: {pase.fecha_desde ? new Date(pase.fecha_desde).toLocaleDateString('es-AR') : 'S/D'} hasta {pase.fecha_hasta ? new Date(pase.fecha_hasta).toLocaleDateString('es-AR') : 'S/D'}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -414,7 +421,14 @@ export default function PasesRecibidosPage() {
                         /* ACCEPT VIEW */
                         <div className="bg-zinc-900 border border-zinc-800 w-full max-w-2xl rounded-3xl p-8 shadow-2xl animate-in zoom-in-95">
                             <h3 className="text-2xl font-black text-white mb-2">Aceptar Solicitud</h3>
-                            <p className="text-zinc-400 text-sm mb-6">Liberación de pase para <strong className="text-white">{selectedPase.player?.name}</strong> hacia el club {selectedPase.solicitante?.name}.</p>
+                            <p className="text-zinc-400 text-sm mb-6">Liberación de pase {selectedPase.tipo_pase === 'prestamo' ? 'TEMPORAL' : 'DEFINITIVO'} para <strong className="text-white">{selectedPase.player?.name}</strong> hacia el club {selectedPase.solicitante?.name}.</p>
+                            
+                            {selectedPase.tipo_pase === 'prestamo' && (
+                                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 p-4 rounded-xl mb-6">
+                                    <p className="font-bold uppercase tracking-widest text-xs mb-1">Periodo de Préstamo Federativo</p>
+                                    <p className="text-sm">Al firmar, presta expresa conformidad para ceder al jugador temporalmente desde el <strong>{selectedPase.fecha_desde ? new Date(selectedPase.fecha_desde).toLocaleDateString('es-AR') : 'S/D'}</strong> hasta el <strong>{selectedPase.fecha_hasta ? new Date(selectedPase.fecha_hasta).toLocaleDateString('es-AR') : 'S/D'}</strong>. Al finalizar la temporalidad, el padrón retornará a su club.</p>
+                                </div>
+                            )}
                             
                             <div className="bg-zinc-950 rounded-2xl p-6 border border-zinc-800 mb-6">
                                 <h4 className="font-bold text-lg mb-2 flex items-center gap-2">

@@ -47,7 +47,14 @@ export default function InboxPage() {
             setReplyBody('');
             return;
         }
-        setSelectedMessage(msg)
+
+        // Marcar como leído en BD si no lo está
+        if (!msg.read) {
+            await supabase.from('messages').update({ read: true }).eq('id', msg.id);
+            setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, read: true } : m));
+        }
+
+        setSelectedMessage({ ...msg, read: true });
     }
 
     const handleReply = async () => {
