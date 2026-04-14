@@ -371,8 +371,18 @@ export default function AdminPasesInboxPage() {
                                         <h3 className="text-2xl font-black text-white mb-2">{selectedPase.player?.name}</h3>
                                         <div className="flex flex-wrap gap-2 justify-center md:justify-start">
                                             <span className="bg-zinc-800 text-zinc-300 px-3 py-1 rounded-lg text-sm font-bold font-mono">DNI: {selectedPase.player?.dni}</span>
-                                            <span className="bg-zinc-800 text-tdf-blue px-3 py-1 rounded-lg text-sm font-bold uppercase">De {selectedPase.origen?.name} a {selectedPase.solicitante?.name}</span>
+                                            <span className="bg-zinc-800 text-tdf-blue px-3 py-1 rounded-lg text-sm font-bold uppercase transition">
+                                                De {selectedPase.origen?.name} a {selectedPase.solicitante?.name} 
+                                                <span className="text-[10px] ml-2 text-tdf-blue font-black tracking-widest bg-tdf-blue/20 px-1 py-0.5 rounded">
+                                                    {selectedPase.tipo_pase === 'prestamo' ? 'TEMPORAL' : 'DEFINITIVO'}
+                                                </span>
+                                            </span>
                                         </div>
+                                        {selectedPase.tipo_pase === 'prestamo' && (
+                                            <div className="mt-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 p-3 rounded-lg text-sm inline-block">
+                                                <span className="font-bold">Periodo del Préstamo:</span> {selectedPase.fecha_desde ? new Date(selectedPase.fecha_desde).toLocaleDateString('es-AR') : 'S/D'} al {selectedPase.fecha_hasta ? new Date(selectedPase.fecha_hasta).toLocaleDateString('es-AR') : 'S/D'}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

@@ -15,10 +15,13 @@ description: Define las reglas de negocio, el flujo de firma y el ciclo de vida 
 | Liberación del jugador | Permanente | Temporal (duración a definir) |
 
 ## Columna en Base de Datos
-La tabla `tramites_pases` tiene una columna:
+La tabla `tramites_pases` maneja el préstamo con tres columnas clave:
 ```sql
 tipo_pase TEXT DEFAULT 'definitivo' CHECK (tipo_pase IN ('definitivo', 'prestamo'))
+fecha_desde DATE
+fecha_hasta DATE
 ```
+**Regla de Temporalidad:** Si el pase es préstamo (`tipo_pase = 'prestamo'`), `fecha_desde` y `fecha_hasta` son campos OBLIGATORIOS. La fecha de caducidad `fecha_hasta` NO puede superar el 31 de Diciembre del año en curso.
 
 ## Flujo de Estados (Idéntico al Pase Definitivo)
 1. **Club Solicitante (Club A)** inicia el préstamo con el DNI del jugador **sin adjuntar comprobante**
@@ -38,3 +41,8 @@ tipo_pase TEXT DEFAULT 'definitivo' CHECK (tipo_pase IN ('definitivo', 'prestamo
 - En la Mesa de Entrada (`/admin/tramites/pases`), el tipo de pase se muestra en el listado con una badge PRÉSTAMO o DEFINITIVO
 - Al aprobar un PRÉSTAMO, se omite la lógica de Tesorería
 - El estado de aprobación final activa la disponibilidad del jugador en el plantel del Club A
+
+## Retorno Automático (Workflow de expiración)
+Al llegar a las 00:00 (medianoche), un script `pg_cron` de Supabase ejecutará la función `fvf_procesar_retornos_prestamos_expirados()`.
+Dicha función escanea todos los pases que estén en estado `completado`, con `tipo_pase='prestamo'`, y donde `fecha_hasta < CURRENT_DATE`. 
+Para esos jugadores, se actualizará su `team_id` forzosamente al `origen_club_id` y su `squad_id` quedará en null, efectivamente retornándolos y finalizando la vigencia deportiva en el club de destino.

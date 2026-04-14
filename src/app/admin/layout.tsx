@@ -56,16 +56,19 @@ export default function AdminLayout({
                 { count: procs },
                 { count: players },
                 { count: coaches },
-                { count: refs }
+                { count: refs },
+                { count: msgs }
             ] = await Promise.all([
                 supabase.from('tramites_pases').select('*', { count: 'exact', head: true }).in('estado', ['esperando_federacion', 'revision_inicial_fvf', 'auditoria_final_fvf']),
                 supabase.from('procedures').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
                 supabase.from('players').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
                 supabase.from('coaches').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
                 supabase.from('referees').select('*', { count: 'exact', head: true }).eq('status', 'pendiente'),
+                supabase.from('messages').select('*', { count: 'exact', head: true }).eq('type', 'consulta').eq('read', false)
             ]);
             
             setPendingTasksCount((pases||0) + (procs||0) + (players||0) + (coaches||0) + (refs||0));
+            setUnreadMsgs(msgs || 0);
         };
         fetchPendingTasks();
 
@@ -76,6 +79,7 @@ export default function AdminLayout({
             .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => fetchPendingTasks())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'coaches' }, () => fetchPendingTasks())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'referees' }, () => fetchPendingTasks())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => fetchPendingTasks())
             .subscribe();
             
         return () => { supabase.removeChannel(channels); };
@@ -132,7 +136,7 @@ export default function AdminLayout({
                     <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3 mt-2">Gestión</div>
                     <AdminNavLink href="/admin" icon={<LayoutDashboard size={18} />} label="Inicio" />
 
-                    <AdminNavLink href="/admin/mensajes" icon={<Mail size={18} />} label="Mensajes" badge={unreadMsgs} />
+                    <AdminNavLink href="/admin/mensajes" icon={<Mail size={18} />} label="Mesa de Entrada" badge={unreadMsgs} />
                     <AdminNavLink href="/admin/noticias" icon={<Megaphone size={18} />} label="Noticias" />
 
                     <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3 mt-4">Deportivo</div>
