@@ -14,7 +14,20 @@ export default function TreasuryMovementsPage() {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        if (view === 'LIST') fetchMovements()
+        let channel: any;
+        if (view === 'LIST') {
+            fetchMovements();
+            
+            channel = supabase.channel('treasury-movements-changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'treasury_movements' }, () => {
+                    fetchMovements();
+                })
+                .subscribe();
+        }
+
+        return () => {
+            if (channel) supabase.removeChannel(channel);
+        };
     }, [view])
 
     async function fetchMovements() {
