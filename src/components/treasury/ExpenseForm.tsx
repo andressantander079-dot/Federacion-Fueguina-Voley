@@ -153,21 +153,19 @@ export default function ExpenseForm({ onSuccess }: { onSuccess: () => void }) {
                         </select>
                     </div>
 
-                    {formData.concept === 'Otros' && (
-                        <div className="animate-in fade-in slide-in-from-top-2">
-                            <label className="block text-xs font-bold text-slate-500 mb-1">Razón Social / Proveedor <span className="text-red-500">*</span></label>
-                            <div className="relative">
-                                <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input
-                                    required
-                                    value={formData.entity_name}
-                                    onChange={e => setFormData({ ...formData, entity_name: e.target.value })}
-                                    placeholder="Nombre del proveedor"
-                                    className="w-full pl-10 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-blue outline-none transition-all"
-                                />
-                            </div>
+                    <div className="animate-in fade-in slide-in-from-top-2">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Razón Social / Proveedor / Destinatario <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                            <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input
+                                required
+                                value={formData.entity_name}
+                                onChange={e => setFormData({ ...formData, entity_name: e.target.value })}
+                                placeholder="Nombre de quien recibe el pago"
+                                className="w-full pl-10 p-3 rounded-xl bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 focus:ring-2 focus:ring-tdf-blue outline-none transition-all"
+                            />
                         </div>
-                    )}
+                    </div>
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Comprobante (PDF/Foto)</label>

@@ -37,6 +37,18 @@ export default function TreasuryPage() {
             fetchStats()
         }
         setLoading(false)
+
+        const channel = supabase.channel('treasury-page-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'treasury_movements' }, () => {
+                if (sessionStorage.getItem('treasury_unlocked') === 'true') {
+                    fetchStats();
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        }
     }, [isUnlocked, selectedYear])
 
     async function fetchStats() {
