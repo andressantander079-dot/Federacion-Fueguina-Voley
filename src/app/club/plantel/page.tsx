@@ -23,6 +23,7 @@ export default function PlantelPage() {
   const [clubName, setClubName] = useState('');
   const [clubCity, setClubCity] = useState('Ushuaia');
   const [hasPaidInscription, setHasPaidInscription] = useState(false);
+  const [missingDocsCount, setMissingDocsCount] = useState(0);
 
   // Estado de Vistas
   const [vista, setVista] = useState<'squads' | 'jugadores' | 'documentacion'>('squads');
@@ -209,6 +210,12 @@ export default function PlantelPage() {
         updates.cemad_status = 'uploaded';
       }
 
+      // IMPORTANTE: Según Módulo 4, si un jugador habilitado sube un documento faltante, 
+      // regresa al estado pendiente para ser re-auditado por administración.
+      if (player.status === 'active') {
+         updates.status = 'pending';
+      }
+
       const { error: updateErr } = await supabase.from('players').update(updates).eq('id', player.id);
       if (updateErr) throw updateErr;
 
@@ -275,6 +282,14 @@ export default function PlantelPage() {
       } else if (profile?.full_name) {
         setClubName(profile.full_name);
       }
+      
+      const { count: missing } = await supabase
+        .from('players')
+        .select('*', { count: 'exact', head: true })
+        .eq('team_id', id)
+        .or('medical_url.is.null,payment_url.is.null');
+      setMissingDocsCount(missing || 0);
+
       await cargarSquads(id);
       await cargarHuerfanos(id);
       await cargarCoaches(id);
@@ -586,15 +601,11 @@ export default function PlantelPage() {
         .select('team_id, teams(name)')
         .eq('dni', dniLimpio);
 
-      // Only Check mandatory fields
       if (!nuevoJugador.dni_file) {
         setUploading(false);
         return toast.error("El Documento DNI (foto del frente y dorso o PDF) es obligatorio.");
       }
-      if (!nuevoJugador.payment_file) {
-        setUploading(false);
-        return toast.error("El Comprobante de Pago es obligatorio.");
-      }
+      // Comprobante de pago ya no es obligatorio según Módulo 4
       // CEMAD is optional here!
 
       let photoUrl = null;
@@ -760,7 +771,8 @@ export default function PlantelPage() {
 
       const { error } = await supabase.from('players').update({
         medical_url: medicalUrl,
-        cemad_status: 'uploaded'
+        cemad_status: 'uploaded',
+        status: 'pending'
       }).eq('id', player.id);
 
       if (error) throw error;
@@ -1067,6 +1079,26 @@ export default function PlantelPage() {
           </div>
         )}
 
+        {missingDocsCount > 0 && (
+          <div className="bg-orange-500/10 border border-orange-500/30 rounded-2xl p-4 md:p-6 mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
+             <div className="flex items-center gap-4">
+                <div className="p-3 bg-orange-500/20 rounded-xl">
+                   <AlertCircle size={24} className="text-orange-500 animate-pulse" />
+                </div>
+                <div>
+                   <h3 className="text-orange-500 font-bold text-lg">Documentación Faltante en Planteles Activos</h3>
+                   <p className="text-orange-400/80 text-sm">
+                     Hay <strong className="text-white">{missingDocsCount} jugador/es</strong> en tu club que no han cargado todos sus documentos (CEMAD o Comprobante).
+                   </p>
+                </div>
+             </div>
+             <div className="shrink-0 bg-orange-500 text-white px-4 py-2 rounded-xl text-center">
+                <span className="block text-[10px] uppercase font-black tracking-widest opacity-80 mb-1">Fecha Límite</span>
+                <span className="block font-black text-xl">8 MAY 2026</span>
+             </div>
+          </div>
+        )}
+
         {vista === 'jugadores' && squadActual && (
           <div className="animate-in fade-in slide-in-from-right-8 duration-500">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -1151,8 +1183,13 @@ export default function PlantelPage() {
                           )}
                           {j.status === 'active' && j.cemad_pendiente === true && (
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 shadow-sm ${j.cemad_status === 'uploaded' ? 'bg-yellow-500/20 text-yellow-500' : j.cemad_status === 'rejected' ? 'bg-red-500 text-white animate-pulse' : 'bg-orange-500/20 text-orange-500'}`} title={j.cemad_status === 'rejected' ? (j.rejection_reason || 'Rechazado') : ''}>
-                              {j.cemad_status === 'uploaded' ? 'CEMAD en Revisión' : j.cemad_status === 'rejected' ? 'CEMAD Rechazado (Reintentar)' : 'Habilitado pero Falta CEMAD'}
+                              {j.cemad_status === 'uploaded' ? 'CEMAD en Revisión' : j.cemad_status === 'rejected' ? 'CEMAD Rechazado (Reintentar)' : 'Habilitado (Falta CEMAD)'}
                             </span>
+                          )}
+                          {j.status === 'active' && !j.payment_url && (
+                             <span className="text-[10px] font-bold bg-green-500/20 text-green-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 shadow-sm animate-pulse">
+                                Habilitado (Falta Comprobante)
+                             </span>
                           )}
                           {j.status === 'pending' && (
                             <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
@@ -1333,7 +1370,7 @@ export default function PlantelPage() {
                       <label className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800 rounded-xl cursor-pointer transition border border-dashed border-zinc-700 group">
                         <div className="p-2 bg-zinc-900 rounded-lg text-zinc-400 group-hover:text-white transition"><DollarSign size={16} /></div>
                         <div className="flex-1 overflow-hidden">
-                          <div className="text-xs font-bold text-zinc-300">Comprobante Pago <span className="text-red-500">*</span></div>
+                          <div className="text-xs font-bold text-zinc-300">Comprobante Pago <span className="text-zinc-500 font-normal text-[10px]">(Opcional)</span></div>
                           <div className="text-[10px] text-zinc-500 truncate">{nuevoJugador.payment_file ? nuevoJugador.payment_file.name : 'Subir PDF/JPG'}</div>
                         </div>
                         <input type="file" hidden accept=".pdf,.jpg,.png" onChange={e => handleDocumentSelect(e, 'payment_file')} />

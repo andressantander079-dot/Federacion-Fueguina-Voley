@@ -188,10 +188,10 @@ export default function InboxPage() {
                 </div>
             </div>
 
-            {/* Detail View (Placeholder for now) */}
-            <div className="hidden md:flex flex-1 flex-col items-center justify-center text-slate-300 dark:text-slate-600 bg-slate-50/50 dark:bg-transparent">
+            {/* Detail View */}
+            <div className="hidden md:flex flex-1 flex-col items-center justify-start text-slate-300 dark:text-slate-600 bg-slate-50/50 dark:bg-transparent overflow-y-auto p-4 md:p-8 relative">
                 {selectedMessage ? (
-                    <div className="w-full max-w-3xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm">
+                    <div className="w-full max-w-3xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 shadow-sm my-auto shrink-0">
                         <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-zinc-800 pb-6">
                             <div className="space-y-4">
                                 {getPriorityBadge(selectedMessage.priority)}
