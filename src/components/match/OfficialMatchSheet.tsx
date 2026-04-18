@@ -55,7 +55,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     };
 
     const confirmR5 = (team: 'home' | 'away') => {
-        const matchPosArray = [null, null, null, null, null, null];
+        const matchPosArray: (any | null)[] = [null, null, null, null, null, null];
         const fillOrder = [0, 5, 4, 3, 2, 1]; // I->0, II->5, III->4, IV->3, V->2, VI->1
         
         r5Form.forEach((p, i) => {
