@@ -32,6 +32,11 @@ export default function DetalleTorneoPage() {
    const [tablaPosiciones, setTablaPosiciones] = useState<any[]>([]);
    const [modalPartido, setModalPartido] = useState(false);
 
+   // ESTADOS SEGURIDAD MÓDULO 1
+   const [matchToDelete, setMatchToDelete] = useState<string | null>(null);
+   const [securityPin, setSecurityPin] = useState('');
+   const [pinError, setPinError] = useState(false);
+
    // FORMULARIO
    const [isCustomRound, setIsCustomRound] = useState(false);
    const [nuevoPartido, setNuevoPartido] = useState({
@@ -180,13 +185,26 @@ export default function DetalleTorneoPage() {
 
    async function eliminarPartido(e: React.MouseEvent, matchId: string) {
       e.preventDefault(); e.stopPropagation();
-      if (!confirm("🗑️ ¿Estás seguro de eliminar este partido definitivamente?")) return;
+      // Módulo 1: En lugar de usar 'confirm()', abrimos el modal de seguridad.
+      setMatchToDelete(matchId);
+      setSecurityPin('');
+      setPinError(false);
+   }
 
-      const { error } = await supabase.from('matches').delete().eq('id', matchId);
+   async function confirmarEliminacion() {
+      if (securityPin !== '0258') {
+         setPinError(true);
+         return;
+      }
+      
+      if (!matchToDelete) return;
+
+      const { error } = await supabase.from('matches').delete().eq('id', matchToDelete);
 
       if (!error) {
-         setPartidosPendientes(current => current.filter((p: any) => p.id !== matchId));
-         setPartidosOficiales(current => current.filter((p: any) => p.id !== matchId));
+         setPartidosPendientes(current => current.filter((p: any) => p.id !== matchToDelete));
+         setPartidosOficiales(current => current.filter((p: any) => p.id !== matchToDelete));
+         setMatchToDelete(null);
       } else {
          alert("❌ Error al eliminar: " + error.message);
       }
@@ -485,6 +503,38 @@ export default function DetalleTorneoPage() {
                         <button type="submit" className="flex-1 py-3 bg-tdf-orange text-white rounded-xl font-bold hover:bg-orange-600 transition shadow-lg shadow-orange-900/20">Guardar Partido</button>
                      </div>
                   </form>
+               </div>
+            </div>
+         )}
+
+         {/* MODAL: MÓDULO 1 SEGURIDAD ELIMINACIÓN */}
+         {matchToDelete && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-zinc-900 rounded-2xl p-6 md:p-8 w-full max-w-sm shadow-2xl border border-zinc-800 text-center">
+                  <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+                     <AlertTriangle size={32} className="text-red-500" />
+                  </div>
+                  <h3 className="text-xl font-black text-white mb-2">Eliminar Partido</h3>
+                  <p className="text-sm text-zinc-400 mb-6">Para confirmar la eliminación, ingrese el PIN de Administrador Oficial.</p>
+                  
+                  <input 
+                     type="password" 
+                     maxLength={4}
+                     autoFocus
+                     placeholder="****"
+                     className={`w-full bg-zinc-950 border ${pinError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'border-zinc-800 focus:border-tdf-blue focus:ring-tdf-blue'} p-4 text-center text-3xl tracking-[1em] rounded-xl outline-none text-white font-mono mb-2 transition-colors`}
+                     value={securityPin} 
+                     onChange={e => {
+                        setSecurityPin(e.target.value);
+                        setPinError(false);
+                     }} 
+                  />
+                  {pinError && <p className="text-xs text-red-500 font-bold mb-4">PIN INCORRECTO</p>}
+                  
+                  <div className="flex gap-3 mt-6">
+                     <button type="button" onClick={() => setMatchToDelete(null)} className="flex-1 py-3 border border-zinc-800 hover:bg-zinc-800 rounded-xl font-bold text-zinc-400 transition">Cancelar</button>
+                     <button type="button" onClick={confirmarEliminacion} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition">Eliminar</button>
+                  </div>
                </div>
             </div>
          )}

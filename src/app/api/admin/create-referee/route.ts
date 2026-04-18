@@ -8,9 +8,9 @@ export async function POST(request: Request) {
     try {
         // 1. Check Admin Permission
         const supabaseUser = await createClient();
-        const { data: { user: adminUser }, error: authError } = await supabaseUser.auth.getUser();
+        const { data: { session }, error: authError } = await supabaseUser.auth.getSession();
 
-        if (authError || !adminUser) {
+        if (authError || !session?.user) {
             console.error("API: Unauthorized", authError);
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
