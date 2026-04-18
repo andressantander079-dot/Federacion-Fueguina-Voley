@@ -350,6 +350,33 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
             setTimeouts({ home: 0, away: 0 }); // Reset timeouts
             // Unblock players blocked only for the set
             setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
+
+            // Regla R5: Limpiar la cancha al iniciar el nuevo set
+            setPosHome(prev => {
+                const onCourt = prev.filter(p => p !== null) as Player[];
+                if (onCourt.length > 0) {
+                    setBenchHome(bench => {
+                        const newBench = [...bench, ...onCourt];
+                        // Remover duplicados por ID por seguridad
+                        const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
+                        return unique.sort((a, b) => a.number - b.number);
+                    });
+                }
+                return Array(6).fill(null);
+            });
+
+            setPosAway(prev => {
+                const onCourt = prev.filter(p => p !== null) as Player[];
+                if (onCourt.length > 0) {
+                    setBenchAway(bench => {
+                        const newBench = [...bench, ...onCourt];
+                        // Remover duplicados
+                        const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
+                        return unique.sort((a, b) => a.number - b.number);
+                    });
+                }
+                return Array(6).fill(null);
+            });
         }
     };
 

@@ -35,6 +35,82 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
     const [modalActionOpen, setModalActionOpen] = useState(false);
     const [modalSubOpen, setModalSubOpen] = useState(false);
+    
+    // R5 Modal States
+    const [showR5ModalHome, setShowR5ModalHome] = useState(false);
+    const [showR5ModalAway, setShowR5ModalAway] = useState(false);
+    const [ignoreR5WarningHome, setIgnoreR5WarningHome] = useState(false);
+    const [ignoreR5WarningAway, setIgnoreR5WarningAway] = useState(false);
+
+    const [r5Form, setR5Form] = useState<(any | null)[]>([null, null, null, null, null, null]);
+    const [r5Libero, setR5Libero] = useState<any | null>(null);
+    const [activeR5Box, setActiveR5Box] = useState<number>(0);
+
+    const openR5 = (team: 'home' | 'away') => {
+        setR5Form([null, null, null, null, null, null]);
+        setR5Libero(null);
+        setActiveR5Box(0);
+        if (team === 'home') setShowR5ModalHome(true);
+        else setShowR5ModalAway(true);
+    };
+
+    const confirmR5 = (team: 'home' | 'away') => {
+        const matchPosArray = [null, null, null, null, null, null];
+        const fillOrder = [0, 5, 4, 3, 2, 1]; // I->0, II->5, III->4, IV->3, V->2, VI->1
+        
+        r5Form.forEach((p, i) => {
+            if (p) {
+                // @ts-ignore
+                matchPosArray[fillOrder[i]] = p;
+            }
+        });
+
+        // Handle Libero: update the isLibero flag in bench if assigned here
+        
+        if (team === 'home') {
+            setPosHome(matchPosArray);
+            if (r5Libero) {
+                setBenchHome(prev => prev.map(p => p.id === r5Libero.id ? {...p, isLibero: true} : p));
+            }
+            // Remove players from bench that went to court
+            setBenchHome(prev => prev.filter(p => !matchPosArray.find(mp => mp?.id === p.id)));
+            setShowR5ModalHome(false);
+        } else {
+            setPosAway(matchPosArray);
+            if (r5Libero) {
+                setBenchAway(prev => prev.map(p => p.id === r5Libero.id ? {...p, isLibero: true} : p));
+            }
+            setBenchAway(prev => prev.filter(p => !matchPosArray.find(mp => mp?.id === p.id)));
+            setShowR5ModalAway(false);
+        }
+    };
+
+    useEffect(() => {
+        setIgnoreR5WarningHome(false);
+        setIgnoreR5WarningAway(false);
+    }, [currentSetIdx]);
+
+    const handleAddPointWrapper = (team: 'home' | 'away') => {
+        const currentPos = team === 'home' ? posHome : posAway;
+        const isCourtEmpty = currentPos.filter(p => p !== null).length === 0;
+        const scoreSum = sets[currentSetIdx].home + sets[currentSetIdx].away;
+        
+        if (isCourtEmpty && scoreSum === 0) {
+            const ignoreWarning = team === 'home' ? ignoreR5WarningHome : ignoreR5WarningAway;
+            if (!ignoreWarning) {
+                const proceed = confirm(`¿Desea continuar el set sin Jugadores/as cargados en el equipo ${team === 'home' ? 'Local' : 'Visitante'}?`);
+                if (!proceed) {
+                    if (team === 'home') setShowR5ModalHome(true);
+                    else setShowR5ModalAway(true);
+                    return;
+                } else {
+                    if (team === 'home') setIgnoreR5WarningHome(true);
+                    else setIgnoreR5WarningAway(true);
+                }
+            }
+        }
+        addPoint(team);
+    };
 
     // New: Match Status & Metadata
     const [matchStatus, setMatchStatus] = useState<'scheduled' | 'live' | 'finished' | 'suspended'>('scheduled'); // 'finalizado' is db value but let's map 'scheduled' = 'programmado'
@@ -1162,7 +1238,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         )}
                         {benchHome.map(p => (
                             <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 group">
-                                <div onClick={() => !readOnly && moveToCourt('home', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
+                                <div onClick={() => !readOnly && !(posHome.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0) && moveToCourt('home', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
                                     <span className="font-black text-slate-400 w-6 text-right">#{p.number}</span>
                                     <span className="font-bold text-slate-700 flex-1">{p.name}</span>
                                     {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
@@ -1201,7 +1277,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div className="text-6xl font-black text-blue-600">{sets[currentSetIdx].home}</div>
                                 {!readOnly && (
                                     <div className="flex gap-2">
-                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => addPoint('home')} className="bg-blue-600 outline-none text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
+                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => handleAddPointWrapper('home')} className="bg-blue-600 outline-none text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
                                         <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => subtractPoint('home')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
                                     </div>
                                 )}
@@ -1240,7 +1316,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div className="text-6xl font-black text-red-600">{sets[currentSetIdx].away}</div>
                                 {!readOnly && (
                                     <div className="flex gap-2">
-                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => addPoint('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
+                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => handleAddPointWrapper('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
                                         <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => subtractPoint('away')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
                                     </div>
                                 )}
@@ -1273,6 +1349,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     <div className="bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full grid grid-cols-2 overflow-hidden">
                         <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-slate-800 z-10 shadow-xl"></div>
                         <div className="relative border-r border-slate-200/50 bg-blue-50/30">
+                            {posHome.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
+                                <div className="absolute inset-0 flex items-center justify-center z-20">
+                                    <button onClick={() => openR5('home')} className="bg-blue-600 text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:bg-blue-700 hover:scale-105 active:scale-95 transition border-4 border-white/20">
+                                        R5 Local
+                                    </button>
+                                </div>
+                            )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
                                 <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[3]} team="home" /></div>
                                 <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
@@ -1283,6 +1366,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                             </div>
                         </div>
                         <div className="relative bg-red-50/30">
+                            {posAway.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
+                                <div className="absolute inset-0 flex items-center justify-center z-20">
+                                    <button onClick={() => openR5('away')} className="bg-red-600 text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:bg-red-700 hover:scale-105 active:scale-95 transition border-4 border-white/20">
+                                        R5 Visitante
+                                    </button>
+                                </div>
+                            )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
                                 <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[1]} team="away" /></div>
                                 <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
@@ -1340,7 +1430,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         )}
                         {benchAway.map(p => (
                             <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 group">
-                                <div onClick={() => !readOnly && moveToCourt('away', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
+                                <div onClick={() => !readOnly && !(posAway.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0) && moveToCourt('away', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
                                     <span className="font-black text-slate-400 w-6 text-right">#{p.number}</span>
                                     <span className="font-bold text-slate-700 flex-1">{p.name}</span>
                                     {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
@@ -1372,7 +1462,160 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 </aside>
             </div>
 
-            {/* --- MODALES --- */}
+            {/* --- MODAL R5 --- */}
+            {(showR5ModalHome || showR5ModalAway) && (() => {
+                const team = showR5ModalHome ? 'home' : 'away';
+                const teamName = team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name;
+                const teamColor = team === 'home' ? 'blue' : 'red';
+                const bench = team === 'home' ? benchHome : benchAway;
+                
+                const availablePlayers = bench.filter(p => !r5Form.find(r => r?.id === p.id) && r5Libero?.id !== p.id);
+                
+                const handleSelectPlayer = (player: any) => {
+                    if (activeR5Box === 6) {
+                        setR5Libero(player);
+                    } else {
+                        const newForm = [...r5Form];
+                        newForm[activeR5Box] = player;
+                        setR5Form(newForm);
+                        const nextEmpty = newForm.findIndex((p, idx) => idx > activeR5Box && p === null);
+                        if (nextEmpty !== -1) setActiveR5Box(nextEmpty);
+                        else if (newForm.every(p => p !== null)) setActiveR5Box(6);
+                    }
+                };
+
+                const isComplete = r5Form.every(p => p !== null);
+
+                return (
+                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex flex-col items-center justify-center p-2 md:p-6 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-full md:max-h-[85vh]">
+                        <div className={`bg-${teamColor}-600 p-4 text-white flex justify-between items-center relative shrink-0`}>
+                            <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-md p-1">
+                                    <img src="https://gmqvyskslwfxocshwuxr.supabase.co/storage/v1/object/public/public_assets/logo.png" alt="FDFV" className="w-[80%] h-[80%] object-contain" onError={e => e.currentTarget.src='https://ui-avatars.com/api/?name=FDFV&background=fff&color=000'} />
+                                </div>
+                                <div>
+                                    <div className="text-xl md:text-3xl font-black tracking-widest leading-none">R5 DIGITAL - SET {sets[currentSetIdx].number}</div>
+                                    <div className="text-xs md:text-sm font-bold opacity-90 uppercase mt-1 text-yellow-300">EQUIPO {team === 'home' ? 'LOCAL' : 'VISITANTE'}: <span className="text-white">{teamName || ''}</span></div>
+                                </div>
+                            </div>
+                            <button onClick={() => { setShowR5ModalHome(false); setShowR5ModalAway(false); }} className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-[500px] bg-slate-50">
+                            {/* COLUMNA IZQUIERDA: BANCA */}
+                            <div className="w-full md:w-5/12 p-4 md:p-6 flex flex-col bg-white border-b md:border-b-0 md:border-r border-slate-200">
+                                <h3 className="font-black text-slate-500 uppercase tracking-widest text-[10px] md:text-xs mb-3">Plantel Disponible {activeR5Box === 6 ? '(Líbero)' : '(Formación)'}</h3>
+                                <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                    {availablePlayers.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
+                                            <p className="font-bold">Plantel vacío</p>
+                                        </div>
+                                    ) : (
+                                        availablePlayers.map(p => {
+                                            const isLibSuggestion = p.isLibero && activeR5Box === 6;
+                                            return (
+                                                <div key={p.id} onClick={() => handleSelectPlayer(p)} className={`bg-white border md:text-lg border-slate-100 p-2.5 md:p-3 flex items-center gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all group rounded-2xl ${isLibSuggestion ? 'ring-2 ring-purple-300 bg-purple-50/20' : ''}`}>
+                                                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg bg-slate-50 text-slate-500 group-hover:bg-${teamColor}-600 group-hover:text-white transition-colors ${isLibSuggestion ? 'bg-purple-600 text-white' : ''}`}>{p.number}</span>
+                                                    <span className="font-bold text-slate-700 flex-1 truncate">{p.name}</span>
+                                                    {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block">Líbero</span>}
+                                                    {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block">Capitán</span>}
+                                                </div>
+                                            )
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                            
+                            {/* COLUMNA DERECHA: EL PAPEL R5 PREMIUM */}
+                            <div className="w-full md:w-7/12 p-4 md:p-8 flex flex-col items-center justify-center overflow-y-auto">
+                                <div className="flex items-center justify-center gap-2 mb-4">
+                                     <h3 className="font-black text-slate-400 uppercase tracking-widest text-[10px] md:text-xs">Formación Oficial</h3>
+                                     <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md text-[10px] font-black uppercase">Obligatorio</span>
+                                </div>
+                                
+                                {/* LA "HOJA" PREMIUM */}
+                                <div className="bg-white p-4 md:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-200 w-full max-w-[360px] md:max-w-[400px] rounded-[2rem] relative flex flex-col items-center">
+                                    {/* Grid de Cancha */}
+                                    <div className="w-full relative bg-slate-50/50 rounded-2xl border border-slate-100 p-3 mb-4 grid grid-cols-3 gap-2 md:gap-3">
+                                        <div className="absolute top-0 inset-x-4 h-[3px] bg-red-400 rounded-full shadow-sm"></div>
+                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[9px] font-black bg-red-50 text-red-500 px-3 py-1 rounded-full uppercase tracking-widest ring-1 ring-red-100">RED</div>
+                                        
+                                        {[
+                                            { rIdx: 3, label: 'IV' },
+                                            { rIdx: 2, label: 'III' },
+                                            { rIdx: 1, label: 'II' },
+                                            { rIdx: 4, label: 'V' },
+                                            { rIdx: 5, label: 'VI' },
+                                            { rIdx: 0, label: 'I' },
+                                        ].map(({ rIdx, label }) => {
+                                            const isLocked = rIdx > 0 && r5Form[rIdx-1] === null;
+                                            const isActive = activeR5Box === rIdx;
+                                            const player = r5Form[rIdx];
+
+                                            return (
+                                                <div key={rIdx} onClick={() => !isLocked && setActiveR5Box(rIdx)}
+                                                    className={`aspect-[4/3] rounded-xl border-2 flex flex-col items-center justify-center p-1 cursor-pointer transition-all relative ${isActive ? 'border-blue-500 bg-blue-50 shadow-md ring-4 ring-blue-50 z-10 scale-105' : (isLocked ? 'border-dashed border-slate-200 bg-slate-50/50 cursor-not-allowed opacity-50' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')} ${player && !isActive ? 'bg-white border-slate-200' : ''}`}>
+                                                    
+                                                    {player && isActive && (
+                                                        <button onClick={(e) => { e.stopPropagation(); const n = [...r5Form]; n[rIdx] = null; setR5Form(n); setActiveR5Box(rIdx); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:scale-110 transition-transform"><X size={12}/></button>
+                                                    )}
+
+                                                    {!player ? (
+                                                        <div className="flex flex-col items-center justify-center opacity-40">
+                                                            <span className="text-xl md:text-2xl font-black">{label}</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col items-center justify-center w-full h-full gap-1 p-1">
+                                                            <span className="text-[10px] font-black text-slate-300 mb-[-2px]">{label}</span>
+                                                            <div className="bg-blue-100 text-blue-700 w-full rounded-lg py-1.5 flex flex-col items-center justify-center px-1">
+                                                                 <span className="font-black text-sm md:text-base leading-none">#{player.number}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+
+                                    {/* SECCIÓN LÍBERO PREM */}
+                                    <div className={`w-full flex items-center justify-between border-2 rounded-2xl p-3 cursor-pointer transition-all ${activeR5Box === 6 ? 'border-purple-500 bg-purple-50 shadow-md ring-4 ring-purple-50 scale-105' : (!isComplete ? 'border-dashed border-slate-200 opacity-50 cursor-not-allowed' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')}`} onClick={() => isComplete && setActiveR5Box(6)}>
+                                        <div className="flex items-center gap-3 md:gap-4">
+                                            <div className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-lg md:text-xl rounded-xl transition-colors ${activeR5Box === 6 || r5Libero ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                L
+                                            </div>
+                                            <div className="flex flex-col justify-center">
+                                                <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-0.5">Líbero</div>
+                                                <div className="font-bold text-sm md:text-base text-slate-700">
+                                                    {r5Libero ? <span className="text-purple-700">#{r5Libero.number} {r5Libero.name}</span> : <span className="text-slate-400 font-medium text-xs md:text-sm">Asignar Líbero...</span>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {r5Libero && activeR5Box === 6 && (
+                                            <button onClick={(e) => { e.stopPropagation(); setR5Libero(null); setActiveR5Box(6); }} className="bg-red-500 text-white rounded-full p-1.5 shadow-md hover:scale-110 mr-1"><X size={14}/></button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 w-full max-w-[360px] md:max-w-[400px]">
+                                    <button 
+                                        disabled={!isComplete} 
+                                        onClick={() => confirmR5(team)}
+                                        className={`w-full py-4 rounded-2xl font-black text-sm md:text-base shadow-xl uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isComplete ? 'bg-green-500 hover:bg-green-400 text-white hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:shadow-green-500/20' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                                    >
+                                        <Check size={20} /> Guardar Formación
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                );
+            })()}
+
+            {/* --- MODALES ANTIGUOS --- */}
             {modalActionOpen && selectedPlayer && (
                 <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 backdrop-blur-sm">
                     <div className="bg-white p-6 rounded-3xl shadow-2xl w-80">
