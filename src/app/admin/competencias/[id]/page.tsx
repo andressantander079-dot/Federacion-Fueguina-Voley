@@ -192,7 +192,7 @@ export default function DetalleTorneoPage() {
    }
 
    async function confirmarEliminacion() {
-      if (securityPin !== '0258') {
+      if (securityPin !== '1004') {
          setPinError(true);
          return;
       }
