@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { calculateStandings } from '@/lib/tournamentUtils';
 import { Trophy, Calendar, Filter, MapPin, Clock } from 'lucide-react';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -38,7 +37,6 @@ export default function FixturePage() {
   // Active Data
   const [activeTournament, setActiveTournament] = useState<any>(null);
   const [matches, setMatches] = useState<any[]>([]);
-  const [standings, setStandings] = useState<any[]>([]);
   const [venues, setVenues] = useState<any[]>([]);
   const [sponsors, setSponsors] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -138,9 +136,6 @@ export default function FixturePage() {
 
       if (mData) {
         setMatches(mData);
-        // Calculate Standings
-        const st = calculateStandings(mData, pointSystem, teams);
-        setStandings(st);
       }
     } catch (error) {
       console.error("Error loading details:", error);
@@ -270,53 +265,10 @@ export default function FixturePage() {
         {/* CONTENT AREA */}
         <div className="relative z-10">
           {activeTournament ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="max-w-4xl mx-auto">
 
-              {/* LEFT COLUMN: STANDINGS */}
-              <div className="lg:col-span-1 space-y-6">
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5 overflow-hidden">
-                  <div className="bg-slate-100 dark:bg-white/5 p-4 border-b border-slate-200 dark:border-white/5">
-                    <h2 className="text-slate-900 dark:text-white font-black text-lg flex items-center gap-2">
-                      <Trophy size={20} className="text-tdf-orange" /> Tabla
-                    </h2>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-slate-50 dark:bg-black/50 text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px]">
-                        <tr>
-                          <th className="p-3 text-center">#</th>
-                          <th className="p-3">Equipo</th>
-                          <th className="p-3 text-center">PJ</th>
-                          <th className="p-3 text-center text-slate-900 dark:text-white">PTS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                        {standings.map((row, i) => (
-                          <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition">
-                            <td className={`p-3 text-center font-bold ${i < 3 ? 'text-tdf-orange' : 'text-slate-400'}`}>{i + 1}</td>
-                            <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
-                              <div className="flex items-center gap-2 truncate max-w-[150px]">
-                                {row.team?.shield_url && (
-                                  <img src={row.team.shield_url} className="w-6 h-6 object-contain" alt="" />
-                                )}
-                                <span title={row.name}>{row.name}</span>
-                              </div>
-                            </td>
-                            <td className="p-3 text-center font-medium text-slate-500">{row.pg + row.pp}</td>
-                            <td className="p-3 text-center font-black text-lg bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white">{row.pts}</td>
-                          </tr>
-                        ))}
-                        {standings.length === 0 && (
-                          <tr><td colSpan={4} className="text-center p-6 text-slate-400 text-xs">Sin datos aún.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* RIGHT COLUMN: FIXTURE LIST */}
-              <div className="lg:col-span-2 space-y-6">
+              {/* FIXTURE LIST */}
+              <div className="space-y-6">
                 {(() => {
                   const renderItems: any[] = [];
                   let matchCounter = 0;
