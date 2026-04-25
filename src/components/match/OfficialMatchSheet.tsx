@@ -35,6 +35,17 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
     const [modalActionOpen, setModalActionOpen] = useState(false);
     const [modalSubOpen, setModalSubOpen] = useState(false);
+    const [timeoutModal, setTimeoutModal] = useState<{ isOpen: boolean, team: 'home' | 'away' | null, timeLeft: number }>({ isOpen: false, team: null, timeLeft: 30 });
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (timeoutModal.isOpen && timeoutModal.timeLeft > 0) {
+            interval = setInterval(() => {
+                setTimeoutModal(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [timeoutModal.isOpen, timeoutModal.timeLeft]);
     
     // R5 Modal States
     const [showR5ModalHome, setShowR5ModalHome] = useState(false);
@@ -664,19 +675,21 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 alert(`Punto otorgado al equipo contrario.`);
             } else return;
         } else if (type === 'expulsion') {
-            if (confirm(`¿Expulsión (Amarilla y Roja juntas) para ${selectedPlayer.name}?\nDeberá ser sustituido y no podrá jugar el resto del SET.`)) {
+            if (confirm(`¿Expulsión (Amarilla y Roja juntas) para ${selectedPlayer.name}?\n${selectedPlayer.isCoach ? 'Deberá retirarse del área de juego.' : 'Deberá ser sustituido y no podrá jugar el resto del SET.'}`)) {
                 addSanction(sanctionData);
-                blockPlayer(selectedPlayer.id, 'set');
-                alert(`Expulsado del Set. Seleccione su reemplazo.`);
-                setModalSubOpen(true);
+                if (!selectedPlayer.isCoach) blockPlayer(selectedPlayer.id, 'set');
+                alert(selectedPlayer.isCoach ? `Expulsado del Set.` : `Expulsado del Set. Seleccione su reemplazo.`);
+                if (!selectedPlayer.isCoach) setModalSubOpen(true);
+                else { setModalActionOpen(false); setSelectedPlayer(null); }
                 return;
             } else return;
         } else if (type === 'disqualify') {
-            if (confirm(`¿Descalificación (Amarilla y Roja separadas) para ${selectedPlayer.name}?\nDeberá ser sustituido y no podrá jugar el resto del PARTIDO.`)) {
+            if (confirm(`¿Descalificación (Amarilla y Roja separadas) para ${selectedPlayer.name}?\n${selectedPlayer.isCoach ? 'Deberá abandonar el partido.' : 'Deberá ser sustituido y no podrá jugar el resto del PARTIDO.'}`)) {
                 addSanction(sanctionData);
-                blockPlayer(selectedPlayer.id, 'match');
-                alert(`Descalificado del Partido. Seleccione su reemplazo.`);
-                setModalSubOpen(true);
+                if (!selectedPlayer.isCoach) blockPlayer(selectedPlayer.id, 'match');
+                alert(selectedPlayer.isCoach ? `Descalificado del Partido.` : `Descalificado del Partido. Seleccione su reemplazo.`);
+                if (!selectedPlayer.isCoach) setModalSubOpen(true);
+                else { setModalActionOpen(false); setSelectedPlayer(null); }
                 return;
             } else return;
         }
@@ -971,9 +984,11 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             if (confirm(`El equipo ya consumió sus 2 tiempos muertos permitidos en este set. ¿Conceder tiempo muerto adicional/excepcional?`)) {
                 requestTimeout(team);
                 setObservations(prev => prev + (prev ? '\n' : '') + `[Set ${currentSetIdx + 1}] Tiempo muerto adicional/excepcional concedido al equipo ${team === 'home' ? 'Local' : 'Visitante'}.`);
+                setTimeoutModal({ isOpen: true, team, timeLeft: 30 });
             }
         } else {
             requestTimeout(team);
+            setTimeoutModal({ isOpen: true, team, timeLeft: 30 });
         }
     };
 
@@ -1260,11 +1275,32 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                     {/* DT LOCAL INPUTS */}
                     <div className="p-3 bg-blue-50/50 border-t border-blue-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
-                        <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Cuerpo Técnico L</label>
+                        <div className="flex justify-between items-center px-1">
+                            <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Cuerpo Técnico L</label>
+                            {!readOnly && matchStatus === 'live' && staff.coachHome && (
+                                <button 
+                                    onClick={() => { setSelectedPlayer({ id: 'coach_home', name: staff.coachHome, team: 'home', isCoach: true, number: 'DT' }); setModalActionOpen(true); }}
+                                    className="text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-2 py-0.5 rounded-md font-bold transition"
+                                >
+                                    Sancionar DT
+                                </button>
+                            )}
+                        </div>
                         <input list="homeCoaches" disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none focus:border-blue-400 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir o seleccionar DT..." value={staff.coachHome || ''} onChange={e => setStaff({ ...staff, coachHome: e.target.value })} />
                         <datalist id="homeCoaches">
                             {clubCoachesHome.map((c, i) => <option key={i} value={c} />)}
                         </datalist>
+                        <div className="flex justify-between items-center px-1 mt-1">
+                            <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Ayudante</label>
+                            {!readOnly && matchStatus === 'live' && staff.ayTecHome && (
+                                <button 
+                                    onClick={() => { setSelectedPlayer({ id: 'aytec_home', name: staff.ayTecHome, team: 'home', isCoach: true, number: 'AT' }); setModalActionOpen(true); }}
+                                    className="text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-2 py-0.5 rounded-md font-bold transition"
+                                >
+                                    Sancionar AT
+                                </button>
+                            )}
+                        </div>
                         <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-blue-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir Ayudante Técnico..." value={staff.ayTecHome || ''} onChange={e => setStaff({ ...staff, ayTecHome: e.target.value })} />
                     </div>
                 </aside>
@@ -1452,11 +1488,32 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                     {/* DT VISITA INPUTS */}
                     <div className="p-3 bg-red-50/50 border-t border-red-100 flex flex-col gap-2 relative z-10 shrink-0 mt-auto">
-                        <label className="text-[10px] font-black text-red-600 uppercase tracking-widest px-1">Cuerpo Técnico V</label>
+                        <div className="flex justify-between items-center px-1">
+                            <label className="text-[10px] font-black text-red-600 uppercase tracking-widest">Cuerpo Técnico V</label>
+                            {!readOnly && matchStatus === 'live' && staff.coachAway && (
+                                <button 
+                                    onClick={() => { setSelectedPlayer({ id: 'coach_away', name: staff.coachAway, team: 'away', isCoach: true, number: 'DT' }); setModalActionOpen(true); }}
+                                    className="text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-2 py-0.5 rounded-md font-bold transition"
+                                >
+                                    Sancionar DT
+                                </button>
+                            )}
+                        </div>
                         <input list="awayCoaches" disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-200 rounded-lg px-3 py-2 text-xs font-black text-slate-700 outline-none focus:border-red-400 transition disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir o seleccionar DT..." value={staff.coachAway || ''} onChange={e => setStaff({ ...staff, coachAway: e.target.value })} />
                         <datalist id="awayCoaches">
                             {clubCoachesAway.map((c, i) => <option key={i} value={c} />)}
                         </datalist>
+                        <div className="flex justify-between items-center px-1 mt-1">
+                            <label className="text-[10px] font-black text-red-600 uppercase tracking-widest">Ayudante</label>
+                            {!readOnly && matchStatus === 'live' && staff.ayTecAway && (
+                                <button 
+                                    onClick={() => { setSelectedPlayer({ id: 'aytec_away', name: staff.ayTecAway, team: 'away', isCoach: true, number: 'AT' }); setModalActionOpen(true); }}
+                                    className="text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-2 py-0.5 rounded-md font-bold transition"
+                                >
+                                    Sancionar AT
+                                </button>
+                            )}
+                        </div>
                         <input disabled={readOnly || matchStatus !== 'scheduled'} className="w-full bg-white border border-red-100 rounded-lg px-3 py-2 text-xs font-medium text-slate-500 outline-none focus:border-red-400 transition mb-1 disabled:opacity-75 disabled:bg-slate-50" placeholder="Escribir Ayudante Técnico..." value={staff.ayTecAway || ''} onChange={e => setStaff({ ...staff, ayTecAway: e.target.value })} />
                     </div>
                 </aside>
@@ -1674,9 +1731,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                             </>
                         ) : (
                             <>
-                                <h3 className="text-center font-black text-4xl mb-6 text-slate-800 text-shadow-sm">#{selectedPlayer.number}</h3>
+                                {selectedPlayer.isCoach ? (
+                                    <h3 className="text-center font-black text-2xl mb-6 text-slate-800 text-shadow-sm">{selectedPlayer.name || 'Cuerpo Técnico'}</h3>
+                                ) : (
+                                    <h3 className="text-center font-black text-4xl mb-6 text-slate-800 text-shadow-sm">#{selectedPlayer.number}</h3>
+                                )}
                                 <div className="flex flex-col gap-3">
-                                    <button onClick={() => { setModalSubOpen(true); }} className="bg-blue-50 text-blue-700 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-100 transition shadow-sm border border-blue-200"><RefreshCw size={18} /> Sustitución</button>
+                                    {!selectedPlayer.isCoach && (
+                                        <button onClick={() => { setModalSubOpen(true); }} className="bg-blue-50 text-blue-700 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-100 transition shadow-sm border border-blue-200"><RefreshCw size={18} /> Sustitución</button>
+                                    )}
 
                                     <div className="grid grid-cols-2 gap-2 mt-2">
                                         <button onClick={() => handleSanction('yellow')} className="bg-yellow-400 text-yellow-900 py-3 rounded-2xl font-black shadow-sm uppercase text-xs tracking-wide active:scale-95 transition">Amarilla<br /><span className="text-[9px] font-bold opacity-75 leading-none block">Advertencia</span></button>
@@ -1711,14 +1774,28 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     const team = selectedPlayer.team;
                                     if (subsCount[team as 'home' | 'away'] >= 6) return { allowed: false, reason: 'Límite 6 cambios' };
 
-                                    const pHistory = subHistory.filter(h => h.team === team && (h.playerInId === player.id || h.playerOutId === player.id));
-                                    if (pHistory.length > 0) {
-                                        const paired = pHistory.find(h => 
+                                    const history = subHistory.filter(h => h.team === team);
+                                    
+                                    // Comprobamos el historial del jugador que ENTRA
+                                    const playerHistory = history.filter(h => h.playerInId === player.id || h.playerOutId === player.id);
+                                    if (playerHistory.length > 0) {
+                                        const paired = playerHistory.every(h => 
                                             (h.playerInId === player.id && h.playerOutId === selectedPlayer.id) || 
                                             (h.playerOutId === player.id && h.playerInId === selectedPlayer.id)
                                         );
-                                        if (!paired) return { allowed: false, reason: 'Rol de Emparejamiento' };
+                                        if (!paired) return { allowed: false, reason: 'Bloqueado (Emparejamiento)' };
                                     }
+
+                                    // Comprobamos el historial del jugador que SALE
+                                    const selectedHistory = history.filter(h => h.playerInId === selectedPlayer.id || h.playerOutId === selectedPlayer.id);
+                                    if (selectedHistory.length > 0) {
+                                        const paired = selectedHistory.every(h => 
+                                            (h.playerInId === player.id && h.playerOutId === selectedPlayer.id) || 
+                                            (h.playerOutId === player.id && h.playerInId === selectedPlayer.id)
+                                        );
+                                        if (!paired) return { allowed: false, reason: 'Bloqueado (Emparejamiento)' };
+                                    }
+
                                     return { allowed: true, reason: '' };
                                 };
 
@@ -1751,6 +1828,32 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     </div>
                 </div>
             )}
+            {/* --- MODAL TIMEOUT --- */}
+            {timeoutModal.isOpen && (
+                <div className="fixed inset-0 bg-slate-900/80 flex items-center justify-center z-[100] backdrop-blur-md">
+                    <div className={`bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center border-4 ${timeoutModal.team === 'home' ? 'border-blue-500' : 'border-red-500'}`}>
+                        <h2 className="text-3xl font-black text-slate-800 uppercase tracking-widest mb-2">TIEMPO MUERTO</h2>
+                        <h3 className={`text-xl font-bold uppercase mb-8 ${timeoutModal.team === 'home' ? 'text-blue-600' : 'text-red-600'}`}>
+                            Equipo {timeoutModal.team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name}
+                        </h3>
+                        
+                        <div className={`text-8xl md:text-9xl font-black mb-8 tabular-nums ${timeoutModal.timeLeft <= 10 ? 'text-red-600 animate-pulse' : 'text-slate-800'}`}>
+                            00:{timeoutModal.timeLeft.toString().padStart(2, '0')}
+                        </div>
+
+                        {timeoutModal.timeLeft === 0 && (
+                            <div className="bg-red-100 text-red-700 font-black px-6 py-3 rounded-xl mb-6 animate-bounce border-2 border-red-500 text-center">
+                                ¡TIEMPO FINALIZADO!<br/>LLAMAR A LOS EQUIPOS
+                            </div>
+                        )}
+
+                        <button onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 30 })} className="bg-slate-800 text-white font-black px-8 py-4 rounded-xl hover:bg-slate-900 transition active:scale-95 shadow-lg w-full text-lg">
+                            Cerrar Temporizador
+                        </button>
+                    </div>
+                </div>
+            )}
+            
             {/* --- MODAL W.O. (WALK OVER) --- */}
             {woModalOpen && (
                 <div className="fixed inset-0 bg-slate-900/70 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
