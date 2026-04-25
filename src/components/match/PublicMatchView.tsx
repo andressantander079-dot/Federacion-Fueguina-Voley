@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { ArrowLeft, User } from 'lucide-react';
 import { useParams } from 'next/navigation';
+import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 export default function PublicMatchView() {
     const params = useParams();
@@ -52,8 +53,8 @@ export default function PublicMatchView() {
                     awayShield: data.away_team?.shield_url,
                     awayColor: data.away_team?.main_color || 'red',
                     categoryName: data.category?.name,
-                    date: data.date,
-                    time: data.time,
+                    date: data.scheduled_time ? formatArgentinaDateLiteral(data.scheduled_time).split(',').slice(0, 2).join(',').trim() : 'HOY',
+                    time: data.scheduled_time ? formatArgentinaTimeLiteral(data.scheduled_time) : 'A CONFIRMAR',
                     phase: data.phase,
                     gym: data.location
                 });
@@ -119,7 +120,7 @@ export default function PublicMatchView() {
                         📅 {date || 'HOY'}
                     </div>
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-400 uppercase">
-                        ⏰ {time?.slice(0, 5) || 'A CONFIRMAR'}
+                        ⏰ {time || 'A CONFIRMAR'}
                     </div>
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/20 border border-blue-500/20 text-xs font-bold text-blue-400 uppercase">
                         🏆 {phase || categoryName || 'Liga'}
