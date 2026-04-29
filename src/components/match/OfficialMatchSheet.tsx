@@ -35,7 +35,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
     const [modalActionOpen, setModalActionOpen] = useState(false);
     const [modalSubOpen, setModalSubOpen] = useState(false);
-    const [timeoutModal, setTimeoutModal] = useState<{ isOpen: boolean, team: 'home' | 'away' | null, timeLeft: number }>({ isOpen: false, team: null, timeLeft: 30 });
+    const [timeoutModal, setTimeoutModal] = useState<{ isOpen: boolean, team: 'home' | 'away' | 'set_break' | null, timeLeft: number }>({ isOpen: false, team: null, timeLeft: 30 });
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -55,11 +55,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     const [r5Form, setR5Form] = useState<(any | null)[]>([null, null, null, null, null, null]);
     const [r5Libero, setR5Libero] = useState<any | null>(null);
+    const [r5Libero2, setR5Libero2] = useState<any | null>(null);
     const [activeR5Box, setActiveR5Box] = useState<number>(0);
 
     const openR5 = (team: 'home' | 'away') => {
         setR5Form([null, null, null, null, null, null]);
         setR5Libero(null);
+        setR5Libero2(null);
         setActiveR5Box(0);
         if (team === 'home') setShowR5ModalHome(true);
         else setShowR5ModalAway(true);
@@ -83,6 +85,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             if (r5Libero) {
                 setBenchHome(prev => prev.map(p => p.id === r5Libero.id ? {...p, isLibero: true} : p));
             }
+            if (r5Libero2) {
+                setBenchHome(prev => prev.map(p => p.id === r5Libero2.id ? {...p, isLibero: true} : p));
+            }
             // Remove players from bench that went to court
             setBenchHome(prev => prev.filter(p => !matchPosArray.find(mp => mp?.id === p.id)));
             setShowR5ModalHome(false);
@@ -90,6 +95,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             setPosAway(matchPosArray);
             if (r5Libero) {
                 setBenchAway(prev => prev.map(p => p.id === r5Libero.id ? {...p, isLibero: true} : p));
+            }
+            if (r5Libero2) {
+                setBenchAway(prev => prev.map(p => p.id === r5Libero2.id ? {...p, isLibero: true} : p));
             }
             setBenchAway(prev => prev.filter(p => !matchPosArray.find(mp => mp?.id === p.id)));
             setShowR5ModalAway(false);
@@ -142,6 +150,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [stagedPlayersForAdd, setStagedPlayersForAdd] = useState<any[]>([]);
 
     // --- STAFF & CIERRE ---
     const [referees, setReferees] = useState<any[]>([]);
@@ -803,7 +812,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 };
                 matchCategory = randCat;
             } else {
-                const { data, error: matchErr } = await supabase.from('matches').select('home_team_id, away_team_id, category_id, scheduled_time').eq('id', matchId).single();
+                const { data, error: matchErr } = await supabase.from('matches').select('home_team_id, away_team_id, category_id, scheduled_time, home_squad_id, away_squad_id').eq('id', matchId).single();
                 if (matchErr || !data) throw new Error("Match data not found");
                 matchData = data;
                 const { data: catData } = await supabase.from('categories').select('*').eq('id', matchData.category_id).maybeSingle();
@@ -811,17 +820,35 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             }
 
             const teamId = team === 'home' ? matchData.home_team_id : matchData.away_team_id;
+            const squadId = team === 'home' ? matchData.home_squad_id : matchData.away_squad_id;
 
-            const { data: clubSquads } = await supabase.from('squads').select('id, category_id, category:categories(name, min_year, max_year)').eq('team_id', teamId);
-            if (!clubSquads || clubSquads.length === 0) {
+            let matchGender = null;
+            if (squadId) {
+                const { data: squadData } = await supabase.from('squads').select('gender').eq('id', squadId).maybeSingle();
+                if (squadData) matchGender = squadData.gender;
+            }
+
+            const { data: clubSquadsRaw, error: squadErr } = await supabase.from('squads').select('id, category_id, gender').eq('team_id', teamId);
+            if (squadErr) console.error("DEBUG SQUADS: " + squadErr.message);
+            if (!clubSquadsRaw || clubSquadsRaw.length === 0) {
                 setSearchResults([]);
                 setIsSearching(false);
                 return;
             }
 
+            const categoryIds = Array.from(new Set(clubSquadsRaw.map(s => s.category_id).filter(Boolean)));
+            const { data: categoriesData } = await supabase.from('categories').select('id, name, min_year, max_year').in('id', categoryIds);
+            
+            const clubSquads = clubSquadsRaw.map(squad => {
+                return {
+                    ...squad,
+                    category: categoriesData?.find(c => c.id === squad.category_id)
+                };
+            });
+
             const squadIds = clubSquads.map(s => s.id);
             const squadMap = clubSquads.reduce((acc, squad) => {
-                acc[squad.id] = Array.isArray(squad.category) ? squad.category[0] : squad.category;
+                acc[squad.id] = { ...squad.category, gender: squad.gender };
                 return acc;
             }, {} as Record<string, any>);
 
@@ -869,10 +896,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 if (dailyMatchCounts[p.id] >= 2) {
                     isBlocked = true;
                     blockReason = "Límite: 2 partidos hoy";
-                } else if (playerCat.max_year && matchCategory?.max_year) {
-                    if (playerCat.max_year < matchCategory.max_year) {
+                } else if (matchGender && playerCat.gender && matchGender !== playerCat.gender) {
+                    isBlocked = true;
+                    blockReason = `Rama Diferente`;
+                } else if (matchCategory?.min_year) {
+                    if (!playerCat.min_year || playerCat.min_year < matchCategory.min_year) {
                         isBlocked = true;
-                        blockReason = `Jugador Mayor (${catName})`;
+                        blockReason = `Mayor Edad (${catName})`;
                     }
                 }
 
@@ -908,12 +938,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         setTargetTeamForAdd(team);
         setSearchTerm('');
         setSearchResults([]);
+        setStagedPlayersForAdd([]);
         setModalAddPlayerOpen(true);
         loadAvailablePlayers(team);
     };
 
-    const confirmAddPlayer = (player: any) => {
-        addPlayerToBench(targetTeamForAdd, player); setModalAddPlayerOpen(false);
+    const confirmAddPlayer = () => {
+        stagedPlayersForAdd.forEach(p => addPlayerToBench(targetTeamForAdd, p));
+        setModalAddPlayerOpen(false);
     };
 
     // --- MANEJADORES ACCIÓN ---
@@ -1338,6 +1370,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                         {!sets[currentSetIdx].finished ? (
                                             <button onClick={() => {
                                                 finishSet();
+                                                // If the match isn't over yet, we should show the 3 minute break timer.
+                                                // We can safely just show it always on Cerrar Set, or we can check if it's not the final set.
+                                                setTimeoutModal({ isOpen: true, team: 'set_break', timeLeft: 180 });
                                             }} className="w-full py-1 bg-slate-800 text-white rounded text-xs font-bold hover:bg-slate-700 transition">Cerrar Set</button>
                                         ) : (
                                             <button onClick={() => {
@@ -1420,17 +1455,60 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     </div>
 
-                    <div className="flex justify-end pt-4 pb-10 gap-3 flex-wrap">
+                    <div className="flex flex-col items-center pt-8 pb-10 gap-4 w-full px-2">
                         {!readOnly && (
                             <>
-                                <button
-                                    onClick={() => { setWoWinner(null); setWoObservations(''); setWoModalOpen(true); }}
-                                    className="bg-purple-700 text-white px-5 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-purple-800 transition"
+                                <div className="flex justify-center items-start gap-4 md:gap-8 w-full">
+                                    {/* Botón Sanciones Local */}
+                                    <button 
+                                        disabled={matchStatus === 'finished' || matchStatus === 'suspended'}
+                                        onClick={() => { setSelectedPlayer({ id: 'team_home', name: 'Equipo Local', team: 'home', isCoach: true, number: 'EQ' }); setModalActionOpen(true); }}
+                                        className="relative group border-4 border-black bg-white flex items-center justify-center w-14 h-14 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Sanciones Equipo Local"
+                                    >
+                                        <div className="relative w-6 h-6">
+                                            <div className="absolute top-0 left-0 w-3.5 h-5 bg-yellow-400 rounded-sm border-2 border-black transform -rotate-12 origin-bottom transition-transform group-hover:-rotate-12 group-hover:scale-110"></div>
+                                            <div className="absolute top-1 right-0 w-3.5 h-5 bg-red-500 rounded-sm border-2 border-black transform rotate-12 origin-bottom transition-transform group-hover:rotate-12 group-hover:scale-110 z-10"></div>
+                                        </div>
+                                    </button>
+
+                                    {/* Columna Central de Botones Principales */}
+                                    <div className="flex flex-col gap-3 w-48 shrink-0">
+                                        <button
+                                            onClick={() => { setWoWinner(null); setWoObservations(''); setWoModalOpen(true); }}
+                                            className="bg-purple-700 text-white py-3 rounded-full font-bold text-sm flex items-center justify-center gap-2 shadow-lg hover:bg-purple-800 transition w-full active:scale-95"
+                                        >
+                                            <X size={16} /> W.O.
+                                        </button>
+                                        <button 
+                                            onClick={handleSuspendMatch} 
+                                            className="bg-orange-600 text-white py-3 rounded-full font-bold text-sm flex items-center justify-center gap-2 shadow-lg hover:bg-orange-700 transition w-full active:scale-95"
+                                        >
+                                            <AlertTriangle size={16} /> Suspender
+                                        </button>
+                                    </div>
+
+                                    {/* Botón Sanciones Visita */}
+                                    <button 
+                                        disabled={matchStatus === 'finished' || matchStatus === 'suspended'}
+                                        onClick={() => { setSelectedPlayer({ id: 'team_away', name: 'Equipo Visitante', team: 'away', isCoach: true, number: 'EQ' }); setModalActionOpen(true); }}
+                                        className="relative group border-4 border-black bg-white flex items-center justify-center w-14 h-14 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Sanciones Equipo Visitante"
+                                    >
+                                        <div className="relative w-6 h-6">
+                                            <div className="absolute top-0 left-0 w-3.5 h-5 bg-yellow-400 rounded-sm border-2 border-black transform -rotate-12 origin-bottom transition-transform group-hover:-rotate-12 group-hover:scale-110"></div>
+                                            <div className="absolute top-1 right-0 w-3.5 h-5 bg-red-500 rounded-sm border-2 border-black transform rotate-12 origin-bottom transition-transform group-hover:rotate-12 group-hover:scale-110 z-10"></div>
+                                        </div>
+                                    </button>
+                                </div>
+                                
+                                {/* Botón Finalizar Encuentro (Debajo de los otros, centrado) */}
+                                <button 
+                                    onClick={() => setClosingFlow(true)} 
+                                    className="bg-slate-900 text-white px-8 py-4 mt-2 rounded-full font-black text-sm flex items-center justify-center gap-2 shadow-lg hover:bg-black transition w-64 active:scale-95 uppercase tracking-wide"
                                 >
-                                    <X size={16} /> W.O.
+                                    <Check size={18} /> Finalizar Encuentro
                                 </button>
-                                <button onClick={handleSuspendMatch} className="bg-orange-600 text-white px-6 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-orange-700 transition"><AlertTriangle size={16} /> Suspender</button>
-                                <button onClick={() => setClosingFlow(true)} className="bg-slate-900 text-white px-8 py-3 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-black transition"><Check size={16} /> Finalizar Encuentro</button>
                             </>
                         )}
                     </div>
@@ -1526,11 +1604,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 const teamColor = team === 'home' ? 'blue' : 'red';
                 const bench = team === 'home' ? benchHome : benchAway;
                 
-                const availablePlayers = bench.filter(p => !r5Form.find(r => r?.id === p.id) && r5Libero?.id !== p.id);
+                const availablePlayers = bench.filter(p => !r5Form.find(r => r?.id === p.id) && r5Libero?.id !== p.id && r5Libero2?.id !== p.id);
                 
                 const handleSelectPlayer = (player: any) => {
                     if (activeR5Box === 6) {
                         setR5Libero(player);
+                    } else if (activeR5Box === 7) {
+                        setR5Libero2(player);
                     } else {
                         const newForm = [...r5Form];
                         newForm[activeR5Box] = player;
@@ -1548,8 +1628,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-full md:max-h-[85vh]">
                         <div className={`bg-${teamColor}-600 p-4 text-white flex justify-between items-center relative shrink-0`}>
                             <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-md p-1">
-                                    <img src="https://gmqvyskslwfxocshwuxr.supabase.co/storage/v1/object/public/public_assets/logo.png" alt="FDFV" className="w-[80%] h-[80%] object-contain" onError={e => e.currentTarget.src='https://ui-avatars.com/api/?name=FDFV&background=fff&color=000'} />
+                                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-md p-1 overflow-hidden shrink-0">
+                                    {teamsInfo?.[team]?.shield ? (
+                                        <img src={teamsInfo[team].shield} alt={teamName || 'Club'} className="w-full h-full object-contain" onError={e => e.currentTarget.src=`https://ui-avatars.com/api/?name=${teamName || 'C'}&background=fff&color=000`} />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-slate-800 font-black text-xl">
+                                            {teamName ? teamName.substring(0,2).toUpperCase() : 'C'}
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <div className="text-xl md:text-3xl font-black tracking-widest leading-none">R5 DIGITAL - SET {sets[currentSetIdx].number}</div>
@@ -1638,21 +1724,42 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     </div>
 
                                     {/* SECCIÓN LÍBERO PREM */}
-                                    <div className={`w-full flex items-center justify-between border-2 rounded-2xl p-3 cursor-pointer transition-all ${activeR5Box === 6 ? 'border-purple-500 bg-purple-50 shadow-md ring-4 ring-purple-50 scale-105' : (!isComplete ? 'border-dashed border-slate-200 opacity-50 cursor-not-allowed' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')}`} onClick={() => isComplete && setActiveR5Box(6)}>
-                                        <div className="flex items-center gap-3 md:gap-4">
-                                            <div className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-lg md:text-xl rounded-xl transition-colors ${activeR5Box === 6 || r5Libero ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                                                L
-                                            </div>
-                                            <div className="flex flex-col justify-center">
-                                                <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-0.5">Líbero</div>
-                                                <div className="font-bold text-sm md:text-base text-slate-700">
-                                                    {r5Libero ? <span className="text-purple-700">#{r5Libero.number} {r5Libero.name}</span> : <span className="text-slate-400 font-medium text-xs md:text-sm">Asignar Líbero...</span>}
+                                    <div className="w-full flex flex-col gap-2">
+                                        {/* Líbero 1 */}
+                                        <div className={`w-full flex items-center justify-between border-2 rounded-2xl p-3 cursor-pointer transition-all ${activeR5Box === 6 ? 'border-purple-500 bg-purple-50 shadow-md ring-4 ring-purple-50 scale-105' : (!isComplete ? 'border-dashed border-slate-200 opacity-50 cursor-not-allowed' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')}`} onClick={() => isComplete && setActiveR5Box(6)}>
+                                            <div className="flex items-center gap-3 md:gap-4">
+                                                <div className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-lg md:text-xl rounded-xl transition-colors ${activeR5Box === 6 || r5Libero ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                    L
+                                                </div>
+                                                <div className="flex flex-col justify-center">
+                                                    <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-0.5">Líbero 1</div>
+                                                    <div className="font-bold text-sm md:text-base text-slate-700">
+                                                        {r5Libero ? <span className="text-purple-700">#{r5Libero.number} {r5Libero.name}</span> : <span className="text-slate-400 font-medium text-xs md:text-sm">Asignar Líbero 1...</span>}
+                                                    </div>
                                                 </div>
                                             </div>
+                                            {r5Libero && activeR5Box === 6 && (
+                                                <button onClick={(e) => { e.stopPropagation(); setR5Libero(null); setActiveR5Box(6); }} className="bg-red-500 text-white rounded-full p-1.5 shadow-md hover:scale-110 mr-1"><X size={14}/></button>
+                                            )}
                                         </div>
-                                        {r5Libero && activeR5Box === 6 && (
-                                            <button onClick={(e) => { e.stopPropagation(); setR5Libero(null); setActiveR5Box(6); }} className="bg-red-500 text-white rounded-full p-1.5 shadow-md hover:scale-110 mr-1"><X size={14}/></button>
-                                        )}
+
+                                        {/* Líbero 2 */}
+                                        <div className={`w-full flex items-center justify-between border-2 rounded-2xl p-3 cursor-pointer transition-all ${activeR5Box === 7 ? 'border-purple-500 bg-purple-50 shadow-md ring-4 ring-purple-50 scale-105' : (!isComplete ? 'border-dashed border-slate-200 opacity-50 cursor-not-allowed' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')}`} onClick={() => isComplete && setActiveR5Box(7)}>
+                                            <div className="flex items-center gap-3 md:gap-4">
+                                                <div className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-lg md:text-xl rounded-xl transition-colors ${activeR5Box === 7 || r5Libero2 ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                    L2
+                                                </div>
+                                                <div className="flex flex-col justify-center">
+                                                    <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-0.5">Líbero 2 <span className="text-slate-300 ml-1">(Opcional)</span></div>
+                                                    <div className="font-bold text-sm md:text-base text-slate-700">
+                                                        {r5Libero2 ? <span className="text-purple-700">#{r5Libero2.number} {r5Libero2.name}</span> : <span className="text-slate-400 font-medium text-xs md:text-sm">Asignar Líbero 2...</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {r5Libero2 && activeR5Box === 7 && (
+                                                <button onClick={(e) => { e.stopPropagation(); setR5Libero2(null); setActiveR5Box(7); }} className="bg-red-500 text-white rounded-full p-1.5 shadow-md hover:scale-110 mr-1"><X size={14}/></button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1758,9 +1865,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-[60] backdrop-blur-sm">
                     <div className="bg-white p-6 rounded-3xl shadow-2xl w-80 max-h-[90vh] flex flex-col">
                         <h3 className="font-black text-lg mb-4 text-slate-800 flex justify-between items-center">
-                            <span>Elegir Suplente</span>
+                            <div className="flex flex-col">
+                                <span>Elegir Suplente</span>
+                                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Sustituir a #{selectedPlayer?.number}</span>
+                            </div>
                             {selectedPlayer && (
-                                <span className="text-xs bg-slate-100 px-2 py-1 rounded-lg text-slate-500 font-bold">Cambios: {subsCount[selectedPlayer.team as 'home' | 'away']}/6</span>
+                                <span className="text-xs bg-slate-100 px-3 py-1.5 rounded-xl text-slate-500 font-black border border-slate-100 shadow-sm uppercase tracking-tighter">Cambios: {subsCount[selectedPlayer.team as 'home' | 'away']}/6</span>
                             )}
                         </h3>
                         <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
@@ -1802,21 +1912,30 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 return activeBench.filter(p => !blockedPlayers.find(bp => bp.id === p.id)).map(p => {
                                     const status = getPlayerSubStatus(p);
                                     return (
-                                        <div key={p.id} className={`p-3 border rounded-xl flex flex-col gap-1 transition-colors ${status.allowed ? 'border-slate-100 hover:bg-blue-50 cursor-pointer' : 'border-red-100 bg-red-50/50 opacity-80'}`}>
+                                        <div key={p.id} className={`p-4 border-2 rounded-[1.25rem] flex flex-col gap-2 transition-all duration-200 ${status.allowed ? 'border-slate-50 bg-white shadow-sm hover:border-blue-300 hover:shadow-md cursor-pointer group' : 'border-red-50 bg-red-50/20'}`}>
                                             <div className="flex gap-4 items-center justify-between" onClick={() => status.allowed && handleSubConfirm(p)}>
                                                 <div className="flex items-center gap-3">
-                                                    <span className={`w-10 h-10 rounded-lg flex items-center justify-center font-black ${status.allowed ? 'bg-slate-100 text-slate-700' : 'bg-red-100 text-red-700'}`}>{p.number}</span> 
-                                                    <span className={`font-bold ${status.allowed ? 'text-slate-600' : 'text-red-700'}`}>{p.name}</span>
+                                                    <span className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-lg transition-colors ${status.allowed ? 'bg-slate-100 text-slate-700 group-hover:bg-blue-600 group-hover:text-white' : 'bg-red-100 text-red-700'}`}>{p.number}</span> 
+                                                    <div className="flex flex-col">
+                                                        <span className={`font-bold text-base leading-tight ${status.allowed ? 'text-slate-700' : 'text-red-800'}`}>{p.name}</span>
+                                                        <div className="flex gap-1.5 mt-1">
+                                                            {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Líbero</span>}
+                                                            {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Capitán</span>}
+                                                        </div>
+                                                    </div>
                                                 </div>
+                                                {status.allowed && <RefreshCw size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors" />}
                                             </div>
                                             {!status.allowed && (
-                                                <div className="flex justify-between items-center mt-2 border-t border-red-100 pt-2">
-                                                    <span className="text-[10px] uppercase font-bold text-red-500 bg-red-100 px-2 py-0.5 rounded shadow-sm">{status.reason}</span>
-                                                    <button onClick={() => {
-                                                        if(confirm(`¿Desea FORZAR esta sustitución de forma EXCEPCIONAL (Ej: Lesión)?\n\nEsto ignorará la regla y quedará registrado en las observaciones del partido.`)) {
-                                                            handleSubConfirm(p, true);
-                                                        }
-                                                    }} className="text-[10px] bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded font-bold shadow transition">Forzar Excepción</button>
+                                                <div className="flex flex-col gap-2 mt-1 pt-2 border-t border-red-100/50">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] uppercase font-black text-red-500 bg-red-100/50 px-2.5 py-1 rounded-full shadow-sm tracking-widest">{status.reason}</span>
+                                                        <button onClick={() => {
+                                                            if(confirm(`¿Desea FORZAR esta sustitución de forma EXCEPCIONAL (Ej: Lesión)?\n\nEsto ignorará la regla y quedará registrado en las observaciones del partido.`)) {
+                                                                handleSubConfirm(p, true);
+                                                            }
+                                                        }} className="text-[10px] bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl font-black shadow-md transition active:scale-95 uppercase tracking-wide">Forzar Excepción</button>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -1830,26 +1949,44 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             )}
             {/* --- MODAL TIMEOUT --- */}
             {timeoutModal.isOpen && (
-                <div className="fixed inset-0 bg-slate-900/80 flex items-center justify-center z-[100] backdrop-blur-md">
-                    <div className={`bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center border-4 ${timeoutModal.team === 'home' ? 'border-blue-500' : 'border-red-500'}`}>
-                        <h2 className="text-3xl font-black text-slate-800 uppercase tracking-widest mb-2">TIEMPO MUERTO</h2>
-                        <h3 className={`text-xl font-bold uppercase mb-8 ${timeoutModal.team === 'home' ? 'text-blue-600' : 'text-red-600'}`}>
-                            Equipo {timeoutModal.team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name}
-                        </h3>
-                        
-                        <div className={`text-8xl md:text-9xl font-black mb-8 tabular-nums ${timeoutModal.timeLeft <= 10 ? 'text-red-600 animate-pulse' : 'text-slate-800'}`}>
-                            00:{timeoutModal.timeLeft.toString().padStart(2, '0')}
-                        </div>
-
-                        {timeoutModal.timeLeft === 0 && (
-                            <div className="bg-red-100 text-red-700 font-black px-6 py-3 rounded-xl mb-6 animate-bounce border-2 border-red-500 text-center">
-                                ¡TIEMPO FINALIZADO!<br/>LLAMAR A LOS EQUIPOS
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[2rem] w-full max-w-md overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 animate-in fade-in zoom-in duration-200">
+                        <div className={`p-6 text-center text-white ${timeoutModal.team === 'set_break' ? 'bg-gradient-to-r from-indigo-500 to-purple-600' : timeoutModal.team === 'home' ? 'bg-gradient-to-r from-blue-500 to-blue-700' : 'bg-gradient-to-r from-red-500 to-red-700'}`}>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-black uppercase text-xl tracking-wider">
+                                    {timeoutModal.team === 'set_break' ? 'DESCANSO ENTRE SETS' : 'TIEMPO MUERTO'}
+                                </h3>
+                                <button onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 0 })} className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition">
+                                    <X size={20} />
+                                </button>
                             </div>
-                        )}
-
-                        <button onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 30 })} className="bg-slate-800 text-white font-black px-8 py-4 rounded-xl hover:bg-slate-900 transition active:scale-95 shadow-lg w-full text-lg">
-                            Cerrar Temporizador
-                        </button>
+                            <div className="text-sm font-bold text-white/90 uppercase tracking-widest">
+                                {timeoutModal.team === 'set_break' ? 'Cambio de Lado / Descanso' : `Equipo ${timeoutModal.team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name}`}
+                            </div>
+                        </div>
+                        <div className="p-8 text-center bg-slate-50 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-slate-200">
+                                <div className={`h-full ${timeoutModal.team === 'set_break' ? 'bg-indigo-500' : timeoutModal.team === 'home' ? 'bg-blue-500' : 'bg-red-500'} transition-all duration-1000 ease-linear`} style={{ width: `${(timeoutModal.timeLeft / (timeoutModal.team === 'set_break' ? 180 : 30)) * 100}%` }}></div>
+                            </div>
+                            
+                            <div className={`text-8xl md:text-9xl font-black tabular-nums tracking-tighter drop-shadow-lg mb-4 ${timeoutModal.timeLeft === 0 ? 'text-red-600 animate-pulse' : 'text-slate-800'}`}>
+                                {Math.floor(timeoutModal.timeLeft / 60).toString().padStart(2, '0')}:{(timeoutModal.timeLeft % 60).toString().padStart(2, '0')}
+                            </div>
+                            
+                            {timeoutModal.timeLeft === 0 ? (
+                                <div className="animate-bounce mt-4 mb-2">
+                                    <p className="text-xl font-black text-red-600 uppercase tracking-widest mb-1">¡TIEMPO FINALIZADO!</p>
+                                    <p className="text-sm text-slate-500 font-bold uppercase">Llamar a los equipos a la cancha</p>
+                                </div>
+                            ) : (
+                                <p className="text-slate-400 font-bold uppercase tracking-widest text-sm mt-4">Cronómetro en marcha</p>
+                            )}
+                        </div>
+                        <div className="p-4 bg-white border-t border-slate-100">
+                            <button onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 0 })} className={`w-full py-4 rounded-xl font-black text-white text-lg uppercase tracking-wider transition active:scale-[0.98] ${timeoutModal.timeLeft === 0 ? 'bg-slate-800 hover:bg-slate-900 shadow-lg' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}>
+                                {timeoutModal.timeLeft === 0 ? 'Cerrar y Continuar' : 'Cancelar Tiempo'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -1982,41 +2119,108 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             )}
 
             {modalAddPlayerOpen && (
-                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[80] backdrop-blur-sm">
-                    <div className="bg-white p-6 rounded-3xl shadow-2xl w-96 flex flex-col">
-                        <div className="flex justify-between items-center mb-4"><h3 className="font-black text-lg text-slate-800">Buscar Jugador</h3><button onClick={() => setModalAddPlayerOpen(false)}><X size={20} className="text-slate-400" /></button></div>
-                        <form onSubmit={e => e.preventDefault()} className="flex gap-2 mb-4"><input className="flex-1 border-2 border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none border-blue-500 focus:ring-4 focus:ring-blue-100 transition" placeholder="Buscar por Apellido..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus /></form>
-                        <div className="flex-1 h-64 overflow-y-auto border-t border-slate-100 pt-2 space-y-2 pr-2">
-                            {isSearching && <p className="text-center text-slate-400 text-xs py-4">Cargando planteles...</p>}
-                            {!isSearching && searchResults.length === 0 && (
-                                <div className="text-center text-slate-400 text-xs py-4 flex flex-col items-center gap-2">
-                                    <span className="text-2xl">⚠️</span>
-                                    <p>No se encontraron jugadoras activas para este club.</p>
-                                    <p className="text-[10px] text-slate-300">Verifique el estado del Match ID o de los planteles.</p>
-                                </div>
-                            )}
-                            {searchResults.filter(p => !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(player => (
-                                <div key={player.id} className={`flex justify-between items-center p-3 rounded-xl ${player.isBlocked ? 'bg-red-50 border border-red-100' : 'bg-slate-50 hover:bg-slate-100'}`}>
-                                    <div>
-                                        <span className={`block font-black ${player.isBlocked ? 'text-red-700' : 'text-slate-800'}`}>#{player.number} {player.name}</span>
-                                        <div className="flex gap-2 items-center mt-1">
-                                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border inline-block ${player.isBlocked ? 'bg-red-100 text-red-600 border-red-200' : 'bg-white text-slate-500 border-slate-200'}`}>
-                                                {player.isBlocked ? player.blockReason : player.categoryName}
-                                            </span>
-                                            {player.isOtherCategory && (
-                                                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border inline-block bg-orange-100 text-orange-600 border-orange-200" title="Baja de otra categoría del mismo club">
-                                                    Otra Cat.
-                                                </span>
-                                            )}
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[80] backdrop-blur-sm p-4">
+                    <div className="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-100">
+                            <h3 className="font-black text-xl text-slate-800 flex items-center gap-2">
+                                <Users size={24} className="text-blue-500" /> Convocar Jugadoras
+                            </h3>
+                            <button onClick={() => setModalAddPlayerOpen(false)} className="bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition">
+                                <X size={20} className="text-slate-500" />
+                            </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* LEFT COLUMN: SEARCH & LIST */}
+                            <div className="md:col-span-2 flex flex-col h-[350px]">
+                                <form onSubmit={e => e.preventDefault()} className="mb-3">
+                                    <input 
+                                        className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none border-blue-500 focus:ring-4 focus:ring-blue-100 transition shadow-sm" 
+                                        placeholder="🔍 Buscar por Apellido..." 
+                                        value={searchTerm} 
+                                        onChange={e => setSearchTerm(e.target.value)} 
+                                        autoFocus 
+                                    />
+                                </form>
+                                <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar bg-white rounded-xl">
+                                    {isSearching && <p className="text-center text-slate-400 text-sm py-4 font-bold">Buscando en padrón...</p>}
+                                    {!isSearching && searchResults.length === 0 && (
+                                        <div className="text-center text-slate-400 text-xs py-10 flex flex-col items-center gap-2 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                            <span className="text-3xl opacity-50">📋</span>
+                                            <p className="font-bold">No se encontraron jugadoras libres.</p>
                                         </div>
-                                    </div>
-                                    {!player.isBlocked ? (
-                                        <button onClick={() => confirmAddPlayer(player)} className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600"><Plus size={16} /></button>
+                                    )}
+                                    {searchResults.filter(p => !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(player => {
+                                        const isStaged = stagedPlayersForAdd.some(sp => sp.id === player.id);
+                                        return (
+                                            <div key={player.id} className={`flex justify-between items-center p-3 rounded-xl transition-all border ${player.isBlocked ? 'bg-red-50 border-red-100 opacity-70' : isStaged ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 hover:bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm cursor-pointer'}`} onClick={() => {
+                                                if (player.isBlocked) return;
+                                                if (isStaged) {
+                                                    setStagedPlayersForAdd(prev => prev.filter(sp => sp.id !== player.id));
+                                                } else {
+                                                    setStagedPlayersForAdd(prev => [...prev, player]);
+                                                }
+                                            }}>
+                                                <div>
+                                                    <span className={`block font-black text-sm ${player.isBlocked ? 'text-red-700' : 'text-slate-800'}`}>#{player.number} {player.name}</span>
+                                                    <div className="flex gap-1.5 items-center mt-1">
+                                                        <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border inline-block ${player.isBlocked ? 'bg-red-100 text-red-600 border-red-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                                            {player.isBlocked ? player.blockReason : player.categoryName}
+                                                        </span>
+                                                        {player.isOtherCategory && (
+                                                            <span className="text-[9px] uppercase font-bold px-2 py-0.5 rounded shadow-sm border inline-block bg-orange-100 text-orange-600 border-orange-200">Otra Cat.</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                {!player.isBlocked && (
+                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isStaged ? 'bg-blue-500 text-white shadow-md' : 'bg-slate-200 text-slate-400'}`}>
+                                                        {isStaged ? <Check size={16} strokeWidth={3} /> : <Plus size={16} strokeWidth={3} />}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* RIGHT COLUMN: STAGING AREA */}
+                            <div className="md:col-span-1 bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col h-[350px]">
+                                <h4 className="font-black text-sm text-slate-500 uppercase tracking-wider mb-3 flex justify-between items-center">
+                                    <span>A Convocar</span>
+                                    {stagedPlayersForAdd.length > 0 && (
+                                        <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md text-xs">{stagedPlayersForAdd.length}</span>
+                                    )}
+                                </h4>
+                                
+                                <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                    {stagedPlayersForAdd.length === 0 ? (
+                                        <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-50 text-center px-4">
+                                            <Users size={32} className="mb-2" />
+                                            <p className="text-xs font-bold">Toca el botón + para seleccionar jugadoras</p>
+                                        </div>
                                     ) : (
-                                        <button disabled className="bg-red-200 text-red-500 p-2 rounded-lg cursor-not-allowed"><X size={16} /></button>
+                                        stagedPlayersForAdd.map(sp => (
+                                            <div key={sp.id} className="bg-white p-2 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm animate-in slide-in-from-right-2">
+                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                    <span className="text-xs font-black bg-slate-100 text-slate-600 w-6 h-6 rounded flex items-center justify-center shrink-0">{sp.number}</span>
+                                                    <span className="text-xs font-bold text-slate-700 truncate">{sp.name.split(' ')[0]} {sp.name.split(' ').slice(1).map((n: string) => n[0]).join('')}.</span>
+                                                </div>
+                                                <button onClick={() => setStagedPlayersForAdd(prev => prev.filter(p => p.id !== sp.id))} className="text-slate-300 hover:text-red-500 transition p-1">
+                                                    <X size={14} strokeWidth={3} />
+                                                </button>
+                                            </div>
+                                        ))
                                     )}
                                 </div>
-                            ))}
+
+                                <button 
+                                    onClick={confirmAddPlayer} 
+                                    disabled={stagedPlayersForAdd.length === 0}
+                                    className={`mt-4 w-full py-3 rounded-xl font-black text-sm uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 ${stagedPlayersForAdd.length > 0 ? 'bg-green-500 hover:bg-green-600 text-white active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                                >
+                                    Confirmar {stagedPlayersForAdd.length > 0 && `(${stagedPlayersForAdd.length})`}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
