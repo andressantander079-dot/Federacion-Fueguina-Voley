@@ -21,6 +21,7 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
     // For "Playing Up" logic
     const [validCategories, setValidCategories] = useState<any[]>([]);
     const [filterCategory, setFilterCategory] = useState("ALL");
+    const [filterGender, setFilterGender] = useState("ALL");
 
     useEffect(() => {
         if (isOpen && match && clubId) {
@@ -164,6 +165,7 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                     default_number: sp.number,
                     squad_name: categoryName || 'General',
                     squad_id: sp.squad_id,
+                    squad_gender: squad?.gender || 'S/D',
                     isBlocked: isBlocked,
                     blockReason: blockReason,
                     categoryYear: catObj?.min_year
@@ -301,16 +303,27 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                             </h3>
 
                             {!loading && players.length > 0 && (
-                                <select
-                                    className="bg-zinc-950 text-xs text-white border border-zinc-700 rounded-lg px-2 py-1 outline-none focus:border-blue-500"
-                                    onChange={(e) => setFilterCategory(e.target.value)}
-                                    value={filterCategory}
-                                >
-                                    <option value="ALL">Todas</option>
-                                    {Array.from(new Set(players.map(p => p.squad_name))).sort().map((cat: any) => (
-                                        <option key={cat} value={cat}>{cat}</option>
-                                    ))}
-                                </select>
+                                <div className="flex gap-2">
+                                    <select
+                                        className="bg-zinc-950 text-xs text-white border border-zinc-700 rounded-lg px-2 py-1 outline-none focus:border-blue-500"
+                                        onChange={(e) => setFilterCategory(e.target.value)}
+                                        value={filterCategory}
+                                    >
+                                        <option value="ALL">Todas Cat.</option>
+                                        {Array.from(new Set(players.map(p => p.squad_name))).sort().map((cat: any) => (
+                                            <option key={cat} value={cat}>{cat}</option>
+                                        ))}
+                                    </select>
+                                    <select
+                                        className="bg-zinc-950 text-xs text-white border border-zinc-700 rounded-lg px-2 py-1 outline-none focus:border-blue-500"
+                                        onChange={(e) => setFilterGender(e.target.value)}
+                                        value={filterGender}
+                                    >
+                                        <option value="ALL">Ambos Géneros</option>
+                                        <option value="Femenino">Femenino</option>
+                                        <option value="Masculino">Masculino</option>
+                                    </select>
+                                </div>
                             )}
                         </div>
 
@@ -326,10 +339,11 @@ export default function MatchSheetModal({ isOpen, onClose, match, clubId, catego
                                     return acc;
                                 }, {} as any))
                                     .filter(([squadName]: any) => filterCategory === 'ALL' || squadName === filterCategory)
+                                    .filter(([squadName, pGroup]: any) => filterGender === 'ALL' || pGroup.some((p:any) => p.squad_gender === filterGender))
                                     .map(([squadName, pGroup]: any) => (
                                         <div key={squadName}>
                                             <div className="bg-zinc-800/50 px-3 py-1.5 rounded-lg mb-2 text-xs font-bold text-zinc-400 uppercase inline-block border border-zinc-700/50">
-                                                {squadName}
+                                                {squadName} {pGroup[0]?.squad_gender !== 'S/D' ? `(${pGroup[0].squad_gender})` : ''}
                                             </div>
                                             <div className="space-y-1">
                                                 {pGroup.map((p: any) => {

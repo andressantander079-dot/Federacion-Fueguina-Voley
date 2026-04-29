@@ -19,7 +19,12 @@ export default function PublicMatchView() {
     useEffect(() => {
         if (!matchId) return;
 
-        const fetchData = async () => {
+        const fetchSponsors = async () => {
+            const { data: sponsorsData } = await supabase.from('sponsors').select('*').eq('active', true).order('display_order', { ascending: true });
+            if (sponsorsData) setSponsors(sponsorsData);
+        };
+
+        const fetchMatchInfo = async () => {
             const { data } = await supabase
                 .from('matches')
                 .select(`
@@ -59,24 +64,27 @@ export default function PublicMatchView() {
                     gym: data.location
                 });
             }
-
-            const { data: sponsorsData } = await supabase.from('sponsors').select('*').eq('active', true).order('display_order', { ascending: true });
-            if (sponsorsData) setSponsors(sponsorsData);
-
             setLoading(false);
         };
 
-        fetchData();
+        fetchSponsors();
+        fetchMatchInfo();
+
+        // Polling Fallback (Every 1 second) to guarantee real-time UX
+        const intervalId = setInterval(fetchMatchInfo, 1000);
 
         const channel = supabase
             .channel(`public_match:${matchId}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
-                fetchData();
+                fetchMatchInfo();
             })
             .subscribe();
 
-        return () => { supabase.removeChannel(channel); };
-    }, [matchId]);
+        return () => { 
+            supabase.removeChannel(channel); 
+            clearInterval(intervalId);
+        };
+    }, [matchId, supabase]);
 
     if (loading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold animate-pulse">Cargando...</div>;
     if (!matchData) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold">Partido no encontrado.</div>;
