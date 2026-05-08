@@ -25,7 +25,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const params = useParams();
     const matchId = matchIdOverride || (params.id as string);
 
-    const { bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
+    const { bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, startNextSet, canFinishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
         moveToCourt, removeFromCourt, removePlayerFromMatch,
         blockedPlayers, blockPlayer, unblockSetPlayers, sanctionsLog, addSanction,
         timeouts, requestTimeout, subsCount, subHistory
@@ -57,6 +57,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [r5Libero, setR5Libero] = useState<any | null>(null);
     const [r5Libero2, setR5Libero2] = useState<any | null>(null);
     const [activeR5Box, setActiveR5Box] = useState<number>(0);
+    const [duplicateNumberWarning, setDuplicateNumberWarning] = useState<string | null>(null);
+    const [subMode, setSubMode] = useState<'regular' | 'libero'>('regular');
+    const [manualSideSwap, setManualSideSwap] = useState(false);
+    
+    // Si cambia el set, podríamos resetear el manualSideSwap, pero para mantenerlo simple aplicamos el XOR.
+    const isSidesSwapped = (currentSetIdx % 2 !== 0) !== manualSideSwap;
 
     const openR5 = (team: 'home' | 'away') => {
         setR5Form([null, null, null, null, null, null]);
@@ -77,6 +83,16 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 matchPosArray[fillOrder[i]] = p;
             }
         });
+
+        // Duplicate Check
+        const allR5Players = [...r5Form, r5Libero, r5Libero2].filter(p => !!p);
+        const numbers = allR5Players.map(p => p.number);
+        const duplicates = numbers.filter((item, index) => numbers.indexOf(item) !== index);
+        if (duplicates.length > 0) {
+            setDuplicateNumberWarning(`El número ${duplicates[0]} está duplicado en la formación inicial.`);
+            setTimeout(() => setDuplicateNumberWarning(null), 3000);
+            return;
+        }
 
         // Handle Libero: update the isLibero flag in bench if assigned here
         
@@ -956,14 +972,26 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     const handleSubConfirm = (playerIn: any, isException: boolean = false) => {
         if (!selectedPlayer) return;
-        substitutePlayer(selectedPlayer.team, selectedPlayer.id, playerIn);
+
+        // Duplicate check in substitution
+        const currentPos = selectedPlayer.team === 'home' ? posHome : posAway;
+        const courtNumbers = currentPos.filter(p => !!p && p.id !== selectedPlayer.id).map(p => p!.number);
+        
+        if (courtNumbers.includes(playerIn.number)) {
+            setDuplicateNumberWarning(`El número ${playerIn.number} ya está en cancha.`);
+            setTimeout(() => setDuplicateNumberWarning(null), 3000);
+            return;
+        }
+
+        const forceLiberoAction = subMode === 'libero';
+        substitutePlayer(selectedPlayer.team, selectedPlayer.id, playerIn, forceLiberoAction);
         
         if (isException) {
             setObservations(prev => prev + (prev ? '\n' : '') + 
                 `[Set ${currentSetIdx + 1}] Sustitución excepcional: Entró #${playerIn.number} ${playerIn.name} por #${selectedPlayer.number} ${selectedPlayer.name} (${selectedPlayer.team === 'home' ? 'Local' : 'Visita'}).`);
         }
         
-        setModalSubOpen(false); setModalActionOpen(false); setSelectedPlayer(null);
+        setModalSubOpen(false); setModalActionOpen(false); setSelectedPlayer(null); setSubMode('regular');
     };
 
     const handleSuspendMatch = () => {
@@ -1124,31 +1152,6 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         }
     };
 
-    // --- COMPONENTE CAMISETA ---
-    const Jersey = ({ player, team, isPos1 }: { player: any, team: 'home' | 'away', isPos1?: boolean }) => {
-        if (!player) return (
-            <div className="relative flex flex-col items-center">
-                <div className="w-16 h-14 flex items-center justify-center rounded-xl border-dashed border-2 border-slate-300 bg-slate-50/50">
-                    <span className="font-bold text-[10px] text-slate-400 -rotate-12">VACANTE</span>
-                </div>
-            </div>
-        );
-        const isServing = servingTeam === team && isPos1;
-        return (
-            <div onClick={() => !readOnly && handleJerseyClick(player, team)} className={`relative flex flex-col items-center group ${!readOnly ? 'cursor-pointer' : ''}`}>
-                <div className={`w-16 h-14 flex items-center justify-center rounded-xl shadow-sm border-b-4 transition-transform ${!readOnly ? 'active:scale-95' : ''} ${team === 'home' ? 'bg-white border-blue-600 text-blue-900' : 'bg-white border-red-600 text-red-900'}`}>
-                    <span className="font-black text-2xl">{player.number}</span>
-                </div>
-                {isServing && (
-                    <div className="absolute -top-3 -right-2 bg-yellow-400 text-yellow-900 rounded-full p-1.5 shadow-sm border-2 border-white animate-bounce z-10">
-                        <Volleyball size={14} className="fill-current" />
-                    </div>
-                )}
-                <span className="mt-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 rounded-full truncate max-w-[70px]">{player.name}</span>
-            </div>
-        );
-    };
-
     const activeBench = selectedPlayer?.team === 'home' ? benchHome : benchAway;
 
     // @ts-ignore
@@ -1161,6 +1164,60 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         .filter(p => p !== null)
         .filter((p, index, self) => index === self.findIndex(t => t.id === p.id))
         .sort((a, b) => a.number - b.number);
+
+    const homeNumbers = fullRosterHome.map(p => p.number);
+    const duplicateHomeNumbers = new Set(homeNumbers.filter((item, index) => homeNumbers.indexOf(item) !== index));
+    
+    const awayNumbers = fullRosterAway.map(p => p.number);
+    const duplicateAwayNumbers = new Set(awayNumbers.filter((item, index) => awayNumbers.indexOf(item) !== index));
+
+    // --- COMPONENTE CAMISETA ---
+    const Jersey = ({ player, team, isPos1 }: { player: any, team: 'home' | 'away', isPos1?: boolean }) => {
+        if (!player) return (
+            <div className="relative flex flex-col items-center">
+                <div className="w-16 h-14 flex items-center justify-center rounded-xl border-dashed border-2 border-slate-300 bg-slate-50/50">
+                    <span className="font-bold text-[10px] text-slate-400 -rotate-12">VACANTE</span>
+                </div>
+            </div>
+        );
+        const isServing = servingTeam === team && isPos1;
+        
+        let mainColorClass = team === 'home' ? 'bg-white border-blue-600 text-blue-900' : 'bg-white border-red-600 text-red-900';
+        if (player.isLibero) {
+            mainColorClass = 'bg-purple-100 border-purple-400 text-purple-900 shadow-purple-200/50';
+        }
+
+        const teamSubHistory = subHistory.filter(s => s.team === team && !s.isLiberoAction);
+        const lastAction = teamSubHistory.filter(s => s.playerInId === player.id).pop();
+        
+        let subOutNumber = null;
+        if (lastAction) {
+            const fullRoster = team === 'home' ? fullRosterHome : fullRosterAway;
+            const subOutPlayer = fullRoster.find(p => p.id === lastAction.playerOutId);
+            if (subOutPlayer) {
+                subOutNumber = subOutPlayer.number;
+            }
+        }
+
+        return (
+            <div onClick={() => !readOnly && handleJerseyClick(player, team)} className={`relative flex flex-col items-center group ${!readOnly ? 'cursor-pointer' : ''}`}>
+                <div className={`w-16 h-14 flex items-center justify-center rounded-xl shadow-sm border-b-4 transition-transform ${!readOnly ? 'active:scale-95' : ''} ${mainColorClass}`}>
+                    <span className="font-black text-2xl">{player.number}</span>
+                </div>
+                {subOutNumber !== null && (
+                    <div className="absolute -top-2 -left-2 bg-slate-800 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white z-10">
+                        {subOutNumber}
+                    </div>
+                )}
+                {isServing && (
+                    <div className="absolute -top-3 -right-2 bg-yellow-400 text-yellow-900 rounded-full p-1.5 shadow-sm border-2 border-white animate-bounce z-10">
+                        <Volleyball size={14} className="fill-current" />
+                    </div>
+                )}
+                <span className="mt-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 rounded-full truncate max-w-[70px]">{player.name}</span>
+            </div>
+        );
+    };
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
@@ -1253,7 +1310,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             </header>
 
             {/* ÁREA DE JUEGO */}
-            <div className={`flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden p-2 md:p-4 gap-4 ${closingStep === 4 ? 'hidden' : ''}`}>
+            <div className={`flex-1 flex flex-col overflow-y-auto md:overflow-hidden p-2 md:p-4 gap-4 ${closingStep === 4 ? 'hidden' : ''} ${isSidesSwapped ? 'md:flex-row-reverse' : 'md:flex-row'}`}>
 
                 {/* LOCAL SIDEBAR */}
                 <aside className="w-full md:w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden order-2 md:order-1 h-[500px] md:h-auto">
@@ -1283,11 +1340,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         {!readOnly && (
                             <button onClick={() => openAddPlayerModal('home')} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:bg-slate-50 hover:text-blue-600 transition flex items-center justify-center gap-2"><Search size={16} /> + Agregar</button>
                         )}
-                        {benchHome.map(p => (
-                            <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 group">
+                        {benchHome.map(p => {
+                            const isDuplicated = duplicateHomeNumbers.has(p.number);
+                            return (
+                            <div key={p.id} className={`flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border group ${isDuplicated ? 'animate-pulse bg-yellow-50/50 border-yellow-200' : 'border-transparent hover:border-slate-100'}`}>
                                 <div onClick={() => !readOnly && !(posHome.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0) && moveToCourt('home', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
-                                    <span className="font-black text-slate-400 w-6 text-right">#{p.number}</span>
+                                    <span className={`font-black w-6 text-right ${isDuplicated ? 'text-yellow-600' : 'text-slate-400'}`}>#{p.number}</span>
                                     <span className="font-bold text-slate-700 flex-1">{p.name}</span>
+                                    {isDuplicated && <span className="bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded uppercase">N° Repetido</span>}
                                     {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
                                     {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Capitán</span>}
                                 </div>
@@ -1302,7 +1362,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     </div>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* DT LOCAL INPUTS */}
@@ -1369,17 +1430,26 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     <>
                                         {!sets[currentSetIdx].finished ? (
                                             <button onClick={() => {
-                                                finishSet();
-                                                // If the match isn't over yet, we should show the 3 minute break timer.
-                                                // We can safely just show it always on Cerrar Set, or we can check if it's not the final set.
-                                                setTimeoutModal({ isOpen: true, team: 'set_break', timeLeft: 180 });
-                                            }} className="w-full py-1 bg-slate-800 text-white rounded text-xs font-bold hover:bg-slate-700 transition">Cerrar Set</button>
+                                                if (canFinishSet()) {
+                                                    finishSet();
+                                                    if (currentSetIdx < bestOfSets - 1) {
+                                                        setTimeoutModal({ isOpen: true, team: 'set_break', timeLeft: 180 });
+                                                    }
+                                                } else {
+                                                    alert("No se puede cerrar el set. Se necesitan " + (currentSetIdx === bestOfSets - 1 ? "15" : "25") + " puntos y una diferencia de 2.");
+                                                }
+                                            }} className={`w-full py-1 text-white rounded text-xs font-bold transition ${canFinishSet() ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-400 cursor-not-allowed'}`}>Cerrar Set</button>
                                         ) : (
-                                            <button onClick={() => {
-                                                finishSet();
-                                            }} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 transition">Iniciar Set {sets.length + 1}</button>
+                                            currentSetIdx < bestOfSets - 1 && sets.filter(s => s.finished && s.home > s.away).length < Math.ceil(bestOfSets/2) && sets.filter(s => s.finished && s.away > s.home).length < Math.ceil(bestOfSets/2) && (
+                                                <button onClick={() => {
+                                                    startNextSet();
+                                                }} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 transition animate-pulse">Iniciar Set {sets.length}</button>
+                                            )
                                         )}
-                                        <button onClick={() => setServingTeam(prev => prev === 'home' ? 'away' : 'home')} className="flex items-center justify-center gap-1 text-[10px] text-slate-400 mt-1 uppercase"><ArrowRightLeft size={10} /> Saque</button>
+                                        <div className="flex flex-col gap-1 items-center mt-1">
+                                            <button onClick={() => setServingTeam(prev => prev === 'home' ? 'away' : 'home')} className="flex items-center justify-center gap-1 text-[10px] text-slate-400 uppercase hover:text-slate-600 transition"><ArrowRightLeft size={10} /> Saque</button>
+                                            <button onClick={() => setManualSideSwap(prev => !prev)} className="flex items-center justify-center gap-1 text-[10px] text-slate-400 uppercase hover:text-slate-600 transition"><RefreshCw size={10} /> Cambiar Lado</button>
+                                        </div>
                                     </>
                                 )}
                             </div>
@@ -1417,9 +1487,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full grid grid-cols-2 overflow-hidden">
-                        <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-slate-800 z-10 shadow-xl"></div>
-                        <div className="relative border-r border-slate-200/50 bg-blue-50/30">
+                    <div className={`bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full flex overflow-hidden ${isSidesSwapped ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-slate-800 z-10 shadow-xl -ml-[3px]"></div>
+                        <div className={`relative flex-1 bg-blue-50/30 border-slate-200/50 ${isSidesSwapped ? 'border-l' : 'border-r'}`}>
                             {posHome.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
                                 <div className="absolute inset-0 flex items-center justify-center z-20">
                                     <button onClick={() => openR5('home')} className="bg-blue-600 text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:bg-blue-700 hover:scale-105 active:scale-95 transition border-4 border-white/20">
@@ -1436,7 +1506,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
                             </div>
                         </div>
-                        <div className="relative bg-red-50/30">
+                        <div className="relative flex-1 bg-red-50/30">
                             {posAway.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
                                 <div className="absolute inset-0 flex items-center justify-center z-20">
                                     <button onClick={() => openR5('away')} className="bg-red-600 text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:bg-red-700 hover:scale-105 active:scale-95 transition border-4 border-white/20">
@@ -1542,11 +1612,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         {!readOnly && (
                             <button onClick={() => openAddPlayerModal('away')} className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:bg-slate-50 hover:text-red-600 transition flex items-center justify-center gap-2"><Search size={16} /> + Agregar</button>
                         )}
-                        {benchAway.map(p => (
-                            <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-100 group">
+                        {benchAway.map(p => {
+                            const isDuplicated = duplicateAwayNumbers.has(p.number);
+                            return (
+                            <div key={p.id} className={`flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border group ${isDuplicated ? 'animate-pulse bg-yellow-50/50 border-yellow-200' : 'border-transparent hover:border-slate-100'}`}>
                                 <div onClick={() => !readOnly && !(posAway.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0) && moveToCourt('away', p)} className={`flex items-center gap-3 flex-1 ${!readOnly ? 'cursor-pointer' : ''}`}>
-                                    <span className="font-black text-slate-400 w-6 text-right">#{p.number}</span>
+                                    <span className={`font-black w-6 text-right ${isDuplicated ? 'text-yellow-600' : 'text-slate-400'}`}>#{p.number}</span>
                                     <span className="font-bold text-slate-700 flex-1">{p.name}</span>
+                                    {isDuplicated && <span className="bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded uppercase">N° Repetido</span>}
                                     {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Líbero</span>}
                                     {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded uppercase">Capitán</span>}
                                 </div>
@@ -1561,7 +1634,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     </div>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* DT VISITA INPUTS */}
@@ -1605,6 +1679,11 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 const bench = team === 'home' ? benchHome : benchAway;
                 
                 const availablePlayers = bench.filter(p => !r5Form.find(r => r?.id === p.id) && r5Libero?.id !== p.id && r5Libero2?.id !== p.id);
+                
+                const formationNumbers = [...r5Form, r5Libero, r5Libero2].filter(p => !!p).map(p => p.number);
+                const availableNumbers = availablePlayers.map(p => p.number);
+                const duplicateAvailableNumbers = availableNumbers.filter((item, index) => availableNumbers.indexOf(item) !== index);
+                const blinkingNumbers = new Set([...formationNumbers, ...duplicateAvailableNumbers]);
                 
                 const handleSelectPlayer = (player: any) => {
                     if (activeR5Box === 6) {
@@ -1659,10 +1738,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     ) : (
                                         availablePlayers.map(p => {
                                             const isLibSuggestion = p.isLibero && activeR5Box === 6;
+                                            const isDuplicated = blinkingNumbers.has(p.number);
                                             return (
-                                                <div key={p.id} onClick={() => handleSelectPlayer(p)} className={`bg-white border md:text-lg border-slate-100 p-2.5 md:p-3 flex items-center gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all group rounded-2xl ${isLibSuggestion ? 'ring-2 ring-purple-300 bg-purple-50/20' : ''}`}>
-                                                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg bg-slate-50 text-slate-500 group-hover:bg-${teamColor}-600 group-hover:text-white transition-colors ${isLibSuggestion ? 'bg-purple-600 text-white' : ''}`}>{p.number}</span>
+                                                <div key={p.id} onClick={() => handleSelectPlayer(p)} className={`bg-white border md:text-lg border-slate-100 p-2.5 md:p-3 flex items-center gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all group rounded-2xl ${isLibSuggestion ? 'ring-2 ring-purple-300 bg-purple-50/20' : ''} ${isDuplicated ? 'animate-pulse ring-2 ring-yellow-400 bg-yellow-50' : ''}`}>
+                                                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg bg-slate-50 text-slate-500 group-hover:bg-${teamColor}-600 group-hover:text-white transition-colors ${isLibSuggestion ? 'bg-purple-600 text-white' : ''} ${isDuplicated ? 'bg-yellow-200 text-yellow-800' : ''}`}>{p.number}</span>
                                                     <span className="font-bold text-slate-700 flex-1 truncate">{p.name}</span>
+                                                    {isDuplicated && <span className="bg-yellow-400 text-yellow-900 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block animate-pulse">N° Repetido</span>}
                                                     {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block">Líbero</span>}
                                                     {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block">Capitán</span>}
                                                 </div>
@@ -1783,7 +1864,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             {modalActionOpen && selectedPlayer && (
                 <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 backdrop-blur-sm">
                     <div className="bg-white p-6 rounded-3xl shadow-2xl w-80">
-                        {matchStatus === 'scheduled' ? (
+                        {matchStatus === 'scheduled' && !selectedPlayer?.isCoach ? (
                             <>
                                 <h3 className="text-center font-black text-xl mb-4 text-slate-800">Editar Jugador</h3>
                                 <div className="flex flex-col gap-3 mb-4">
@@ -1845,7 +1926,11 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 )}
                                 <div className="flex flex-col gap-3">
                                     {!selectedPlayer.isCoach && (
-                                        <button onClick={() => { setModalSubOpen(true); }} className="bg-blue-50 text-blue-700 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-100 transition shadow-sm border border-blue-200"><RefreshCw size={18} /> Sustitución</button>
+                                        <>
+                                            <button onClick={() => { setSubMode('regular'); setModalSubOpen(true); }} className="bg-blue-50 text-blue-700 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-100 transition shadow-sm border border-blue-200"><RefreshCw size={18} /> Sustitución</button>
+                                            
+                                            <button onClick={() => { setSubMode('libero'); setModalSubOpen(true); }} className="bg-purple-50 text-purple-700 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-purple-100 transition shadow-sm border border-purple-200"><RefreshCw size={18} /> Reemplazo por el Líbero</button>
+                                        </>
                                     )}
 
                                     <div className="grid grid-cols-2 gap-2 mt-2">
@@ -1863,7 +1948,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             )}
             {modalSubOpen && (
                 <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-[60] backdrop-blur-sm">
-                    <div className="bg-white p-6 rounded-3xl shadow-2xl w-80 max-h-[90vh] flex flex-col">
+                    <div className="bg-white p-6 rounded-3xl shadow-2xl w-96 max-h-[90vh] flex flex-col">
                         <h3 className="font-black text-lg mb-4 text-slate-800 flex justify-between items-center">
                             <div className="flex flex-col">
                                 <span>Elegir Suplente</span>
@@ -1880,11 +1965,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 const isStrictCategory = !['minivoley', 'sub-12'].some(cat => teamsInfo?.category.toLowerCase().includes(cat));
 
                                 const getPlayerSubStatus = (player: any) => {
+                                    if (subMode === 'libero') return { allowed: true, reason: '' };
                                     if (!selectedPlayer || !isStrictCategory || player.isLibero) return { allowed: true, reason: '' };
                                     const team = selectedPlayer.team;
                                     if (subsCount[team as 'home' | 'away'] >= 6) return { allowed: false, reason: 'Límite 6 cambios' };
 
-                                    const history = subHistory.filter(h => h.team === team);
+                                    const history = subHistory.filter(h => h.team === team && !h.isLiberoAction);
                                     
                                     // Comprobamos el historial del jugador que ENTRA
                                     const playerHistory = history.filter(h => h.playerInId === player.id || h.playerOutId === player.id);
@@ -1909,7 +1995,16 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     return { allowed: true, reason: '' };
                                 };
 
-                                return activeBench.filter(p => !blockedPlayers.find(bp => bp.id === p.id)).map(p => {
+                                let filteredBench = activeBench.filter(p => !blockedPlayers.find(bp => bp.id === p.id));
+                                if (subMode === 'libero') {
+                                    if (!selectedPlayer?.isLibero) {
+                                        filteredBench = filteredBench.filter(p => p.isLibero);
+                                    } else {
+                                        filteredBench = filteredBench.filter(p => !p.isLibero);
+                                    }
+                                }
+
+                                return filteredBench.map(p => {
                                     const status = getPlayerSubStatus(p);
                                     return (
                                         <div key={p.id} className={`p-4 border-2 rounded-[1.25rem] flex flex-col gap-2 transition-all duration-200 ${status.allowed ? 'border-slate-50 bg-white shadow-sm hover:border-blue-300 hover:shadow-md cursor-pointer group' : 'border-red-50 bg-red-50/20'}`}>
@@ -1924,7 +2019,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                                         </div>
                                                     </div>
                                                 </div>
-                                                {status.allowed && <RefreshCw size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors" />}
+                                                {status.allowed && (
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-black bg-slate-100 text-slate-500 group-hover:bg-blue-500 group-hover:text-white px-3 py-1.5 rounded-full uppercase tracking-wider transition-colors">
+                                                        <RefreshCw size={12} />
+                                                        Entra por #{selectedPlayer?.number}
+                                                    </div>
+                                                )}
                                             </div>
                                             {!status.allowed && (
                                                 <div className="flex flex-col gap-2 mt-1 pt-2 border-t border-red-100/50">
@@ -2519,7 +2619,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     )}
                 </div>
             )}
-
+            
+            {duplicateNumberWarning && (
+                <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl z-[100] font-bold border-2 border-red-400 flex items-center gap-2 animate-bounce">
+                    <AlertTriangle size={20} /> {duplicateNumberWarning}
+                </div>
+            )}
         </div>
     );
 }
