@@ -59,7 +59,7 @@ export type MatchState = {
     // Substitution Tracking (Per Set)
     substitutionsHome: number;
     substitutionsAway: number;
-    subHistory: { team: TeamSide, playerOutId: string, playerInId: string }[];
+    subHistory: { team: TeamSide, playerOutId: string, playerInId: string, isLiberoAction?: boolean }[];
     timeoutsHome: number;
     timeoutsAway: number;
     blockedPlayers: { id: string, type: 'set' | 'match' }[];
@@ -81,7 +81,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     const [servingTeam, setServingTeam] = useState<TeamSide | null>(initialState?.servingTeam || null);
 
     const [subsCount, setSubsCount] = useState({ home: 0, away: 0 }); // Track count per set
-    const [subHistory, setSubHistory] = useState<{ team: TeamSide, playerOutId: string, playerInId: string }[]>(initialState?.subHistory || []);
+    const [subHistory, setSubHistory] = useState<{ team: TeamSide, playerOutId: string, playerInId: string, isLiberoAction?: boolean }[]>(initialState?.subHistory || []);
     
     // Timeouts per set
     const [timeouts, setTimeouts] = useState({ home: 0, away: 0 });
@@ -226,15 +226,23 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         }));
     };
 
-    const substitutePlayer = (team: TeamSide, playerOutId: string, playerIn: Player) => {
-        // Validation should happen in UI, but basic check here
-        const isLiberoChange = playerIn.isLibero; // Simplified check
+    const substitutePlayer = (team: TeamSide, playerOutId: string, playerIn: Player, forceLiberoAction: boolean = false) => {
+        let playerOutObj: Player | undefined;
+        // @ts-ignore
+        if (team === 'home') playerOutObj = posHome.find(p => p?.id === playerOutId);
+        // @ts-ignore
+        else playerOutObj = posAway.find(p => p?.id === playerOutId);
 
-        // If NOT Libero, increment sub count and record history
+        // Validation should happen in UI, but basic check here
+        const isLiberoChange = forceLiberoAction || playerIn.isLibero || (playerOutObj && playerOutObj.isLibero) || false;
+
+        // If NOT Libero, increment sub count
         if (!isLiberoChange) {
             setSubsCount(prev => ({ ...prev, [team]: prev[team] + 1 }));
-            setSubHistory(prev => [...prev, { team, playerOutId, playerInId: playerIn.id }]);
         }
+        
+        // Record history for all. If it's a libero change, tag it.
+        setSubHistory(prev => [...prev, { team, playerOutId, playerInId: playerIn.id, isLiberoAction: !!isLiberoChange }]);
 
         snapshot();
 
@@ -244,19 +252,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         // Swap in Court (Find by ID)
         setPos(prev => prev.map(p => p?.id === playerOutId ? playerIn : p));
 
-        // Swap in Bench (Remove In, Add Out - Need to find Out object first if we want to move it to bench)
-        // Since we only got ID, we need to find the player object from current pos
-        // But for simplicity in this fix, we assume the UI handles the object availability or we fix the hook to find it.
-        // Actually, let's find the playerOut object from state
-
-        // This is tricky inside setBench updater if we depend on setPos state.
-        // Better:
-        let playerOutObj: Player | undefined;
-        // @ts-ignore
-        if (team === 'home') playerOutObj = posHome.find(p => p?.id === playerOutId);
-        // @ts-ignore
-        else playerOutObj = posAway.find(p => p?.id === playerOutId);
-
+        // Swap in Bench (Remove In, Add Out)
         if (playerOutObj) {
             const finalPlayerOut = playerOutObj; // capture
             setBench(prev => {
@@ -329,55 +325,78 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         console.log("Positions initialized");
     };
 
+    const canFinishSet = () => {
+        const currentSet = sets[currentSetIdx];
+        if (!currentSet) return false;
+        
+        const isTieBreak = currentSetIdx === bestOfSets - 1;
+        const targetScore = isTieBreak ? 15 : 25;
+        
+        const homeWins = currentSet.home >= targetScore && (currentSet.home - currentSet.away) >= 2;
+        const awayWins = currentSet.away >= targetScore && (currentSet.away - currentSet.home) >= 2;
+        
+        return homeWins || awayWins;
+    };
+
     const finishSet = () => {
+        if (!canFinishSet()) {
+            alert("No se puede cerrar el set. Se necesitan " + (currentSetIdx === bestOfSets - 1 ? "15" : "25") + " puntos y una diferencia de 2.");
+            return;
+        }
+        
         snapshot();
 
         // Mark current finished
         setSets(prev => {
             const copy = [...prev];
             copy[currentSetIdx].finished = true;
-            // Add next if needed (up to 5 or 3, dynamic boundary later but let sets grow as needed logic in UI)
+            // Add next if needed (up to 5 or 3)
             if (copy.length < bestOfSets) {
                 copy.push({ number: copy.length + 1, home: 0, away: 0, finished: false });
             }
             return copy;
         });
+    };
 
-        if (currentSetIdx < bestOfSets - 1) {
-            setCurrentSetIdx(prev => prev + 1);
-            setSubsCount({ home: 0, away: 0 }); // Reset subs for new set
-            setSubHistory([]); // Clear history for new set
-            setTimeouts({ home: 0, away: 0 }); // Reset timeouts
-            // Unblock players blocked only for the set
-            setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
+    const startNextSet = () => {
+        if (!sets[currentSetIdx].finished) return;
+        if (currentSetIdx >= bestOfSets - 1) return;
 
-            // Regla R5: Limpiar la cancha al iniciar el nuevo set
-            setPosHome(prev => {
-                const onCourt = prev.filter(p => p !== null) as Player[];
-                if (onCourt.length > 0) {
-                    setBenchHome(bench => {
-                        const newBench = [...bench, ...onCourt];
-                        // Remover duplicados por ID por seguridad
-                        const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
-                        return unique.sort((a, b) => a.number - b.number);
-                    });
-                }
-                return Array(6).fill(null);
-            });
+        snapshot();
+        
+        setCurrentSetIdx(prev => prev + 1);
+        setSubsCount({ home: 0, away: 0 }); // Reset subs for new set
+        setSubHistory([]); // Clear history for new set
+        setTimeouts({ home: 0, away: 0 }); // Reset timeouts
+        // Unblock players blocked only for the set
+        setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
 
-            setPosAway(prev => {
-                const onCourt = prev.filter(p => p !== null) as Player[];
-                if (onCourt.length > 0) {
-                    setBenchAway(bench => {
-                        const newBench = [...bench, ...onCourt];
-                        // Remover duplicados
-                        const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
-                        return unique.sort((a, b) => a.number - b.number);
-                    });
-                }
-                return Array(6).fill(null);
-            });
-        }
+        // Regla R5: Limpiar la cancha al iniciar el nuevo set
+        setPosHome(prev => {
+            const onCourt = prev.filter(p => p !== null) as Player[];
+            if (onCourt.length > 0) {
+                setBenchHome(bench => {
+                    const newBench = [...bench, ...onCourt];
+                    // Remover duplicados por ID por seguridad
+                    const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
+                    return unique.sort((a, b) => a.number - b.number);
+                });
+            }
+            return Array(6).fill(null);
+        });
+
+        setPosAway(prev => {
+            const onCourt = prev.filter(p => p !== null) as Player[];
+            if (onCourt.length > 0) {
+                setBenchAway(bench => {
+                    const newBench = [...bench, ...onCourt];
+                    // Remover duplicados
+                    const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
+                    return unique.sort((a, b) => a.number - b.number);
+                });
+            }
+            return Array(6).fill(null);
+        });
     };
 
     // Helpers to set initial state from DB
@@ -415,7 +434,7 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
     return {
         bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
         servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog,
-        addPoint, subtractPoint, substitutePlayer, finishSet, undo,
+        addPoint, subtractPoint, substitutePlayer, finishSet, startNextSet, canFinishSet, undo,
         setAllState, setBestOfSets, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
         initPositions, addPlayerToBench, moveToCourt, removeFromCourt, removePlayerFromMatch,
         requestTimeout: (team: TeamSide) => {
