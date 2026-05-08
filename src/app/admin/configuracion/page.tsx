@@ -117,6 +117,8 @@ export default function AdminConfigPage() {
             registration_message: settings.registration_message,
             warning_banner_active: settings.warning_banner_active,
             warning_banner_text: settings.warning_banner_text,
+            document_deadline_active: settings.document_deadline_active,
+            document_deadline_date: settings.document_deadline_date,
 
             // Contact
             contact_phone: settings.contact_phone,
@@ -141,7 +143,7 @@ export default function AdminConfigPage() {
          console.log("Saving Settings Payload:", payload);
 
          const { error, data } = await supabase.from('settings').update(payload)
-            .eq('singleton_key', true)
+            .eq('id', settings.id)
             .select();
 
          if (error) {
@@ -378,6 +380,53 @@ export default function AdminConfigPage() {
                               onChange={e => setSettings({ ...settings, warning_banner_text: e.target.value })}
                               rows={3}
                            />
+                        </div>
+
+                        {/* 1.1 BOMBA DE TIEMPO MANUAL */}
+                        <div className={`p-4 rounded-xl border ${settings.document_deadline_active ? 'bg-orange-500/10 border-orange-500/50' : 'bg-zinc-950 border-zinc-800'}`}>
+                           <div className="flex justify-between items-center mb-4">
+                              <div>
+                                 <span className="font-bold text-white flex items-center gap-2">
+                                    Corte de Documentación (Manual)
+                                 </span>
+                                 <p className="text-xs text-zinc-400 mt-1">
+                                    Muestra el cartel de Fecha Límite a los clubes y habilita el botón de Corte Masivo.
+                                 </p>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                 <input type="checkbox" checked={settings.document_deadline_active || false} onChange={e => setSettings({ ...settings, document_deadline_active: e.target.checked })} className="sr-only peer" />
+                                 <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                              </label>
+                           </div>
+
+                           {settings.document_deadline_active && (
+                              <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                 <div>
+                                    <label className="block text-xs font-bold text-orange-500 uppercase mb-1">FECHA Y HORA EXCACTA QUE LOS JUGADORES CON FALTA DE DOCUMENTACION PASARAN A REVISION</label>
+                                    <input 
+                                       type="datetime-local" 
+                                       className="w-full text-sm font-bold bg-zinc-900 border border-orange-500/30 p-2 rounded-lg outline-none focus:border-orange-500 text-white"
+                                       value={
+                                          settings.document_deadline_date 
+                                            ? (() => {
+                                                const d = new Date(settings.document_deadline_date);
+                                                if (isNaN(d.getTime())) return '';
+                                                const pad = (n: number) => n.toString().padStart(2, '0');
+                                                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                                              })()
+                                            : ''
+                                       }
+                                       onChange={e => {
+                                          if (!e.target.value) return setSettings({ ...settings, document_deadline_date: null });
+                                          // e.target.value es 'YYYY-MM-DDTHH:mm'
+                                          // new Date('YYYY-MM-DDTHH:mm') asume hora local, que es lo que queremos.
+                                          const localDate = new Date(e.target.value);
+                                          setSettings({ ...settings, document_deadline_date: localDate.toISOString() });
+                                       }}
+                                    />
+                                 </div>
+                              </div>
+                           )}
                         </div>
                      </div>
 

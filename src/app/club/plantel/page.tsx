@@ -9,6 +9,7 @@ import PinPadModal from '@/components/security/PinPadModal';
 import EmptyState from '@/components/ui/EmptyState';
 import { ProfileCropperModal } from '@/components/ui/ProfileCropperModal';
 import { useClubAuth } from '@/hooks/useClubAuth';
+import { useSettings } from '@/hooks/useSettings';
 import { toast } from 'sonner';
 
 export default function PlantelPage() {
@@ -19,6 +20,9 @@ export default function PlantelPage() {
 
   // Datos del Club Logueado
   const { clubId, profile, loading: authLoading, error: authError } = useClubAuth();
+  
+  // Configuracion Global
+  const { settings } = useSettings();
 
   const [clubName, setClubName] = useState('');
   const [clubCity, setClubCity] = useState('Ushuaia');
@@ -287,7 +291,7 @@ export default function PlantelPage() {
         .from('players')
         .select('*', { count: 'exact', head: true })
         .eq('team_id', id)
-        .or('medical_url.is.null,payment_url.is.null');
+        .or('medical_url.is.null,payment_url.is.null,dni_url.is.null,photo_url.is.null');
       setMissingDocsCount(missing || 0);
 
       await cargarSquads(id);
@@ -1088,13 +1092,15 @@ export default function PlantelPage() {
                 <div>
                    <h3 className="text-orange-500 font-bold text-lg">Documentación Faltante en Planteles Activos</h3>
                    <p className="text-orange-400/80 text-sm">
-                     Hay <strong className="text-white">{missingDocsCount} jugador/es</strong> en tu club que no han cargado todos sus documentos (CEMAD o Comprobante).
+                     Hay <strong className="text-white">{missingDocsCount} jugador/es</strong> en tu club que no han cargado todos sus documentos (CEMAD, Comprobante, DNI o Foto).
                    </p>
                 </div>
              </div>
              <div className="shrink-0 bg-orange-500 text-white px-4 py-2 rounded-xl text-center">
                 <span className="block text-[10px] uppercase font-black tracking-widest opacity-80 mb-1">Fecha Límite</span>
-                <span className="block font-black text-xl">8 MAY 2026</span>
+                <span className="block font-black text-xl">
+                   {settings.document_deadline_date ? new Date(settings.document_deadline_date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', ' -') : 'A Confirmar'}
+                </span>
              </div>
           </div>
         )}

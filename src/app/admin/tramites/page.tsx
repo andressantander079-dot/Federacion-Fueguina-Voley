@@ -162,7 +162,7 @@ export default function AdminTramitesPage() {
 
       try {
          // 1. Obtener Cuenta de Tesorería y Configuración (Fee)
-         const { data: accounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'ACTIVO').limit(1);
+         const { data: accounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'INGRESO').limit(1);
          const { data: settings } = await supabase.from('settings').select('procedure_fees').single();
 
          const accountId = accounts && accounts.length > 0 ? accounts[0].id : null;
@@ -254,16 +254,28 @@ export default function AdminTramitesPage() {
             const playerFeeAmount = feeObj ? Number(feeObj.price) : 0;
             const feeTitleRaw = feeObj ? feeObj.title : (targetFeeId === 2 ? 'Inscripción Mayores (>12)' : 'Inscripción Menores (<12)');
 
-            if (accountId && playerFeeAmount > 0) {
-               const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
-                  type: 'INGRESO',
-                  amount: playerFeeAmount,
-                  description: `Inscripción Jugador (${feeTitleRaw}): ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
-                  entity_name: selectedItem.team_name,
-                  date: new Date(),
-                  account_id: accountId
-               }]);
-               if (treasuryError) console.error("Error creating treasury movement for player:", treasuryError);
+            const isCemadUpdate = selectedItem.status === 'pendiente_cemad';
+
+            if (!isCemadUpdate && accountId && playerFeeAmount > 0) {
+               // Prevent double payments for the same DNI
+               const { data: existingMovement } = await supabase.from('treasury_movements')
+                  .select('id')
+                  .ilike('description', `%DNI ${selectedItem.originalData.dni}%`)
+                  .limit(1);
+
+               if (!existingMovement || existingMovement.length === 0) {
+                  const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
+                     type: 'INGRESO',
+                     amount: playerFeeAmount,
+                     description: `Inscripción Jugador (${feeTitleRaw}): ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
+                     entity_name: selectedItem.team_name,
+                     date: new Date(),
+                     account_id: accountId
+                  }]);
+                  if (treasuryError) console.error("Error creating treasury movement for player:", treasuryError);
+               } else {
+                  console.log("Jugador ya abonó la inscripción. Omitiendo duplicado en Tesorería.");
+               }
             }
             // Update Player Status
             if (selectedItem.status === 'pendiente_cemad') {
