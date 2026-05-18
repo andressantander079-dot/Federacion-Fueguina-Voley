@@ -119,15 +119,28 @@ export default function AdminPasesInboxPage() {
             const currentFeeAmount = feeObj ? Number(feeObj.price) : 0;
 
             if (accountId && currentFeeAmount > 0) {
-                const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
-                    type: 'INGRESO',
-                    amount: currentFeeAmount,
-                    description: `Arancel de Pase (${feeTitleRaw}): Jugador ${selectedPase.player?.name} - DNI ${selectedPase.player?.dni}`,
-                    entity_name: selectedPase.solicitante?.name || 'Club Adquirente',
-                    date: new Date().toISOString().split('T')[0],
-                    account_id: accountId
-                }]);
-                if (treasuryError) console.error("Error creating treasury movement for pase:", treasuryError);
+                // Prevent duplicate payments via Reference ID
+                const { data: existingMovement } = await supabase.from('treasury_movements')
+                    .select('id')
+                    .eq('reference_id', selectedPase.id)
+                    .eq('reference_type', 'pase')
+                    .limit(1);
+
+                if (!existingMovement || existingMovement.length === 0) {
+                    const { error: treasuryError } = await supabase.from('treasury_movements').insert([{
+                        type: 'INGRESO',
+                        amount: currentFeeAmount,
+                        description: `Arancel de Pase (${feeTitleRaw}): Jugador ${selectedPase.player?.name} - DNI ${selectedPase.player?.dni}`,
+                        entity_name: selectedPase.solicitante?.name || 'Club Adquirente',
+                        date: new Date().toISOString().split('T')[0],
+                        account_id: accountId,
+                        reference_id: selectedPase.id,
+                        reference_type: 'pase'
+                    }]);
+                    if (treasuryError) console.error("Error creating treasury movement for pase:", treasuryError);
+                } else {
+                    console.log("Pase fee already paid. Skipping duplicate.");
+                }
             }
 
             // --- 2. PASAR DE ESTADO EL TRAMITE ---

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import SecurityLock from '@/components/treasury/SecurityLock'
 import MonthEndExport from '@/components/treasury/MonthEndExport'
 import { createClient } from '@/lib/supabase/client'
-import { Landmark, TrendingUp, TrendingDown, FileText, Settings, Wallet, X, ArrowUpRight, ArrowDownRight, PieChart as PieIcon } from 'lucide-react'
+import { Landmark, TrendingUp, TrendingDown, FileText, Settings, Wallet, X, ArrowUpRight, ArrowDownRight, PieChart as PieIcon, ChevronDown, ChevronUp, Calendar, List, Search, Loader2 } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts'
 
 export default function TreasuryPage() {
@@ -27,6 +27,18 @@ export default function TreasuryPage() {
     const [distributionData, setDistributionData] = useState<any[]>([])
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
     const [globalBalance, setGlobalBalance] = useState({ total_ingresos: 0, total_egresos: 0, saldo_actual: 0 })
+    
+    // Details Section State
+    const [yearlyMovements, setYearlyMovements] = useState<any[]>([])
+    const [detailsExpanded, setDetailsExpanded] = useState(false)
+    const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth())
+    const [visibleCount, setVisibleCount] = useState<number>(30)
+
+    // Search State
+    const [searchTerm, setSearchTerm] = useState('')
+    const [debouncedTerm, setDebouncedTerm] = useState('')
+    const [searchResults, setSearchResults] = useState<any[]>([])
+    const [isSearching, setIsSearching] = useState(false)
 
     const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#6366f1', '#ec4899', '#8b5cf6']
 
@@ -51,32 +63,65 @@ export default function TreasuryPage() {
         }
     }, [isUnlocked, selectedYear])
 
+    // Reset visible count when month changes
+    useEffect(() => {
+        setVisibleCount(30)
+    }, [selectedMonth])
+
+    // Debounce search term
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedTerm(searchTerm), 500)
+        return () => clearTimeout(timer)
+    }, [searchTerm])
+
+    // Perform Server-Side Search
+    useEffect(() => {
+        if (debouncedTerm.length >= 3) {
+            performSearch(debouncedTerm)
+        } else {
+            setSearchResults([])
+        }
+    }, [debouncedTerm])
+
+    const performSearch = async (term: string) => {
+        setIsSearching(true)
+        const { data } = await supabase.from('treasury_movements')
+            .select('id, amount, type, date, description, entity_name')
+            .ilike('description', `%${term}%`)
+            .order('date', { ascending: false })
+            .limit(50)
+        setSearchResults(data || [])
+        setIsSearching(false)
+    }
+
+    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const bottom = e.currentTarget.scrollHeight - e.currentTarget.scrollTop <= e.currentTarget.clientHeight + 50
+        if (bottom) {
+            setVisibleCount(prev => prev + 30)
+        }
+    }
+
     async function fetchStats() {
         try {
-            // Fuerza el cálculo manual local por contingencia para el balance global
-            let globalIn = 0;
-            let globalOut = 0;
-
-            const { data: allGlobalMovs } = await supabase.from('treasury_movements').select('amount, type');
-            if (allGlobalMovs) {
-                allGlobalMovs.forEach(m => {
-                    const amt = Number(m.amount) || 0;
-                    if (m.type === 'INGRESO') globalIn += amt;
-                    if (m.type === 'EGRESO') globalOut += amt;
-                });
+            // 1. Balance Global delegando la carga al servidor (RPC) para sortear límite de 1000 filas
+            const { data: globalData, error: rpcError } = await supabase.rpc('get_treasury_balance');
+            if (globalData && globalData.length > 0) {
+                const balance = globalData[0];
                 setGlobalBalance({
-                    total_ingresos: globalIn,
-                    total_egresos: globalOut,
-                    saldo_actual: globalIn - globalOut,
+                    total_ingresos: Number(balance.ingresos) || 0,
+                    total_egresos: Number(balance.egresos) || 0,
+                    saldo_actual: Number(balance.saldo) || 0,
                 });
+            } else if (rpcError) {
+                console.error("Error fetching global balance via RPC:", rpcError);
             }
 
-            // 2. Filtramos para gráficos locales del año seleccionado
-            const { data: allMovs } = await supabase.from('treasury_movements')
-                .select('amount, type, date, description')
-                .gte('date', `${selectedYear}-01-01T00:00:00Z`)
-                .lte('date', `${selectedYear}-12-31T23:59:59Z`)
-
+            // 2. Filtramos para gráficos locales y detalles del año seleccionado (USANDO ZONA HORARIA FISCAL)
+            const { data: allMovs, error: movsError } = await supabase.rpc('get_treasury_data_by_year', { p_year: selectedYear });
+            
+            if (movsError) {
+                console.error("Error fetching yearly movements via RPC:", movsError);
+            }
             if (allMovs) {
                 // Current Month
                 const now = new Date()
@@ -96,7 +141,7 @@ export default function TreasuryPage() {
                     'Multas/Otros': 0
                 }
 
-                allMovs.forEach(m => {
+                allMovs.forEach((m: any) => {
                     const mkTime = new Date(m.date).getTime()
 
                     // --- Timeline Sorting ---
@@ -145,6 +190,10 @@ export default function TreasuryPage() {
                     incomeGrowth: calcGrowth(curIn, prevIn),
                     expenseGrowth: calcGrowth(curOut, prevOut)
                 })
+
+                // Store movements for the details view
+                const sortedMovs = [...allMovs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                setYearlyMovements(sortedMovs)
             }
         } catch (error) {
             console.error("Error fetching stats:", error);
@@ -317,9 +366,9 @@ export default function TreasuryPage() {
                     </div>
                 </div>
 
-                <div className="space-y-6">
+                <div className="flex flex-col gap-6">
                     {/* Presupuesto */}
-                    <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 h-full flex flex-col justify-center">
+                    <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 flex-1 flex flex-col justify-center">
                         <div className="flex justify-between items-end mb-4">
                             <h3 className="font-bold">Ejecución Presupuestaria</h3>
                             <span className="text-sm font-black bg-slate-100 dark:bg-zinc-800 px-2 py-1 rounded">{stats.budgetUsedPercentage.toFixed(1)}%</span>
@@ -336,7 +385,7 @@ export default function TreasuryPage() {
                     </div>
 
                     {/* Quick Action Button Box */}
-                    <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800">
+                    <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 shrink-0">
                         <h3 className="font-bold mb-4 text-sm">Carga Rápida</h3>
                         <div className="grid grid-cols-2 gap-3">
                             <Link href="/admin/treasury/movements" className="py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold shadow-sm transition-all active:scale-95 flex flex-col items-center gap-1 text-xs uppercase tracking-wider">
@@ -348,6 +397,192 @@ export default function TreasuryPage() {
                         </div>
                     </div>
                 </div>
+            </div>
+
+            {/* Detalles de Movimientos por Mes */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-100 dark:border-zinc-800 mb-8 overflow-hidden">
+                <button 
+                    onClick={() => setDetailsExpanded(!detailsExpanded)}
+                    className="w-full p-6 flex justify-between items-center hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors focus:outline-none"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg text-tdf-orange">
+                            <List className="w-5 h-5" />
+                        </div>
+                        <h2 className="text-xl font-black tracking-tight">Detalles de Movimientos</h2>
+                    </div>
+                    {detailsExpanded ? <ChevronUp className="text-slate-400" /> : <ChevronDown className="text-slate-400" />}
+                </button>
+
+                {detailsExpanded && (
+                    <div className="p-6 border-t border-gray-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950/50 animate-in slide-in-from-top-4 duration-300">
+                        {/* Búsqueda Global Server-Side */}
+                        <div className="relative mb-6">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                {isSearching ? <Loader2 className="h-5 w-5 text-tdf-orange animate-spin" /> : <Search className="h-5 w-5 text-slate-400" />}
+                            </div>
+                            <input
+                                type="text"
+                                placeholder="Buscar por DNI, Nombre o Descripción (Mínimo 3 letras)..."
+                                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-tdf-orange/50 focus:border-tdf-orange transition-all font-medium text-slate-700 dark:text-slate-200"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+
+                        {searchTerm.trim().length > 0 ? (
+                            /* SEARCH RESULTS MODE */
+                            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+                                <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-800/50">
+                                    <h3 className="font-bold text-xs uppercase tracking-wider text-tdf-orange">Resultados de Búsqueda Global</h3>
+                                    <span className="text-xs font-bold text-slate-500">{searchResults.length} encontrados</span>
+                                </div>
+                                <div className="max-h-[450px] overflow-y-auto custom-scrollbar" onScroll={handleScroll}>
+                                    {searchResults.length === 0 && !isSearching ? (
+                                        <div className="p-12 flex flex-col items-center justify-center text-center">
+                                            <Search className="w-12 h-12 text-slate-300 dark:text-zinc-700 mb-4" />
+                                            <p className="text-slate-500 dark:text-slate-400 font-bold text-lg">Sin coincidencias</p>
+                                        </div>
+                                    ) : (
+                                        <div className="divide-y divide-gray-100 dark:divide-zinc-800">
+                                            {searchResults.slice(0, visibleCount).map((m, idx) => {
+                                                const d = new Date(m.date);
+                                                const dayName = d.toLocaleDateString('es-AR', { weekday: 'long' });
+                                                const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+                                                const dateStr = d.toLocaleDateString('es-AR');
+                                                const timeStr = d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+                                                const formattedDate = `${capitalizedDay}, ${dateStr} - ${timeStr}`;
+
+                                                return (
+                                                    <div key={idx} className="p-5 hover:bg-slate-50 dark:hover:bg-zinc-800/30 transition-colors flex flex-col md:flex-row justify-between md:items-center gap-4">
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <div className="text-[13px] md:text-sm font-semibold text-slate-800 dark:text-white leading-snug">
+                                                                {m.description || 'Movimiento sin descripción detallada'}
+                                                            </div>
+                                                            <div className="text-[11px] md:text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5">
+                                                                <span>{formattedDate}</span>
+                                                                <span className="text-slate-300 dark:text-zinc-600">•</span>
+                                                                <span className="font-medium text-slate-600 dark:text-slate-300">{m.entity_name || 'Generico'}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 self-start md:self-auto shrink-0 mt-1 md:mt-0">
+                                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${m.type === 'INGRESO' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30' : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30'}`}>
+                                                                {m.type === 'INGRESO' ? <TrendingUp size={14} className="text-emerald-500" /> : <TrendingDown size={14} className="text-red-500" />}
+                                                                <span className={`font-black text-sm ${m.type === 'INGRESO' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                    {m.type === 'INGRESO' ? '+' : '-'} $ {m.amount.toLocaleString('es-AR')}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            /* MONTH ACCORDION MODE */
+                            <>
+                                {/* Monthly Filter */}
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="p-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shrink-0 shadow-sm">
+                                        <Calendar className="text-slate-400 w-5 h-5" />
+                                    </div>
+                                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar w-full">
+                                        {[...Array(12)].map((_, i) => {
+                                            const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                                            return (
+                                                <button
+                                                    key={i}
+                                                    onClick={() => setSelectedMonth(i)}
+                                                    className={`px-5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all flex-shrink-0 border ${
+                                                        selectedMonth === i 
+                                                        ? 'bg-tdf-orange text-white border-tdf-orange shadow-md shadow-orange-500/20' 
+                                                        : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 text-slate-600 dark:text-slate-300'
+                                                    }`}
+                                                >
+                                                    {monthNames[i]}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Movements List for Selected Month */}
+                                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+                                    {(() => {
+                                        const monthMovs = yearlyMovements.filter(m => new Date(m.date).getMonth() === selectedMonth);
+                                        const totalIngresos = monthMovs.filter(m => m.type === 'INGRESO').reduce((acc, curr) => acc + curr.amount, 0);
+                                        const totalEgresos = monthMovs.filter(m => m.type === 'EGRESO').reduce((acc, curr) => acc + curr.amount, 0);
+
+                                        return (
+                                            <>
+                                                <div className="flex flex-col md:flex-row justify-between md:items-center p-4 border-b border-gray-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-800/50 gap-4">
+                                                    <h3 className="font-bold text-xs uppercase tracking-wider text-slate-500">Registro Mensual de Acciones</h3>
+                                                    <div className="flex gap-4 items-center">
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-[10px] font-bold text-emerald-600 uppercase">Ingresos</span>
+                                                            <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">+ ARS $ {totalIngresos.toLocaleString('es-AR')}</span>
+                                                        </div>
+                                                        <div className="w-px h-8 bg-gray-300 dark:bg-zinc-700"></div>
+                                                        <div className="flex flex-col items-start">
+                                                            <span className="text-[10px] font-bold text-red-600 uppercase">Egresos</span>
+                                                            <span className="text-sm font-black text-red-600 dark:text-red-400">- ARS $ {totalEgresos.toLocaleString('es-AR')}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="max-h-[450px] overflow-y-auto custom-scrollbar" onScroll={handleScroll}>
+                                                    {monthMovs.length === 0 ? (
+                                                        <div className="p-12 flex flex-col items-center justify-center text-center">
+                                                            <FileText className="w-12 h-12 text-slate-300 dark:text-zinc-700 mb-4" />
+                                                            <p className="text-slate-500 dark:text-slate-400 font-bold text-lg">Sin movimientos</p>
+                                                            <p className="text-slate-400 text-sm">No se registraron ingresos ni egresos en este mes.</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="divide-y divide-gray-100 dark:divide-zinc-800">
+                                                            {monthMovs.slice(0, visibleCount).map((m, idx) => {
+                                                                const d = new Date(m.date);
+                                                                const dayName = d.toLocaleDateString('es-AR', { weekday: 'long' });
+                                                                const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+                                                                const dateStr = d.toLocaleDateString('es-AR');
+                                                                const timeStr = d.toLocaleTimeString('es-AR', {hour: '2-digit', minute:'2-digit'});
+                                                                const formattedDate = `${capitalizedDay}, ${dateStr} - ${timeStr}`;
+
+                                                                return (
+                                                                    <div key={idx} className="p-5 hover:bg-slate-50 dark:hover:bg-zinc-800/30 transition-colors flex flex-col md:flex-row justify-between md:items-center gap-4">
+                                                                        <div className="flex flex-col gap-1.5">
+                                                                            <div className="text-[13px] md:text-sm font-semibold text-slate-800 dark:text-white leading-snug">
+                                                                                {m.description || 'Movimiento sin descripción detallada'}
+                                                                            </div>
+                                                                            <div className="text-[11px] md:text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5">
+                                                                                <span>{formattedDate}</span>
+                                                                                <span className="text-slate-300 dark:text-zinc-600">•</span>
+                                                                                <span className="font-medium text-slate-600 dark:text-slate-300">{m.entity_name || 'Generico'}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 self-start md:self-auto shrink-0 mt-1 md:mt-0">
+                                                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${m.type === 'INGRESO' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30' : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30'}`}>
+                                                                                {m.type === 'INGRESO' ? <TrendingUp size={14} className="text-emerald-500" /> : <TrendingDown size={14} className="text-red-500" />}
+                                                                                <span className={`font-black text-sm ${m.type === 'INGRESO' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                                                    {m.type === 'INGRESO' ? '+' : '-'} $ {m.amount.toLocaleString('es-AR')}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Bottom Menu Spacing Map Fix */}

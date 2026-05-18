@@ -176,10 +176,20 @@ export default function PlantelPage() {
       
       const publicUrl = await uploadFileAPI(croppedFile, 'public_avatars', filePath);
       
-      const { error: updateErr } = await supabase.from('players').update({ photo_url: publicUrl }).eq('id', avatarUploadTarget.id);
+      let newStatus = avatarUploadTarget.status;
+      if (avatarUploadTarget.status === 'active') {
+         newStatus = 'pendiente_cemad';
+      } else if (avatarUploadTarget.status === 'rejected') {
+         newStatus = 'pending';
+      }
+
+      const { error: updateErr } = await supabase.from('players').update({ 
+        photo_url: publicUrl,
+        status: newStatus 
+      }).eq('id', avatarUploadTarget.id);
       if (updateErr) throw updateErr;
 
-      setJugadores(jugadores.map(j => j.id === avatarUploadTarget.id ? { ...j, photo_url: publicUrl } : j));
+      setJugadores(jugadores.map(j => j.id === avatarUploadTarget.id ? { ...j, photo_url: publicUrl, status: newStatus } : j));
       toast.success("Foto actualizada exitosamente", { id: toastId });
     } catch (err: any) {
       console.error(err);
@@ -215,8 +225,10 @@ export default function PlantelPage() {
       }
 
       // IMPORTANTE: Según Módulo 4, si un jugador habilitado sube un documento faltante, 
-      // regresa al estado pendiente para ser re-auditado por administración.
+      // pasa al estado 'pendiente_cemad' para que no se le vuelva a cobrar la inscripción.
       if (player.status === 'active') {
+         updates.status = 'pendiente_cemad';
+      } else if (player.status === 'rejected') {
          updates.status = 'pending';
       }
 
@@ -776,7 +788,7 @@ export default function PlantelPage() {
       const { error } = await supabase.from('players').update({
         medical_url: medicalUrl,
         cemad_status: 'uploaded',
-        status: 'pending'
+        status: player.status === 'active' ? 'pendiente_cemad' : (player.status === 'rejected' ? 'pending' : player.status)
       }).eq('id', player.id);
 
       if (error) throw error;
@@ -1219,29 +1231,29 @@ export default function PlantelPage() {
                       </div>
                       <div className="flex gap-1 md:gap-2 items-center justify-end shrink-0">
                         {/* Botón CEMAD diferido o Faltante */}
-                        {((j.status === 'active' && j.cemad_pendiente === true && j.cemad_status !== 'uploaded') || ((j.status === 'pending' || j.status === 'rejected') && !j.medical_url)) && (
-                           <label className="cursor-pointer bg-orange-600 hover:bg-orange-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(234,88,12,0.5)] flex items-center gap-1" title="Subir Alta Médica (CEMAD)">
+                        {((j.status === 'active' && (j.cemad_pendiente === true || j.cemad_status === 'rejected') && j.cemad_status !== 'uploaded') || (j.status === 'pending' && !j.medical_url) || j.status === 'rejected') && (
+                           <label className="cursor-pointer bg-orange-600 hover:bg-orange-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(234,88,12,0.5)] flex items-center gap-1" title={j.cemad_status === 'rejected' ? 'Reintentar Alta Médica (CEMAD)' : 'Subir Alta Médica (CEMAD)'}>
                               <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'medical_url')} />
                               <Plus size={16} className="shrink-0" /> <FileText size={16} className="hidden md:block shrink-0" />
                            </label>
                         )}
                         {/* Botón Autorización Familiar Faltante (Solo si es pendiente/rechazado y no la tiene) */}
-                        {((j.status === 'pending' || j.status === 'rejected') && !j.family_authorization_url) && (
-                           <label className="cursor-pointer bg-yellow-600 hover:bg-yellow-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(202,138,4,0.5)] flex items-center gap-1" title="Subir Autorización Tutor">
+                        {((j.status === 'pending' && !j.family_authorization_url) || j.status === 'rejected') && (
+                           <label className="cursor-pointer bg-yellow-600 hover:bg-yellow-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(202,138,4,0.5)] flex items-center gap-1" title={j.status === 'rejected' && j.family_authorization_url ? 'Reemplazar Autorización Tutor' : 'Subir Autorización Tutor'}>
                               <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'family_authorization_url')} />
                               <Plus size={16} className="shrink-0" /> <ShieldCheck size={16} className="hidden md:block shrink-0" />
                            </label>
                         )}
                         {/* Botón Comprobante Faltante */}
-                        {((j.status === 'pending' || j.status === 'rejected') && !j.payment_url) && (
-                           <label className="cursor-pointer bg-green-600 hover:bg-green-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(22,163,74,0.5)] flex items-center gap-1" title="Subir Comprobante de Pago">
+                        {((j.status === 'pending' && !j.payment_url) || j.status === 'rejected') && (
+                           <label className="cursor-pointer bg-green-600 hover:bg-green-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(22,163,74,0.5)] flex items-center gap-1" title={j.status === 'rejected' && j.payment_url ? 'Reemplazar Comprobante' : 'Subir Comprobante de Pago'}>
                               <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'payment_url')} />
                               <Plus size={16} className="shrink-0" /> <DollarSign size={16} className="hidden md:block shrink-0" />
                            </label>
                         )}
                         {/* Botón DNI Faltante */}
-                        {((j.status === 'pending' || j.status === 'rejected') && !j.dni_url) && (
-                           <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(37,99,235,0.5)] flex items-center gap-1" title="Subir Documento DNI">
+                        {((j.status === 'pending' && !j.dni_url) || j.status === 'rejected') && (
+                           <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(37,99,235,0.5)] flex items-center gap-1" title={j.status === 'rejected' && j.dni_url ? 'Reemplazar Documento DNI' : 'Subir Documento DNI'}>
                               <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'dni_url' as any)} />
                               <Plus size={16} className="shrink-0" /> <IdCard size={16} className="hidden md:block shrink-0" />
                            </label>
