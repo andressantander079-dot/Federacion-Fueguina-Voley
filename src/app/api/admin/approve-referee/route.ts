@@ -55,17 +55,33 @@ export async function POST(req: Request) {
 
         if (updateError) throw updateError;
 
-        // 5. Insert Treasury Movement
-        const { error: treasuryError } = await supabase
-            .from('treasury_movements')
-            .insert({
-                amount: feeAmount,
-                type: 'INGRESO',
-                description: `Ítem 9: Inscripción de Árbitro/a (${refereeName}) - Temporada 2026`,
-                account_id: accountId
-            });
+        // 5. Insert Treasury Movement (Prevent duplicates via Reference ID)
+        if (accountId) {
+            const { data: existingMovement } = await supabase.from('treasury_movements')
+                .select('id')
+                .eq('reference_id', referee_id)
+                .eq('reference_type', 'alta_arbitro')
+                .limit(1);
 
-        if (treasuryError) throw treasuryError;
+            if (!existingMovement || existingMovement.length === 0) {
+                const { error: treasuryError } = await supabase
+                    .from('treasury_movements')
+                    .insert({
+                        date: new Date().toISOString(),
+                        amount: feeAmount,
+                        type: 'INGRESO',
+                        description: `Alta Árbitro: ${refereeName}`,
+                        account_id: accountId,
+                        entity_name: "Colegio de Árbitros",
+                        reference_id: referee_id,
+                        reference_type: 'alta_arbitro'
+                    });
+
+                if (treasuryError) throw treasuryError;
+            } else {
+                console.log("Referee fee already paid. Skipping duplicate.");
+            }
+        }
 
         return NextResponse.json({ success: true, feeAmount });
     } catch (error: any) {

@@ -58,22 +58,34 @@ export async function POST(req: Request) {
 
         if (updateError) throw updateError;
 
-        // 5. Insert Treasury Movement
+        // 5. Insert Treasury Movement (Prevent duplicates via Reference ID)
         if (accountId) {
-            const { error: treasuryError } = await supabase
-                .from('treasury_movements')
-                .insert({
-                    date: new Date().toISOString(),
-                    amount: feeAmount,
-                    type: 'INGRESO',
-                    description: `Ítem #5: Inscripción de Técnicos (${teamName} - ${coachName})`,
-                    account_id: accountId,
-                    entity_name: teamName
-                });
+            const { data: existingMovement } = await supabase.from('treasury_movements')
+                .select('id')
+                .eq('reference_id', coach_id)
+                .eq('reference_type', 'alta_tecnico')
+                .limit(1);
 
-            if (treasuryError) {
-                console.error("Error creating treasury movement:", treasuryError);
-                throw treasuryError;
+            if (!existingMovement || existingMovement.length === 0) {
+                const { error: treasuryError } = await supabase
+                    .from('treasury_movements')
+                    .insert({
+                        date: new Date().toISOString(),
+                        amount: feeAmount,
+                        type: 'INGRESO',
+                        description: `Alta Técnico: ${coachName}`,
+                        account_id: accountId,
+                        entity_name: teamName,
+                        reference_id: coach_id,
+                        reference_type: 'alta_tecnico'
+                    });
+
+                if (treasuryError) {
+                    console.error("Error creating treasury movement:", treasuryError);
+                    throw treasuryError;
+                }
+            } else {
+                console.log("Coach fee already paid. Skipping duplicate.");
             }
         }
 

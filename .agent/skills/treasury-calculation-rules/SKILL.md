@@ -42,3 +42,14 @@ Esta skill establece las normativas obligatorias para el manejo y cálculo de mo
   2. Nombre del individuo (Ej. Juan Perez).
   3. Identificador único verificable (Ej. DNI 12345678, o Código de Trámite).
   4. Entidad/Club responsable (Ej. Club AEP).
+
+# 5. Visualización y UI/UX (Dashboard de Tesorería)
+
+**A. Formateo de Fechas en Registros Históricos**
+- Los historiales o "Detalles de Movimientos" deben mostrar explícitamente el día de la semana, la fecha y la hora en que la Federación impactó el movimiento, de manera clara.
+- **Formato Estándar:** `Lunes, 15/05/2026 - 11:30 p.m.` (Implementado vía `toLocaleDateString` con `weekday: 'long'`).
+
+**B. Prevención de Overlaps (Superposición de Capas CSS)**
+- En dashboards divididos por grillas (ej. `grid-cols-3`), al tener componentes adyacentes de distintas alturas (ej. un Pie Chart a la izquierda y tarjetas de presupuesto a la derecha), **NUNCA** utilices `h-full` en los hijos internos si la columna padre es un flex container con espaciado (`space-y-6` o `gap-6`).
+- **Razón:** El `h-full` obligará al elemento a ocupar el 100% de la altura expandida de la grilla principal, lo que empujará a sus componentes hermanos (ej. botón de Carga Rápida) fuera del contenedor y causará que se superpongan encima de las secciones inferiores.
+- **Solución:** Utilizar `flex-1` en lugar de `h-full`, y omitir alturas fijas que rompan el cálculo de desbordamiento (overflow) en mobile y desktop.

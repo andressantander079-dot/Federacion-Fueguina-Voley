@@ -109,7 +109,7 @@ export default function AdminTramitesPage() {
       }));
 
       const mappedPlayers: DashboardItem[] = (playersData || []).map((p: any) => {
-         const isCemadUpdate = p.status === 'active' && p.cemad_status === 'uploaded';
+         const isCemadUpdate = p.status === 'pendiente_cemad' || (p.status === 'active' && p.cemad_status === 'uploaded');
          return {
             id: p.id,
             type: 'player',
@@ -257,10 +257,11 @@ export default function AdminTramitesPage() {
             const isCemadUpdate = selectedItem.status === 'pendiente_cemad';
 
             if (!isCemadUpdate && accountId && playerFeeAmount > 0) {
-               // Prevent double payments for the same DNI
+               // Prevent double payments using robust Reference ID
                const { data: existingMovement } = await supabase.from('treasury_movements')
                   .select('id')
-                  .ilike('description', `%DNI ${selectedItem.originalData.dni}%`)
+                  .eq('reference_id', selectedItem.id)
+                  .eq('reference_type', 'inscripcion_jugador')
                   .limit(1);
 
                if (!existingMovement || existingMovement.length === 0) {
@@ -270,7 +271,9 @@ export default function AdminTramitesPage() {
                      description: `Inscripción Jugador (${feeTitleRaw}): ${selectedItem.originalData.name} - DNI ${selectedItem.originalData.dni}`,
                      entity_name: selectedItem.team_name,
                      date: new Date(),
-                     account_id: accountId
+                     account_id: accountId,
+                     reference_id: selectedItem.id,
+                     reference_type: 'inscripcion_jugador'
                   }]);
                   if (treasuryError) console.error("Error creating treasury movement for player:", treasuryError);
                } else {
@@ -280,6 +283,7 @@ export default function AdminTramitesPage() {
             // Update Player Status
             if (selectedItem.status === 'pendiente_cemad') {
                await supabase.from('players').update({ 
+                  status: 'active',
                   cemad_status: 'approved', 
                   cemad_pendiente: false,
                   rejection_reason: null 
@@ -374,7 +378,7 @@ export default function AdminTramitesPage() {
          } else {
             // Players use 'rejected' status
             if (selectedItem.status === 'pendiente_cemad') {
-               await supabase.from('players').update({ cemad_status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
+               await supabase.from('players').update({ status: 'active', cemad_status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
             } else {
                await supabase.from('players').update({ status: 'rejected', rejection_reason: reason }).eq('id', selectedItem.id);
             }
