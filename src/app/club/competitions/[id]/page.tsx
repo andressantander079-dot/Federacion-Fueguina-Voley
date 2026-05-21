@@ -7,7 +7,8 @@ import Link from 'next/link';
 import { useClubAuth } from '@/hooks/useClubAuth';
 import MatchSheetModal from '@/components/Club/MatchSheetModal';
 import { calculateStandings, StandingRow } from '@/lib/tournamentUtils';
-import { ArrowLeft, Trophy, Calendar, FileText, Download, MapPin, Clock, AlertTriangle, ChevronDown, Check, Users } from 'lucide-react';
+import { ArrowLeft, Trophy, Calendar, FileText, Download, MapPin, Clock, AlertTriangle, ChevronDown, Check, Users, Eye } from 'lucide-react';
+import MatchSheetViewer from '@/components/admin/MatchSheetViewer';
 
 // Helper for logos
 function TeamLogo({ url, name, className = "w-10 h-10" }: { url?: string, name: string, className?: string }) {
@@ -47,6 +48,7 @@ export default function CompetitionDetail() {
     // Modal State
     const [isSheetModalOpen, setIsSheetModalOpen] = useState(false);
     const [selectedMatchForSheet, setSelectedMatchForSheet] = useState<any>(null);
+    const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
 
     useEffect(() => {
         if (clubId) fetchData(clubId);
@@ -308,7 +310,14 @@ export default function CompetitionDetail() {
                                         </div>
                                     </div>
 
-                                    {m.sheet_url ? (
+                                    {m.sheet_status === 'submitted' || m.sheet_data ? (
+                                        <button
+                                            onClick={() => setSelectedSheetId(m.id)}
+                                            className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-black transition shadow-lg shadow-slate-200"
+                                        >
+                                            <Eye size={14} /> Ver Planilla
+                                        </button>
+                                    ) : m.sheet_url ? (
                                         <a
                                             href={m.sheet_url}
                                             target="_blank"
@@ -337,6 +346,14 @@ export default function CompetitionDetail() {
                 clubId={clubId || ''}
                 categories={categories}
             />
+
+            {/* MODAL VISOR */}
+            {selectedSheetId && (
+                <MatchSheetViewer
+                    matchId={selectedSheetId}
+                    onClose={() => setSelectedSheetId(null)}
+                />
+            )}
         </div>
     );
 }
