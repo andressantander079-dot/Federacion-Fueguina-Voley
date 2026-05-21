@@ -23,13 +23,12 @@ export default function DesignationsPage() {
     useEffect(() => {
         fetchMatches()
         fetchReferees()
-    }, [])
+    }, [activeTab]) // Added activeTab as dependency
 
     async function fetchMatches() {
         setLoading(true)
-        // Fetch matches with teams and existing officials
-        // Ordered by date ascending, upcoming first
-        const { data, error } = await supabase
+        
+        let query = supabase
             .from('matches')
             .select(`
                 *,
@@ -41,8 +40,18 @@ export default function DesignationsPage() {
                     profile:profiles(full_name)
                 )
             `)
-            .order('status', { ascending: true }) // Group by status to separate finished
-            .order('scheduled_time', { ascending: false }) // Newest first
+
+        // Server-side filtering to drastically reduce payload and load times
+        if (activeTab === 'pendientes') {
+            query = query.neq('status', 'finalizado')
+                         .order('scheduled_time', { ascending: true }) // Upcoming first
+        } else {
+            query = query.eq('status', 'finalizado')
+                         .order('scheduled_time', { ascending: false }) // Newest finished first
+                         .limit(30) // Prevent loading all historical matches
+        }
+
+        const { data, error } = await query
 
         if (data) setMatches(data)
         setLoading(false)
@@ -67,42 +76,15 @@ export default function DesignationsPage() {
     function getAvailableReferees(match: any) {
         if (!match) return []
         return referees.filter(ref => {
-            return referees.filter(ref => {
-                const restrictions = ref.referee_restrictions?.map((r: any) => r.restricted_team_id) || []
-                const isRestricted = restrictions.includes(match.home_team_id) || restrictions.includes(match.away_team_id)
-                return !isRestricted
-            })
+            const restrictions = ref.referee_restrictions?.map((r: any) => r.restricted_team_id) || []
+            const isRestricted = restrictions.includes(match.home_team_id) || restrictions.includes(match.away_team_id)
+            return !isRestricted
         })
     }
 
     function openAssignmentModal(match: any) {
         setSelectedMatch(match)
         // Pre-fill existing assignments
-        const current = {
-            '1st_referee': '',
-            '2nd_referee': '',
-            'scorer': '',
-            'line_judge': ''
-        }
-        match.match_officials.forEach((mo: any) => {
-            if (current.hasOwnProperty(mo.role)) {
-                // @ts-ignore
-                current[mo.role] = mo.profile.id // We need profile ID (which is same as user_id/referee id in this schema)
-                // Wait, match_officials user_id references profiles.id. Referees table id references profiles.id.
-                // So checking schema: match_officials.user_id IS the profile id.
-                // However, fetching query returns profile object. We need to find the ID.
-                // The select query above fetches match_officials(profile:profiles(full_name)).
-                // We actually need the user_id from match_officials to pre-fill the select.
-            }
-        })
-        // Re-fetch match officials with user_id to be sure or just trust logic
-        const officialsMap: any = {}
-        match.match_officials.forEach((mo: any) => {
-            // We need the user_id. Let's assume fetching '*' in match_officials or just adding user_id to query.
-            // Updating fetchMatches query...
-        })
-
-        // Let's reset for now, better logic below
         setAssignments({
             '1st_referee': match.match_officials.find((m: any) => m.role === '1st_referee')?.user_id || '',
             '2nd_referee': match.match_officials.find((m: any) => m.role === '2nd_referee')?.user_id || '',
@@ -110,9 +92,6 @@ export default function DesignationsPage() {
             'line_judge': match.match_officials.find((m: any) => m.role === 'line_judge')?.user_id || '',
         })
     }
-
-    // Need to update fetchMatches to include user_id in match_officials
-    // Actually `match_officials` table has `user_id` column.
 
     async function saveAssignments(e: React.FormEvent) {
         e.preventDefault()

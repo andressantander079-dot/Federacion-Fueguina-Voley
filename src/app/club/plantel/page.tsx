@@ -1159,7 +1159,7 @@ export default function PlantelPage() {
                         }
                       }}
                       className={`
-                        border p-3 md:p-4 rounded-xl flex items-center gap-3 md:gap-4 transition group relative overflow-hidden
+                        border p-3 md:p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-4 transition group relative overflow-hidden
                         ${j.status === 'pending'
                           ? 'bg-yellow-500/10 border-yellow-500/50 hover:bg-yellow-500/20 cursor-pointer'
                           : j.status === 'rejected'
@@ -1175,100 +1175,116 @@ export default function PlantelPage() {
                       {j.status === 'pending' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500" />}
                       {j.status === 'rejected' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]" />}
 
-                      <label 
-                        className="w-8 h-8 md:w-10 md:h-10 shrink-0 bg-zinc-800 rounded-full flex items-center justify-center font-black text-white text-xs md:text-sm cursor-pointer hover:bg-zinc-700 transition group/avatar relative overflow-hidden ring-1 ring-zinc-700 shrink-0" 
-                        title="Actualizar Foto de Perfil"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input type="file" hidden accept="image/*" onChange={(e) => handleAvatarSelect(e, j)} />
-                        {j.photo_url ? (
-                           <img src={j.photo_url} className="w-full h-full object-cover group-hover/avatar:opacity-30 transition-opacity" alt={j.name} />
-                        ) : (
-                           <span className="group-hover/avatar:opacity-0 text-zinc-500 transition-opacity">{j.number || '#'}</span>
-                        )}
-                        <Camera size={16} className={`absolute text-white ${j.photo_url ? 'opacity-0 group-hover/avatar:opacity-100 transition-opacity' : 'opacity-0 group-hover/avatar:opacity-100 transition-opacity'}`} />
-                      </label>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className={`font-bold text-sm md:text-base truncate leading-tight flex items-center gap-2 ${j.status === 'rejected' ? 'text-red-400 line-through opacity-70' : 'text-white'}`}>
-                            {j.name}
-                            {j.has_debt && <span title="Inhabilitado para competir por deudas"><Lock size={14} className="text-red-500" /></span>}
-                          </h4>
-                          {j.has_debt && (
-                            <span className="text-[10px] font-bold border border-red-500/50 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
-                              Deuda
-                            </span>
+                      <div className="flex items-center gap-3 w-full md:w-auto flex-1 min-w-0">
+                        <label 
+                          className="w-10 h-10 md:w-12 md:h-12 shrink-0 bg-zinc-800 rounded-full flex items-center justify-center font-black text-white text-xs md:text-sm cursor-pointer hover:bg-zinc-700 transition group/avatar relative overflow-hidden ring-1 ring-zinc-700" 
+                          title="Actualizar Foto de Perfil"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input type="file" hidden accept="image/*" onChange={(e) => handleAvatarSelect(e, j)} />
+                          {j.photo_url ? (
+                            <img src={j.photo_url} className="w-full h-full object-cover group-hover/avatar:opacity-30 transition-opacity" alt={j.name} />
+                          ) : (
+                            <span className="group-hover/avatar:opacity-0 text-zinc-500 transition-opacity">{j.number || '#'}</span>
                           )}
-                          {j.status === 'active' && j.cemad_pendiente === true && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 shadow-sm ${j.cemad_status === 'uploaded' ? 'bg-yellow-500/20 text-yellow-500' : j.cemad_status === 'rejected' ? 'bg-red-500 text-white animate-pulse' : 'bg-orange-500/20 text-orange-500'}`} title={j.cemad_status === 'rejected' ? (j.rejection_reason || 'Rechazado') : ''}>
-                              {j.cemad_status === 'uploaded' ? 'CEMAD en Revisión' : j.cemad_status === 'rejected' ? 'CEMAD Rechazado (Reintentar)' : 'Habilitado (Falta CEMAD)'}
-                            </span>
-                          )}
-                          {j.status === 'active' && !j.payment_url && (
-                             <span className="text-[10px] font-bold bg-green-500/20 text-green-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 shadow-sm animate-pulse">
-                                Habilitado (Falta Comprobante)
-                             </span>
-                          )}
-                          {j.status === 'pending' && (
-                            <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
-                              Pendiente
-                            </span>
-                          )}
-                          {j.status === 'rejected' && (
-                            <span className="text-[10px] font-bold bg-red-500/20 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 animate-pulse" title={j.rejection_reason || 'Rechazado'}>
-                              Observado (Click para ver motivo)
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 md:gap-2 text-[10px] md:text-xs text-zinc-500 flex-wrap mt-1">
-                          <span>DNI {j.dni}</span>
-                          <span className="w-1 h-1 bg-zinc-700 rounded-full hidden md:block" />
-                          <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400">{j.position}</span>
-                          {j.birth_date && (
-                            <span className="text-zinc-600">({j.birth_date.split('-')[0]})</span>
-                          )}
+                          <Camera size={16} className={`absolute text-white opacity-0 group-hover/avatar:opacity-100 transition-opacity`} />
+                        </label>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-col items-start gap-1">
+                            <h4 className={`font-bold text-sm md:text-base truncate leading-tight flex items-center gap-2 max-w-full ${j.status === 'rejected' ? 'text-red-400 line-through opacity-70' : 'text-white'}`}>
+                              <span className="truncate">{j.name}</span>
+                              {j.has_debt && <span title="Inhabilitado para competir por deudas" className="shrink-0"><Lock size={14} className="text-red-500" /></span>}
+                            </h4>
+                            
+                            <div className="flex flex-wrap gap-1.5 items-center">
+                              {j.has_debt && (
+                                <span className="text-[10px] font-bold border border-red-500/50 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                                  Deuda
+                                </span>
+                              )}
+                              {j.status === 'active' && j.cemad_pendiente === true && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 shadow-sm ${j.cemad_status === 'uploaded' ? 'bg-yellow-500/20 text-yellow-500' : j.cemad_status === 'rejected' ? 'bg-red-500 text-white animate-pulse' : 'bg-orange-500/20 text-orange-500'}`} title={j.cemad_status === 'rejected' ? (j.rejection_reason || 'Rechazado') : ''}>
+                                  {j.cemad_status === 'uploaded' ? 'CEMAD en Revisión' : j.cemad_status === 'rejected' ? 'CEMAD Rechazado' : 'Falta CEMAD'}
+                                </span>
+                              )}
+                              {j.status === 'active' && !j.payment_url && (
+                                <span className="text-[10px] font-bold bg-green-500/20 text-green-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 shadow-sm animate-pulse">
+                                  Falta Comprobante
+                                </span>
+                              )}
+                              {j.status === 'pending' && (
+                                <span className="text-[10px] font-bold bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                                  Pendiente
+                                </span>
+                              )}
+                              {j.status === 'rejected' && (
+                                <span className="text-[10px] font-bold bg-red-500/20 text-red-500 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 animate-pulse" title={j.rejection_reason || 'Rechazado'}>
+                                  Observado
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs text-zinc-500 flex-wrap mt-1.5">
+                            <span className="font-medium">DNI {j.dni}</span>
+                            <span className="w-1 h-1 bg-zinc-700 rounded-full" />
+                            <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 font-bold">{j.position}</span>
+                            {j.birth_date && (
+                              <span className="text-zinc-600">({j.birth_date.split('-')[0]})</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-1 md:gap-2 items-center justify-end shrink-0">
-                        {/* Botón CEMAD diferido o Faltante */}
-                        {((j.status === 'active' && (j.cemad_pendiente === true || j.cemad_status === 'rejected') && j.cemad_status !== 'uploaded') || (j.status === 'pending' && !j.medical_url) || j.status === 'rejected') && (
-                           <label className="cursor-pointer bg-orange-600 hover:bg-orange-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(234,88,12,0.5)] flex items-center gap-1" title={j.cemad_status === 'rejected' ? 'Reintentar Alta Médica (CEMAD)' : 'Subir Alta Médica (CEMAD)'}>
-                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'medical_url')} />
-                              <Plus size={16} className="shrink-0" /> <FileText size={16} className="hidden md:block shrink-0" />
-                           </label>
-                        )}
-                        {/* Botón Autorización Familiar Faltante (Solo si es pendiente/rechazado y no la tiene) */}
-                        {((j.status === 'pending' && !j.family_authorization_url) || j.status === 'rejected') && (
-                           <label className="cursor-pointer bg-yellow-600 hover:bg-yellow-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(202,138,4,0.5)] flex items-center gap-1" title={j.status === 'rejected' && j.family_authorization_url ? 'Reemplazar Autorización Tutor' : 'Subir Autorización Tutor'}>
-                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'family_authorization_url')} />
-                              <Plus size={16} className="shrink-0" /> <ShieldCheck size={16} className="hidden md:block shrink-0" />
-                           </label>
-                        )}
-                        {/* Botón Comprobante Faltante */}
-                        {((j.status === 'pending' && !j.payment_url) || j.status === 'rejected') && (
-                           <label className="cursor-pointer bg-green-600 hover:bg-green-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(22,163,74,0.5)] flex items-center gap-1" title={j.status === 'rejected' && j.payment_url ? 'Reemplazar Comprobante' : 'Subir Comprobante de Pago'}>
-                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'payment_url')} />
-                              <Plus size={16} className="shrink-0" /> <DollarSign size={16} className="hidden md:block shrink-0" />
-                           </label>
-                        )}
-                        {/* Botón DNI Faltante */}
-                        {((j.status === 'pending' && !j.dni_url) || j.status === 'rejected') && (
-                           <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg transition mr-1 shadow-[0_0_10px_rgba(37,99,235,0.5)] flex items-center gap-1" title={j.status === 'rejected' && j.dni_url ? 'Reemplazar Documento DNI' : 'Subir Documento DNI'}>
-                              <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'dni_url' as any)} />
-                              <Plus size={16} className="shrink-0" /> <IdCard size={16} className="hidden md:block shrink-0" />
-                           </label>
-                        )}
 
-                        {j.medical_url && j.cemad_pendiente !== true && <span title="Apto Médico OK"><FileText size={16} className="text-green-500" /></span>}
-                        {j.dni_url ? <span title="DNI Subido"><IdCard size={16} className="text-blue-500" /></span> : <span title="Falta DNI"><IdCard size={16} className="text-zinc-600" /></span>}
-                        {j.photo_url && <span title="Foto de Perfil OK"><Camera size={16} className="text-blue-400" /></span>}
-                        {j.family_authorization_url && <span title="Autorización Tutor OK"><ShieldCheck size={16} className="text-yellow-500" /></span>}
-                        {j.payment_url && <span title="Comprobante OK"><DollarSign size={16} className="text-green-500" /></span>}
+                      <div className="flex w-full md:w-auto items-center justify-between md:justify-end gap-2 mt-2 md:mt-0 pt-3 md:pt-0 border-t border-zinc-800 md:border-t-0 shrink-0">
+                        <div className="flex items-center gap-1 md:gap-2">
+                          {/* Botón CEMAD diferido o Faltante */}
+                          {((j.status === 'active' && (j.cemad_pendiente === true || j.cemad_status === 'rejected') && j.cemad_status !== 'uploaded') || (j.status === 'pending' && !j.medical_url) || j.status === 'rejected') && (
+                             <label className="cursor-pointer bg-orange-600 hover:bg-orange-500 text-white p-2 md:px-3 md:py-2 rounded-lg transition shadow-[0_0_10px_rgba(234,88,12,0.5)] flex items-center gap-1.5" title={j.cemad_status === 'rejected' ? 'Reintentar Alta Médica (CEMAD)' : 'Subir Alta Médica (CEMAD)'}>
+                                <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'medical_url')} />
+                                <Plus size={14} className="shrink-0" /> <FileText size={16} className="shrink-0" />
+                                <span className="text-[10px] font-bold uppercase hidden md:inline">CEMAD</span>
+                             </label>
+                          )}
+                          {/* Botón Autorización Familiar Faltante */}
+                          {((j.status === 'pending' && !j.family_authorization_url) || j.status === 'rejected') && (
+                             <label className="cursor-pointer bg-yellow-600 hover:bg-yellow-500 text-white p-2 md:px-3 md:py-2 rounded-lg transition shadow-[0_0_10px_rgba(202,138,4,0.5)] flex items-center gap-1.5" title={j.status === 'rejected' && j.family_authorization_url ? 'Reemplazar Autorización Tutor' : 'Subir Autorización Tutor'}>
+                                <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'family_authorization_url')} />
+                                <Plus size={14} className="shrink-0" /> <ShieldCheck size={16} className="shrink-0" />
+                                <span className="text-[10px] font-bold uppercase hidden md:inline">Tutor</span>
+                             </label>
+                          )}
+                          {/* Botón Comprobante Faltante */}
+                          {((j.status === 'pending' && !j.payment_url) || j.status === 'rejected') && (
+                             <label className="cursor-pointer bg-green-600 hover:bg-green-500 text-white p-2 md:px-3 md:py-2 rounded-lg transition shadow-[0_0_10px_rgba(22,163,74,0.5)] flex items-center gap-1.5" title={j.status === 'rejected' && j.payment_url ? 'Reemplazar Comprobante' : 'Subir Comprobante de Pago'}>
+                                <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'payment_url')} />
+                                <Plus size={14} className="shrink-0" /> <DollarSign size={16} className="shrink-0" />
+                                <span className="text-[10px] font-bold uppercase hidden md:inline">Pago</span>
+                             </label>
+                          )}
+                          {/* Botón DNI Faltante */}
+                          {((j.status === 'pending' && !j.dni_url) || j.status === 'rejected') && (
+                             <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white p-2 md:px-3 md:py-2 rounded-lg transition shadow-[0_0_10px_rgba(37,99,235,0.5)] flex items-center gap-1.5" title={j.status === 'rejected' && j.dni_url ? 'Reemplazar Documento DNI' : 'Subir Documento DNI'}>
+                                <input type="file" hidden accept=".pdf,.jpg,.png" onChange={(e) => handleMissingDocument(e, j, 'dni_url' as any)} />
+                                <Plus size={14} className="shrink-0" /> <IdCard size={16} className="shrink-0" />
+                                <span className="text-[10px] font-bold uppercase hidden md:inline">DNI</span>
+                             </label>
+                          )}
+
+                          <div className="flex items-center gap-1.5 px-2 py-1.5 bg-zinc-950/50 rounded-lg border border-zinc-800">
+                            {j.medical_url && j.cemad_pendiente !== true && <span title="Apto Médico OK"><FileText size={14} className="text-green-500" /></span>}
+                            {j.dni_url ? <span title="DNI Subido"><IdCard size={14} className="text-blue-500" /></span> : <span title="Falta DNI"><IdCard size={14} className="text-zinc-700" /></span>}
+                            {j.photo_url && <span title="Foto de Perfil OK"><Camera size={14} className="text-blue-400" /></span>}
+                            {j.family_authorization_url && <span title="Autorización Tutor OK"><ShieldCheck size={14} className="text-yellow-500" /></span>}
+                            {j.payment_url && <span title="Comprobante OK"><DollarSign size={14} className="text-green-500" /></span>}
+                          </div>
+                        </div>
+
+                        <button onClick={(e) => { e.stopPropagation(); borrarJugador(j.id); }} className="p-2 md:p-3 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-100 md:opacity-0 group-hover:opacity-100 z-10 shrink-0">
+                          <Trash2 size={18} />
+                        </button>
                       </div>
-
-                      <button onClick={(e) => { e.stopPropagation(); borrarJugador(j.id); }} className="p-2 md:p-3 text-zinc-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition opacity-100 md:opacity-0 group-hover:opacity-100 z-10 shrink-0">
-                        <Trash2 size={16} />
-                      </button>
                     </div>
                   ))
                 )}
