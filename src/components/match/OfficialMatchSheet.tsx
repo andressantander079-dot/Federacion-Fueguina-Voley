@@ -1091,6 +1091,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     // --- CÁLCULO DE SETS GANADOS ---
     const setsWonHome = sets.filter(s => s.finished && s.home > s.away).length;
     const setsWonAway = sets.filter(s => s.finished && s.away > s.home).length;
+    const requiredSets = Math.ceil(bestOfSets / 2);
+    const isMatchDefined = setsWonHome === requiredSets || setsWonAway === requiredSets;
 
     // --- ENVÍO A BASE DE DATOS ---
     const submitMatchSheet = async () => {
@@ -1401,7 +1403,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 {/* CENTRAL */}
                 <main className="flex-1 flex flex-col gap-4 overflow-y-visible md:overflow-y-auto custom-scrollbar order-1 md:order-2">
                     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-2 md:p-4 flex flex-col items-center">
-                        <div className="flex items-center justify-between w-full max-w-4xl">
+                        <div className={`flex items-center justify-between w-full max-w-4xl ${isSidesSwapped ? 'flex-row-reverse' : 'flex-row'}`}>
                             <div className="flex flex-col items-center gap-2">
                                 <div className="text-6xl font-black text-blue-600">{sets[currentSetIdx].home}</div>
                                 {!readOnly && (
@@ -1425,7 +1427,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     </Link>
                                 )}
                                 <h1 className="text-slate-300 font-black text-4xl uppercase tracking-widest leading-none">SETS</h1>
-                                <div className="border-2 border-slate-100 rounded-lg p-2 font-bold text-slate-600 w-full">SET {sets[currentSetIdx].number}: {sets[currentSetIdx].home} - {sets[currentSetIdx].away}</div>
+                                <div className="border-2 border-slate-100 rounded-lg p-2 font-bold text-slate-600 w-full">
+                                    SET {sets[currentSetIdx].number}: {isSidesSwapped ? sets[currentSetIdx].away : sets[currentSetIdx].home} - {isSidesSwapped ? sets[currentSetIdx].home : sets[currentSetIdx].away}
+                                </div>
                                 {!readOnly && (
                                     <>
                                         {!sets[currentSetIdx].finished ? (
@@ -1574,7 +1578,17 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 
                                 {/* Botón Finalizar Encuentro (Debajo de los otros, centrado) */}
                                 <button 
-                                    onClick={() => setClosingFlow(true)} 
+                                    onClick={() => {
+                                        if (matchStatus === 'suspended') {
+                                            setClosingFlow(true);
+                                            return;
+                                        }
+                                        if (!isMatchDefined) {
+                                            alert(`No se puede finalizar el encuentro. El partido no está definido matemáticamente (se requieren ${requiredSets} sets ganados por un equipo; actualmente van ${setsWonHome} - ${setsWonAway}).`);
+                                            return;
+                                        }
+                                        setClosingFlow(true);
+                                    }} 
                                     className="bg-slate-900 text-white px-8 py-4 mt-2 rounded-full font-black text-sm flex items-center justify-center gap-2 shadow-lg hover:bg-black transition w-64 active:scale-95 uppercase tracking-wide"
                                 >
                                     <Check size={18} /> Finalizar Encuentro
