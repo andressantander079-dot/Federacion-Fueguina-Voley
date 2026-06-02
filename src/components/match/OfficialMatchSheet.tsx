@@ -1221,6 +1221,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         );
     };
 
+    const homePhysicalSide = isSidesSwapped ? 'right' : 'left';
+    const awayPhysicalSide = isSidesSwapped ? 'left' : 'right';
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
 
@@ -1492,7 +1495,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     </div>
 
                     <div className={`bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full flex overflow-hidden ${isSidesSwapped ? 'flex-row-reverse' : 'flex-row'}`}>
-                        <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-slate-800 z-10 shadow-xl -ml-[3px]"></div>
+                        <div className="absolute left-1/2 top-0 bottom-0 border-l-4 border-dashed border-slate-800 z-10 -ml-[2px]"></div>
                         <div className={`relative flex-1 bg-blue-50/30 border-slate-200/50 ${isSidesSwapped ? 'border-l' : 'border-r'}`}>
                             {posHome.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
                                 <div className="absolute inset-0 flex items-center justify-center z-20">
@@ -1502,12 +1505,25 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 </div>
                             )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[3]} team="home" /></div>
-                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
-                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posHome[1]} team="home" /></div>
-                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[4]} team="home" /></div>
-                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[5]} team="home" /></div>
-                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
+                                {homePhysicalSide === 'left' ? (
+                                    <>
+                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[4]} team="home" /></div>
+                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[3]} team="home" /></div>
+                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[5]} team="home" /></div>
+                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
+                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
+                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posHome[1]} team="home" /></div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[1]} team="home" /></div>
+                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
+                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
+                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[5]} team="home" /></div>
+                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[3]} team="home" /></div>
+                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posHome[4]} team="home" /></div>
+                                    </>
+                                )}
                             </div>
                         </div>
                         <div className="relative flex-1 bg-red-50/30">
@@ -1519,12 +1535,25 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 </div>
                             )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[1]} team="away" /></div>
-                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
-                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posAway[3]} team="away" /></div>
-                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[0]} team="away" isPos1={true} /></div>
-                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[5]} team="away" /></div>
-                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posAway[4]} team="away" /></div>
+                                {awayPhysicalSide === 'left' ? (
+                                    <>
+                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[4]} team="away" /></div>
+                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[3]} team="away" /></div>
+                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[5]} team="away" /></div>
+                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
+                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posAway[0]} team="away" isPos1={true} /></div>
+                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posAway[1]} team="away" /></div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[1]} team="away" /></div>
+                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[0]} team="away" isPos1={true} /></div>
+                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
+                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[5]} team="away" /></div>
+                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posAway[3]} team="away" /></div>
+                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posAway[4]} team="away" /></div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
