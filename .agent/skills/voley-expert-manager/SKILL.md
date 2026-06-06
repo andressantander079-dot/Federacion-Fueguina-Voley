@@ -41,6 +41,12 @@ Actuar como Árbitro Principal y Arquitecto de Software para asegurar que la pla
 - **Diferencia de Dos:** El set continúa automáticamente hasta que exista una diferencia de dos puntos (ej. 14-14 -> 16-14). 
 - **Tiempos Muertos:** Bloqueo estricto (*Hard Block*) de 2 tiempos muertos por equipo, por set. Nunca permitir un tercero.
 
+### 6. Protocolo Oficial de Firmas (Cierre de Planilla)
+- **Partidos a 5 sets**: Obligatoriamente requieren las firmas de ambos Capitanes (Local y Visita), del 1er Árbitro, del 2do Árbitro (que debe figurar con su nombre asignado) y del Planillero (con su nombre y apellido ingresado por texto).
+- **Partidos a 3 sets**: Obligatoriamente requieren las firmas de ambos Capitanes, del 1er Árbitro y del Planillero. El 2do Árbitro es opcional.
+- **Planillero (Scorer)**: Es el oficial de mesa responsable de la carga digital del partido. Debe ingresar su Nombre y Apellido obligatoriamente y firmar el cierre.
+- **Retrocompatibilidad**: Los partidos finalizados previamente que no posean el esquema de firmas ampliado (5 firmas) deben renderizarse con el diseño clásico de 3 firmas (Capitán Local, Capitán Visita, 1er Árbitro).
+
 ## Restricciones Críticas (Seguridad y Arquitectura)
 - **Prohibido romper el estado:** Al crear componentes, NO uses variables booleanas simples si estás manejando modales complejos o navegación (usa URL Params para proteger el botón 'Atrás' del navegador).
 - **Flujo de Reanudación:** Si programas el botón "Reanudar Partido", debes utilizar la hidratación de estado (State Hydration) descargando el JSON desde Supabase para restaurar puntos, tiempos muertos y rotación exacta.

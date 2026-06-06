@@ -184,7 +184,19 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         ref1: string | null;
         dtHome: string | null;
         dtAway: string | null;
-    }>({ capHome: null, capAway: null, ref1: null, dtHome: null, dtAway: null });
+        ref2: string | null;
+        scorer: string | null;
+        scorerName: string;
+    }>({ 
+        capHome: null, 
+        capAway: null, 
+        ref1: null, 
+        dtHome: null, 
+        dtAway: null,
+        ref2: null,
+        scorer: null,
+        scorerName: ''
+    });
 
     // DT Signature Flow
     const [dtSignModalOpen, setDtSignModalOpen] = useState(false);
@@ -587,7 +599,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
         // Restaurar variables de estado locales (Vital para el PDF Resumen)
         if (data.staff) setStaff(data.staff);
-        if (data.signatures) setSignatures(data.signatures);
+        if (data.signatures) setSignatures(prev => ({ ...prev, ...data.signatures }));
         if (data.observations) setObservations(data.observations);
     };
 
@@ -1224,11 +1236,26 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const homePhysicalSide = isSidesSwapped ? 'right' : 'left';
     const awayPhysicalSide = isSidesSwapped ? 'left' : 'right';
 
+    const getSteps = () => {
+        const steps = ['Observaciones', 'Firma Capitán Local', 'Firma Capitán Visita', 'Firma 1er Árbitro'];
+        if (staff.ref2) {
+            steps.push('Firma 2do Árbitro');
+        }
+        steps.push('Firma Planillero');
+        steps.push('Vista Previa');
+        return steps;
+    };
+
+    const stepsList = getSteps();
+    const currentStepFriendly = staff.ref2 
+        ? closingStep 
+        : (closingStep <= 3 ? closingStep : (closingStep === 5 ? 4 : 5));
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
 
             {/* HEADER APP (Con Logout) */}
-            <header className={`bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-20 ${closingStep === 4 ? 'hidden' : ''}`}>
+            <header className={`bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-20 ${closingStep === 6 ? 'hidden' : ''}`}>
                 <div className="flex gap-3 items-center flex-wrap">
                     <div className="flex items-center gap-2 text-slate-600 text-xs font-bold uppercase"><Calendar size={14} /> {teamsInfo?.date || 'A CONFIRMAR'}</div>
                     <div className="flex items-center gap-2 text-slate-600 text-xs font-bold uppercase"><Clock size={14} /> {teamsInfo?.time || '- : -'}</div>
@@ -1482,13 +1509,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">1er Árbitro</label>
-                            <select disabled={readOnly || matchStatus !== 'scheduled'} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref1 || ''} onChange={e => setStaff({ ...staff, ref1: e.target.value })}>
+                            <select disabled={readOnly || (matchStatus !== 'scheduled' && matchStatus !== 'live')} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref1 || ''} onChange={e => setStaff({ ...staff, ref1: e.target.value })}>
                                 <option value="">Seleccionar...</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name || ''}</option>)}
                             </select>
                         </div>
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">2do Árbitro</label>
-                            <select disabled={readOnly || matchStatus !== 'scheduled'} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref2 || ''} onChange={e => setStaff({ ...staff, ref2: e.target.value })}>
+                            <select disabled={readOnly || (matchStatus !== 'scheduled' && matchStatus !== 'live')} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref2 || ''} onChange={e => setStaff({ ...staff, ref2: e.target.value })}>
                                 <option value="">Opcional</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name || ''}</option>)}
                             </select>
                         </div>
@@ -2443,7 +2470,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <div className="fixed inset-0 bg-slate-100 z-[70] flex flex-col animate-in fade-in overflow-y-auto">
                     <div className="p-4 border-b bg-white flex justify-between items-center shadow-sm sticky top-0 z-50">
                         <h2 className="font-black text-slate-800 text-lg">
-                            {readOnly ? 'Visualización de Planilla Oficial' : `Cierre de Encuentro - Paso ${closingStep + 1}/5`}
+                            {readOnly ? 'Visualización de Planilla Oficial' : `Cierre de Encuentro - Paso ${currentStepFriendly + 1}/${stepsList.length} (${stepsList[currentStepFriendly]})`}
                         </h2>
                         {!readOnly && (
                             <button onClick={() => setClosingFlow(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={18} /></button>
@@ -2478,8 +2505,62 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     )}
 
-                    {/* 4. PREVIEW A4 REAL (DEFINITIVO) */}
+                    {/* 4. FIRMA 2DO ÁRBITRO */}
                     {closingStep === 4 && (
+                        <div className="flex-1 flex flex-col">
+                            <div className="bg-blue-50 p-4 text-center">
+                                <span className="font-black text-xl text-blue-900 uppercase tracking-widest">
+                                    FIRMA: 2DO ÁRBITRO ({referees.find(r => r.id === staff.ref2)?.last_name || 'Asignado'})
+                                </span>
+                            </div>
+                            <div className="flex-1 relative bg-white touch-none cursor-crosshair shadow-inner">
+                                <canvas ref={sigPadRef} className="w-full h-full" width={typeof window !== 'undefined' ? window.innerWidth : 800} height={typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600} onMouseDown={startDraw} onMouseMove={moveDraw} onTouchStart={startDraw} onTouchMove={moveDraw} />
+                                <p className="absolute bottom-10 left-0 right-0 text-center text-slate-200 font-black text-5xl pointer-events-none select-none">FIRMAR AQUÍ</p>
+                            </div>
+                            <div className="p-6 bg-white border-t border-slate-200 flex gap-4 justify-center">
+                                <button onClick={clearSig} className="px-8 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 hover:bg-slate-50">Borrar</button>
+                                <button onClick={saveSig} className="px-12 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Confirmar Firma</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 5. FIRMA PLANILLERO */}
+                    {closingStep === 5 && (
+                        <div className="flex-1 flex flex-col">
+                            <div className="bg-blue-50 p-4 text-center flex flex-col gap-2 items-center">
+                                <span className="font-black text-xl text-blue-900 uppercase tracking-widest">
+                                    FIRMA: PLANILLERO
+                                </span>
+                                <div className="w-full max-w-md mt-2">
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 text-left">Nombre y Apellido del Planillero</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-blue-500 text-slate-800"
+                                        placeholder="Ej: Juan Pérez"
+                                        value={signatures.scorerName || ''}
+                                        onChange={e => setSignatures(p => ({ ...p, scorerName: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex-1 relative bg-white touch-none cursor-crosshair shadow-inner">
+                                <canvas ref={sigPadRef} className="w-full h-full" width={typeof window !== 'undefined' ? window.innerWidth : 800} height={typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600} onMouseDown={startDraw} onMouseMove={moveDraw} onTouchStart={startDraw} onTouchMove={moveDraw} />
+                                <p className="absolute bottom-10 left-0 right-0 text-center text-slate-200 font-black text-5xl pointer-events-none select-none">FIRMAR AQUÍ</p>
+                            </div>
+                            <div className="p-6 bg-white border-t border-slate-200 flex gap-4 justify-center">
+                                <button onClick={clearSig} className="px-8 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 hover:bg-slate-50">Borrar</button>
+                                <button onClick={() => {
+                                    if (!signatures.scorerName || !signatures.scorerName.trim()) {
+                                        alert("Por favor, ingrese el nombre y apellido del planillero antes de confirmar.");
+                                        return;
+                                    }
+                                    saveSig();
+                                }} className="px-12 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Confirmar Firma</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 6. PREVIEW A4 REAL (DEFINITIVO) */}
+                    {closingStep === 6 && (
                         <div className="flex-1 bg-slate-200 py-10 px-4 flex justify-center">
                             {/* HOJA A4 */}
                             <div className="bg-white w-[210mm] min-h-[297mm] shadow-2xl p-10 flex flex-col relative text-slate-900">
@@ -2617,22 +2698,64 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 </div>
 
                                 {/* FIRMAS */}
-                                <div className="grid grid-cols-3 gap-8 mb-8 mt-auto">
-                                    <div className="text-center border-t border-slate-300 pt-2 relative">
-                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachHome ? `DT: ${staff.coachHome}` : ''} {staff.ayTecHome ? `| Ay: ${staff.ayTecHome}` : ''}</p>
-                                        {signatures.capHome && <img src={signatures.capHome} className="h-12 mx-auto mb-1" />}
-                                        <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Local</p>
-                                    </div>
-                                    <div className="text-center border-t border-slate-300 pt-2 relative">
-                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachAway ? `DT: ${staff.coachAway}` : ''} {staff.ayTecAway ? `| Ay: ${staff.ayTecAway}` : ''}</p>
-                                        {signatures.capAway && <img src={signatures.capAway} className="h-12 mx-auto mb-1" />}
-                                        <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Visita</p>
-                                    </div>
-                                    <div className="text-center border-t border-slate-300 pt-2">
-                                        {signatures.ref1 && <img src={signatures.ref1} className="h-12 mx-auto mb-1" />}
-                                        <p className="text-[10px] font-bold uppercase text-slate-500">1er Árbitro: {referees.find(r => r.id === staff.ref1)?.last_name}</p>
-                                    </div>
-                                </div>
+                                {(() => {
+                                    const isNewSignatureLayout = !!signatures.scorer || !!signatures.scorerName || !!signatures.ref2;
+                                    if (isNewSignatureLayout) {
+                                        return (
+                                            <div className="mt-auto flex flex-col gap-6">
+                                                {/* Fila 1: Capitanes */}
+                                                <div className="grid grid-cols-2 gap-8 mb-2">
+                                                    <div className="text-center border-t border-slate-300 pt-2 relative">
+                                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachHome ? `DT: ${staff.coachHome}` : ''} {staff.ayTecHome ? `| Ay: ${staff.ayTecHome}` : ''}</p>
+                                                        {signatures.capHome && <img src={signatures.capHome} className="h-12 mx-auto mb-1" />}
+                                                        <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Local</p>
+                                                    </div>
+                                                    <div className="text-center border-t border-slate-300 pt-2 relative">
+                                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachAway ? `DT: ${staff.coachAway}` : ''} {staff.ayTecAway ? `| Ay: ${staff.ayTecAway}` : ''}</p>
+                                                        {signatures.capAway && <img src={signatures.capAway} className="h-12 mx-auto mb-1" />}
+                                                        <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Visita</p>
+                                                    </div>
+                                                </div>
+                                                {/* Fila 2: Cuerpo Arbitral */}
+                                                <div className={`grid ${staff.ref2 ? 'grid-cols-3' : 'grid-cols-2'} gap-8 mb-8`}>
+                                                    <div className="text-center border-t border-slate-300 pt-2">
+                                                        {signatures.ref1 && <img src={signatures.ref1} className="h-12 mx-auto mb-1" />}
+                                                        <p className="text-[10px] font-bold uppercase text-slate-500">1er Árbitro: {referees.find(r => r.id === staff.ref1)?.last_name || 'Asignado'}</p>
+                                                    </div>
+                                                    {staff.ref2 && (
+                                                        <div className="text-center border-t border-slate-300 pt-2">
+                                                            {signatures.ref2 && <img src={signatures.ref2} className="h-12 mx-auto mb-1" />}
+                                                            <p className="text-[10px] font-bold uppercase text-slate-500">2do Árbitro: {referees.find(r => r.id === staff.ref2)?.last_name || 'Asignado'}</p>
+                                                        </div>
+                                                    )}
+                                                    <div className="text-center border-t border-slate-300 pt-2">
+                                                        {signatures.scorer && <img src={signatures.scorer} className="h-12 mx-auto mb-1" />}
+                                                        <p className="text-[10px] font-bold uppercase text-slate-500">Planillero: {signatures.scorerName || 'Planillero'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    } else {
+                                        return (
+                                            <div className="grid grid-cols-3 gap-8 mb-8 mt-auto">
+                                                <div className="text-center border-t border-slate-300 pt-2 relative">
+                                                    <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachHome ? `DT: ${staff.coachHome}` : ''} {staff.ayTecHome ? `| Ay: ${staff.ayTecHome}` : ''}</p>
+                                                    {signatures.capHome && <img src={signatures.capHome} className="h-12 mx-auto mb-1" />}
+                                                    <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Local</p>
+                                                </div>
+                                                <div className="text-center border-t border-slate-300 pt-2 relative">
+                                                    <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachAway ? `DT: ${staff.coachAway}` : ''} {staff.ayTecAway ? `| Ay: ${staff.ayTecAway}` : ''}</p>
+                                                    {signatures.capAway && <img src={signatures.capAway} className="h-12 mx-auto mb-1" />}
+                                                    <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Visita</p>
+                                                </div>
+                                                <div className="text-center border-t border-slate-300 pt-2">
+                                                    {signatures.ref1 && <img src={signatures.ref1} className="h-12 mx-auto mb-1" />}
+                                                    <p className="text-[10px] font-bold uppercase text-slate-500">1er Árbitro: {referees.find(r => r.id === staff.ref1)?.last_name || 'Asignado'}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                })()}
 
                                 {/* FOOTER */}
                                 <div className="flex justify-between items-end text-[10px] text-slate-400 pt-4 border-t border-slate-100">

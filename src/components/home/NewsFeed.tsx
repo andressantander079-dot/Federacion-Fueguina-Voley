@@ -20,6 +20,7 @@ export default function NewsFeed() {
     const [news, setNews] = useState<NewsItem[]>([])
     const [loading, setLoading] = useState(true)
     const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null)
+    const [likedNewsIds, setLikedNewsIds] = useState<Record<string, boolean>>({})
     const supabase = createClient()
 
     useEffect(() => {
@@ -42,6 +43,23 @@ export default function NewsFeed() {
             }
         }
         fetchNews()
+
+        // Cargar estado de likes locales desde localStorage al montar en el cliente
+        if (typeof window !== 'undefined') {
+            const liked: Record<string, boolean> = {}
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i)
+                    if (key && key.startsWith('voley_news_liked_')) {
+                        const id = key.replace('voley_news_liked_', '')
+                        liked[id] = localStorage.getItem(key) === 'true'
+                    }
+                }
+            } catch (e) {
+                console.error("Error reading localStorage keys:", e)
+            }
+            setLikedNewsIds(liked)
+        }
     }, [])
 
     // Actualiza el likes en el array
@@ -49,6 +67,21 @@ export default function NewsFeed() {
         setNews(prev => prev.map(n => n.id === id ? { ...n, likes: newCount } : n))
         // Si el modal está abierto con esta noticia, también actualiza
         setSelectedNews(prev => prev?.id === id ? { ...prev, likes: newCount } : prev)
+    }
+
+    const toggleLikedLocal = (id: string, isLiking: boolean) => {
+        setLikedNewsIds(prev => ({ ...prev, [id]: isLiking }))
+        if (typeof window !== 'undefined') {
+            try {
+                if (isLiking) {
+                    localStorage.setItem(`voley_news_liked_${id}`, 'true')
+                } else {
+                    localStorage.removeItem(`voley_news_liked_${id}`)
+                }
+            } catch (e) {
+                console.error("Error writing to localStorage:", e)
+            }
+        }
     }
 
     if (loading) return <div className="p-8 text-center text-white">Cargando noticias...</div>;
@@ -62,8 +95,10 @@ export default function NewsFeed() {
                         <NewsCard
                             key={item.id}
                             news={item}
+                            liked={!!likedNewsIds[item.id]}
                             onClick={() => setSelectedNews(item)}
                             onLikesChange={handleLikesChange}
+                            onLikedToggle={toggleLikedLocal}
                         />
                     ))}
                 </div>
@@ -128,7 +163,9 @@ export default function NewsFeed() {
                                 <LikeButton
                                     newsId={selectedNews.id}
                                     initialLikes={selectedNews.likes}
+                                    liked={!!likedNewsIds[selectedNews.id]}
                                     onLikesChange={handleLikesChange}
+                                    onLikedToggle={toggleLikedLocal}
                                     large
                                 />
                             </div>
@@ -144,15 +181,18 @@ export default function NewsFeed() {
 function LikeButton({
     newsId,
     initialLikes,
+    liked,
     onLikesChange,
+    onLikedToggle,
     large = false
 }: {
     newsId: string
     initialLikes: number
+    liked: boolean
     onLikesChange: (id: string, newCount: number) => void
+    onLikedToggle: (id: string, isLiking: boolean) => void
     large?: boolean
 }) {
-    const [liked, setLiked] = useState(false)
     const [likesCount, setLikesCount] = useState(initialLikes)
     const supabase = createClient()
 
@@ -168,9 +208,9 @@ function LikeButton({
         const isLiking = !liked
         const newCount = isLiking ? likesCount + 1 : Math.max(0, likesCount - 1)
 
-        setLiked(isLiking)
         setLikesCount(newCount)
         onLikesChange(newsId, newCount)
+        onLikedToggle(newsId, isLiking)
 
         try {
             const rpcName = isLiking ? 'increment_likes' : 'decrement_likes'
@@ -180,9 +220,9 @@ function LikeButton({
             console.error("Error toggling like:", error)
             // Revertir
             const revertCount = isLiking ? newCount - 1 : newCount + 1
-            setLiked(!isLiking)
             setLikesCount(revertCount)
             onLikesChange(newsId, revertCount)
+            onLikedToggle(newsId, !isLiking)
         }
     }
 
@@ -215,12 +255,16 @@ function LikeButton({
 // ----- Tarjeta de noticia -----
 function NewsCard({
     news,
+    liked,
     onClick,
-    onLikesChange
+    onLikesChange,
+    onLikedToggle
 }: {
     news: NewsItem
+    liked: boolean
     onClick: () => void
     onLikesChange: (id: string, newCount: number) => void
+    onLikedToggle: (id: string, isLiking: boolean) => void
 }) {
     const handleShare = async (e: React.MouseEvent) => {
         e.preventDefault()
@@ -284,7 +328,9 @@ function NewsCard({
                     <LikeButton
                         newsId={news.id}
                         initialLikes={news.likes}
+                        liked={liked}
                         onLikesChange={onLikesChange}
+                        onLikedToggle={onLikedToggle}
                     />
                     <button
                         onClick={handleShare}
