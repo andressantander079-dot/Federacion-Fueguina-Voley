@@ -292,40 +292,23 @@ export default function PlanillasClub() {
 
                                     {/* BOTÓN DESCARGA / VISOR */}
                                     <div className="bg-slate-50 border-t md:border-t-0 md:border-l border-slate-100 p-6 w-full md:w-56 flex flex-col justify-center items-center gap-3">
-                                        {m.sheet_status === 'submitted' || m.sheet_data ? (
-                                            <>
-                                                <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-tdf-blue border border-slate-200">
-                                                    <FileText size={20} />
-                                                </div>
-                                                <button
-                                                    onClick={() => setSelectedSheetId(m.id)}
-                                                    className="w-full bg-slate-900 hover:bg-black text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-slate-200"
-                                                >
-                                                    <Eye size={16} /> Ver Planilla
-                                                </button>
-                                            </>
-                                        ) : m.sheet_url ? (
-                                            <>
-                                                <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-red-500 border border-slate-200">
-                                                    <FileText size={20} />
-                                                </div>
-                                                <a
-                                                    href={m.sheet_url}
-                                                    target="_blank"
-                                                    className="w-full bg-slate-900 hover:bg-black text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-slate-200"
-                                                >
-                                                    <Download size={16} /> Descargar PDF
-                                                </a>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300 border border-slate-200">
-                                                    <FileText size={20} />
-                                                </div>
-                                                <div className="text-center px-2">
-                                                    <p className="text-xs font-bold text-slate-400">En Proceso</p>
-                                                </div>
-                                            </>
+                                        <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-tdf-blue border border-slate-200">
+                                            <FileText size={20} />
+                                        </div>
+                                        <button
+                                            onClick={() => setSelectedSheetId(m.id)}
+                                            className="w-full bg-slate-900 hover:bg-black text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-slate-200"
+                                        >
+                                            <Eye size={16} /> Ver Planilla
+                                        </button>
+                                        {m.sheet_url && (
+                                            <a
+                                                href={m.sheet_url}
+                                                target="_blank"
+                                                className="w-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-sm"
+                                            >
+                                                <Download size={14} /> PDF Adjunto
+                                            </a>
                                         )}
                                     </div>
                                 </div>

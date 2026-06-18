@@ -355,26 +355,31 @@ export default function CompetitionDetail() {
                                         </div>
                                     </div>
 
-                                    {m.sheet_status === 'submitted' ? (
-                                        <button
-                                            onClick={() => setSelectedSheetId(m.id)}
-                                            className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-black transition shadow-lg shadow-slate-200"
-                                        >
-                                            <Eye size={14} /> Ver Planilla
-                                        </button>
-                                    ) : m.sheet_url ? (
-                                        <a
-                                            href={m.sheet_url}
-                                            target="_blank"
-                                            className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-black transition shadow-lg shadow-slate-200"
-                                        >
-                                            <Download size={14} /> Descargar
-                                        </a>
-                                    ) : (
-                                        <span className="text-xs font-medium text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg">
-                                            No cargada
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {m.sheet_status === 'submitted' ? (
+                                            <>
+                                                <button
+                                                    onClick={() => setSelectedSheetId(m.id)}
+                                                    className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-black transition shadow-lg shadow-slate-200"
+                                                >
+                                                    <Eye size={14} /> Ver Planilla
+                                                </button>
+                                                {m.sheet_url && (
+                                                    <a
+                                                        href={m.sheet_url}
+                                                        target="_blank"
+                                                        className="px-3 py-2 bg-white text-slate-700 border border-slate-200 text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-slate-50 transition"
+                                                    >
+                                                        <Download size={14} /> PDF
+                                                    </a>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-3 py-1 rounded-full border border-yellow-200">
+                                                En curso
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             ))
                         )}
