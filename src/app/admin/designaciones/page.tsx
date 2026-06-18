@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Calendar, Clock, MapPin, User, Shield, AlertTriangle, CheckCircle, Search, Filter, Eye, Share2, X, ClipboardCheck } from 'lucide-react'
 import { formatArgentinaDateNumerical, formatArgentinaTimeLiteral } from '@/lib/dateUtils'
+import MatchDetailsModal from '@/components/fixture/MatchDetailsModal'
 
 export default function DesignationsPage() {
     const supabase = createClient()
@@ -21,9 +22,8 @@ export default function DesignationsPage() {
         'line_judge': ''
     })
 
-    // Match details and sharing state
+    // Match details state
     const [detailsMatch, setDetailsMatch] = useState<any | null>(null)
-    const [shareSuccess, setShareSuccess] = useState(false)
 
     // Filter states
     const [selectedCategory, setSelectedCategory] = useState<string>('')
@@ -139,29 +139,7 @@ export default function DesignationsPage() {
         fetchMatches()
     }
 
-    const handleShare = async (match: any) => {
-        if (!match) return
-        const shareText = `🏆 Resultado Oficial FVF 🏆\n\n${match.home_team.name} ${match.home_score} - ${match.away_score} ${match.away_team.name}\nCategoría: ${match.category?.name || 'Voley'}\nFecha: ${formatArgentinaDateNumerical(match.scheduled_time)}\nResultado sets: ${match.set_scores?.join(', ') || 'No registrado'}`
 
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: 'Resultado del Partido - FVF',
-                    text: shareText
-                })
-            } catch (error) {
-                console.error('Error sharing:', error)
-            }
-        } else {
-            try {
-                await navigator.clipboard.writeText(shareText)
-                setShareSuccess(true)
-                setTimeout(() => setShareSuccess(false), 2000)
-            } catch (err) {
-                console.error('Failed to copy text: ', err)
-            }
-        }
-    }
 
     const availableReferees = getAvailableReferees(selectedMatch)
 
@@ -514,177 +492,12 @@ export default function DesignationsPage() {
                 </div>
             )}
             {/* Modal de Detalles del Partido */}
-            {detailsMatch && (() => {
-                const homeScore = detailsMatch.home_score || 0;
-                const awayScore = detailsMatch.away_score || 0;
-                
-                // Función para formatear la hora programada en formato estrictamente de 24 hs sin desfase de zona horaria
-                const formatMatchTime24h = (isoString: string) => {
-                    if (!isoString) return 'A confirmar';
-                    return `${formatArgentinaTimeLiteral(isoString)} hs`;
-                };
-
-                // Buscar autoridades
-                const firstReferee = detailsMatch.match_officials?.find((mo: any) => mo.role === '1st_referee');
-                
-                // Extraer 2do árbitro y planillero directamente de detailsMatch.sheet_data?.staff
-                const ref2Id = detailsMatch.sheet_data?.staff?.ref2;
-                const ref2Name = ref2Id 
-                    ? (referees.find(r => r.id === ref2Id || r.profile?.id === ref2Id)?.profile?.full_name || 
-                       referees.find(r => r.id === ref2Id || r.profile?.id === ref2Id)?.last_name) 
-                    : null;
-
-                const scorerName = detailsMatch.sheet_data?.staff?.scorer;
-
-                return (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                        <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-gray-200 dark:border-zinc-800 flex flex-col relative animate-in zoom-in-95 duration-200">
-                            {/* Header */}
-                            <div className="p-4 bg-slate-100 dark:bg-zinc-950/80 border-b border-gray-200 dark:border-zinc-800 flex justify-between items-center">
-                                <div>
-                                    <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase bg-slate-200/50 dark:bg-zinc-800 px-2 py-0.5 rounded">
-                                        {detailsMatch.category?.name || 'Voley'}
-                                    </span>
-                                    <h3 className="font-bold text-slate-800 dark:text-white mt-1 text-sm">Detalles del Partido</h3>
-                                </div>
-                                <button
-                                    onClick={() => setDetailsMatch(null)}
-                                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-full transition"
-                                >
-                                    <X size={18} />
-                                </button>
-                            </div>
-
-                            {/* Contenido */}
-                            <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
-                                {/* Resultado visual */}
-                                <div className="flex items-center justify-between gap-4 py-2">
-                                    {/* Local */}
-                                    <div className="flex flex-col items-center flex-1 min-w-0 text-center">
-                                        <div className="w-14 h-14 bg-slate-50 dark:bg-zinc-800 rounded-2xl flex items-center justify-center border border-gray-150 dark:border-zinc-700 p-2 overflow-hidden shadow-sm">
-                                            {detailsMatch.home_team.shield_url ? (
-                                                <img src={detailsMatch.home_team.shield_url} className="w-full h-full object-contain" alt="" />
-                                            ) : (
-                                                <span className="font-black text-slate-400 dark:text-zinc-500 text-lg">L</span>
-                                            )}
-                                        </div>
-                                        <span className="font-black text-slate-800 dark:text-white mt-2 text-sm leading-tight truncate w-full">{detailsMatch.home_team.name}</span>
-                                    </div>
-
-                                    {/* Marcador */}
-                                    <div className="flex flex-col items-center shrink-0">
-                                        <div className="flex items-center gap-3">
-                                            <span className={`text-4xl font-black ${homeScore > awayScore ? 'text-tdf-blue' : 'text-slate-400 dark:text-zinc-500'}`}>{homeScore}</span>
-                                            <span className="text-slate-300 dark:text-zinc-700 text-xl font-bold">-</span>
-                                            <span className={`text-4xl font-black ${awayScore > homeScore ? 'text-tdf-blue' : 'text-slate-400 dark:text-zinc-500'}`}>{awayScore}</span>
-                                        </div>
-                                        <span className="text-[10px] font-black text-slate-400 dark:text-zinc-600 uppercase tracking-widest mt-1">SETS</span>
-                                    </div>
-
-                                    {/* Visitante */}
-                                    <div className="flex flex-col items-center flex-1 min-w-0 text-center">
-                                        <div className="w-14 h-14 bg-slate-50 dark:bg-zinc-800 rounded-2xl flex items-center justify-center border border-gray-150 dark:border-zinc-700 p-2 overflow-hidden shadow-sm">
-                                            {detailsMatch.away_team.shield_url ? (
-                                                <img src={detailsMatch.away_team.shield_url} className="w-full h-full object-contain" alt="" />
-                                            ) : (
-                                                <span className="font-black text-slate-400 dark:text-zinc-500 text-lg">V</span>
-                                            )}
-                                        </div>
-                                        <span className="font-black text-slate-800 dark:text-white mt-2 text-sm leading-tight truncate w-full">{detailsMatch.away_team.name}</span>
-                                    </div>
-                                </div>
-
-                                {/* Sets parciales */}
-                                {detailsMatch.set_scores && detailsMatch.set_scores.length > 0 && (
-                                    <div className="bg-slate-50 dark:bg-zinc-950/40 border border-gray-150 dark:border-zinc-800 rounded-xl p-3 text-center">
-                                        <span className="text-[9px] font-black text-slate-400 dark:text-zinc-600 uppercase tracking-wider block mb-2">Puntuación por Set</span>
-                                        <div className="flex gap-2 justify-center">
-                                            {detailsMatch.set_scores.map((score: string, idx: number) => (
-                                                <span key={idx} className="px-2.5 py-1 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg text-xs font-mono font-bold text-slate-600 dark:text-zinc-300 shadow-sm">
-                                                    {score}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Datos de fecha / gimnasio */}
-                                <div className="space-y-3 bg-slate-50 dark:bg-zinc-950/40 border border-gray-150 dark:border-zinc-800 rounded-xl p-4 text-xs font-bold text-slate-600 dark:text-zinc-400">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-400 uppercase tracking-wider text-[10px]">Fecha</span>
-                                        <span className="text-slate-800 dark:text-slate-200">{formatArgentinaDateNumerical(detailsMatch.scheduled_time)}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-400 uppercase tracking-wider text-[10px]">Hora</span>
-                                        <span className="text-slate-800 dark:text-slate-200">{formatMatchTime24h(detailsMatch.scheduled_time)}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-slate-400 uppercase tracking-wider text-[10px]">Gimnasio / Cancha</span>
-                                        <span className="text-slate-800 dark:text-slate-200">{detailsMatch.court_name || 'Cancha a confirmar'}</span>
-                                    </div>
-                                </div>
-
-                                {/* Autoridades del partido */}
-                                <div className="space-y-3">
-                                    <span className="text-[10px] font-black text-slate-400 dark:text-zinc-600 uppercase tracking-widest block pl-1">Autoridades</span>
-                                    
-                                    <div className="bg-slate-50 dark:bg-zinc-950/40 border border-gray-150 dark:border-zinc-800 rounded-xl p-4 divide-y divide-gray-150 dark:divide-zinc-800 text-xs font-bold space-y-3">
-                                        {/* Primer Árbitro: Siempre */}
-                                        <div className="flex justify-between items-center pb-2">
-                                            <span className="text-slate-400 uppercase tracking-wider text-[10px]">1° Árbitro</span>
-                                            <span className="text-slate-800 dark:text-white font-medium">
-                                                {firstReferee?.profile?.full_name || 'Sin designar'}
-                                            </span>
-                                        </div>
-
-                                        {/* Segundo Árbitro: Condicional */}
-                                        {ref2Name && (
-                                            <div className="flex justify-between items-center pt-2 pb-2">
-                                                <span className="text-slate-400 uppercase tracking-wider text-[10px]">2° Árbitro</span>
-                                                <span className="text-slate-800 dark:text-white font-medium">{ref2Name}</span>
-                                            </div>
-                                        )}
-
-                                        {/* Planillero / Scorer: Condicional */}
-                                        {scorerName && (
-                                            <div className="flex justify-between items-center pt-2">
-                                                <span className="text-slate-400 uppercase tracking-wider text-[10px]">Planillero/a</span>
-                                                <span className="text-slate-800 dark:text-white font-medium">{scorerName}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Footer del Modal */}
-                            <div className="p-4 bg-slate-50 dark:bg-zinc-950/80 border-t border-gray-200 dark:border-zinc-800 flex justify-between items-center shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setDetailsMatch(null)}
-                                    className="px-4 py-2 border border-gray-200 dark:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-slate-400 rounded-lg text-xs font-black transition"
-                                >
-                                    Cerrar
-                                </button>
-                                
-                                <button
-                                    type="button"
-                                    onClick={() => handleShare(detailsMatch)}
-                                    className="px-4 py-2 bg-tdf-blue hover:bg-blue-600 text-white rounded-lg text-xs font-black shadow-md shadow-blue-500/10 flex items-center gap-2 transition"
-                                >
-                                    <Share2 size={14} /> Compartir
-                                </button>
-                            </div>
-
-                            {/* Toast Notificación Fallback */}
-                            {shareSuccess && (
-                                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-slate-900 text-white dark:bg-white dark:text-black px-4 py-2.5 rounded-full text-xs font-black flex items-center gap-2 shadow-2xl border border-slate-700/50 z-50">
-                                    <ClipboardCheck size={14} className="text-green-500" /> ¡Copiado al portapapeles!
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )
-            })()}
+            {detailsMatch && (
+                <MatchDetailsModal 
+                    matchId={detailsMatch.id} 
+                    onClose={() => setDetailsMatch(null)} 
+                />
+            )}
         </div>
     )
 }
