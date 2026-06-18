@@ -64,3 +64,18 @@ export function getArgentinaMonthLiteral(dateInput: string | Date): string {
     const m = parseInt(isoString.split('T')[0].split('-')[1]);
     return MONTHS[m - 1] || '';
 }
+
+export function formatArgentinaDateNumerical(dateInput: string | Date): string {
+    if (!dateInput) return '';
+    if (dateInput instanceof Date && isNaN(dateInput.valueOf())) return '';
+    const isoString = dateInput instanceof Date ? dateInput.toISOString() : String(dateInput);
+    if (!isoString) return '';
+    try {
+        const parts = isoString.split('T');
+        if (parts.length < 1) return '';
+        const [year, month, day] = parts[0].split('-');
+        return `${parseInt(day)}/${parseInt(month)}/${year}`;
+    } catch (e) {
+        return '';
+    }
+}

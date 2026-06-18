@@ -7,6 +7,7 @@ import { Trophy, Calendar, MapPin, Volleyball, Users, Activity, Clock } from 'lu
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import SponsorsBanner from '@/components/SponsorsBanner';
+import { formatArgentinaDateNumerical } from '@/lib/dateUtils';
 
 export default function LiveMatchBoard() {
     const { id: matchId } = useParams();
@@ -71,7 +72,7 @@ export default function LiveMatchBoard() {
                     gender: tourn?.gender || 'Masculino',
                     phase: data.round || 'Fase Regular',
                     gym: data.court_name || 'Polivalente',
-                    date: data.scheduled_time ? new Date(data.scheduled_time).toLocaleDateString() : 'A Conf.'
+                    date: data.scheduled_time ? formatArgentinaDateNumerical(data.scheduled_time) : 'A Conf.'
                 });
 
                 if (data.sheet_data) {

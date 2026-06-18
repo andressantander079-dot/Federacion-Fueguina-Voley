@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { X, Calendar, MapPin, Shield } from 'lucide-react';
-import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
+import { X, Calendar, MapPin, Shield, Share2, ClipboardCheck } from 'lucide-react';
+import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral, formatArgentinaDateNumerical } from '@/lib/dateUtils';
 
 interface MatchDetailsModalProps {
     matchId: string;
@@ -14,6 +14,7 @@ export default function MatchDetailsModal({ matchId, onClose }: MatchDetailsModa
     const supabase = createClient();
     const [loading, setLoading] = useState(true);
     const [match, setMatch] = useState<any>(null);
+    const [shareSuccess, setShareSuccess] = useState(false);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -37,7 +38,11 @@ export default function MatchDetailsModal({ matchId, onClose }: MatchDetailsModa
                     *,
                     home_team:teams!home_team_id(name, shield_url),
                     away_team:teams!away_team_id(name, shield_url),
-                    referee:referees!referee_id(first_name, last_name)
+                    referee:referees!referee_id(first_name, last_name),
+                    match_officials(
+                        id, role, status, user_id,
+                        profile:profiles(full_name)
+                    )
                 `)
                 .eq('id', matchId)
                 .single();
@@ -52,12 +57,58 @@ export default function MatchDetailsModal({ matchId, onClose }: MatchDetailsModa
                     }
                 }
 
-                let refereeData = data.referee;
-                if (!refereeData && data.sheet_data?.staff?.ref1) {
-                    const { data: refData } = await supabase.from('referees').select('first_name, last_name').eq('id', data.sheet_data.staff.ref1).single();
-                    if (refData) refereeData = refData;
+                // Helper to resolve referee names
+                const resolveRefereeName = async (id: string) => {
+                    const { data: refData } = await supabase
+                        .from('referees')
+                        .select('first_name, last_name, profile:profiles(full_name)')
+                        .eq('id', id)
+                        .maybeSingle();
+                    const refObj: any = refData;
+                    if (refObj) {
+                        return refObj.profile?.full_name || `${refObj.first_name || ''} ${refObj.last_name || ''}`.trim();
+                    }
+                    const { data: profData } = await supabase
+                        .from('profiles')
+                        .select('full_name')
+                        .eq('id', id)
+                        .maybeSingle();
+                    const profileObj: any = profData;
+                    return profileObj?.full_name || null;
+                };
+
+                // Find authorities names
+                let firstRefereeName = data.match_officials?.find((mo: any) => mo.role === '1st_referee')?.profile?.full_name;
+                if (!firstRefereeName) {
+                    const ref1Id = data.sheet_data?.staff?.ref1 || data.referee_id;
+                    if (ref1Id) {
+                        firstRefereeName = await resolveRefereeName(ref1Id);
+                    }
                 }
-                data.referee = refereeData;
+                if (!firstRefereeName && data.referee) {
+                    firstRefereeName = `${data.referee.first_name || ''} ${data.referee.last_name || ''}`.trim();
+                }
+                data.firstRefereeName = firstRefereeName || 'Sin designar';
+
+                let secondRefereeName = data.match_officials?.find((mo: any) => mo.role === '2nd_referee')?.profile?.full_name;
+                if (!secondRefereeName) {
+                    const ref2Id = data.sheet_data?.staff?.ref2;
+                    if (ref2Id) {
+                        secondRefereeName = await resolveRefereeName(ref2Id);
+                    }
+                }
+                data.secondRefereeName = secondRefereeName || null;
+
+                let scorerName = data.match_officials?.find((mo: any) => mo.role === 'scorer')?.profile?.full_name;
+                if (!scorerName) {
+                    scorerName = data.sheet_data?.staff?.scorer;
+                    // If scorer is a UUID, try resolving it. Otherwise keep it as is.
+                    if (scorerName && scorerName.length === 36) {
+                        const resolvedScorer = await resolveRefereeName(scorerName);
+                        if (resolvedScorer) scorerName = resolvedScorer;
+                    }
+                }
+                data.scorerName = scorerName || null;
 
                 setMatch(data);
             }
@@ -66,6 +117,31 @@ export default function MatchDetailsModal({ matchId, onClose }: MatchDetailsModa
 
         if (matchId) fetchMatch();
     }, [matchId]);
+
+    const handleShare = async (matchData: any) => {
+        if (!matchData) return;
+        const categoryName = matchData.category?.name || 'Voley';
+        const shareText = `🏆 Resultado Oficial FVF 🏆\n\n${matchData.home_team?.name} ${matchData.home_score} - ${matchData.away_score} ${matchData.away_team?.name}\nCategoría: ${categoryName}\nFecha: ${formatArgentinaDateNumerical(matchData.scheduled_time)}\nResultado sets: ${matchData.set_scores?.join(', ') || 'No registrado'}`;
+
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'Resultado del Partido - FVF',
+                    text: shareText
+                });
+            } catch (error) {
+                console.error('Error sharing:', error);
+            }
+        } else {
+            try {
+                await navigator.clipboard.writeText(shareText);
+                setShareSuccess(true);
+                setTimeout(() => setShareSuccess(false), 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+        }
+    };
 
     return (
         <div 
@@ -168,7 +244,7 @@ export default function MatchDetailsModal({ matchId, onClose }: MatchDetailsModa
                                                 {match.set_scores.map((_: any, i: number) => (
                                                     <th key={`head-${i}`} className="px-2 py-3 text-center border-l border-white/5 font-medium w-16">
                                                         Set {i + 1}
-                                                    </th>
+                                                     </th>
                                                 ))}
                                             </tr>
                                         </thead>
@@ -207,22 +283,63 @@ export default function MatchDetailsModal({ matchId, onClose }: MatchDetailsModa
                                     </table>
                                 </div>
                             ) : null}
+
+                            {/* Autoridades */}
+                            <div className="mt-8 space-y-3">
+                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block pl-1">Autoridades</span>
+                                <div className="bg-black/30 border border-white/5 rounded-2xl p-4 divide-y divide-white/5 text-xs font-bold space-y-3">
+                                    {/* Primer Árbitro */}
+                                    <div className="flex justify-between items-center pb-2">
+                                        <span className="text-zinc-500 uppercase tracking-wider text-[10px]">1° Árbitro</span>
+                                        <span className="text-zinc-300 font-medium">{match.firstRefereeName}</span>
+                                    </div>
+                                    {/* Segundo Árbitro */}
+                                    {match.secondRefereeName && (
+                                        <div className="flex justify-between items-center pt-2 pb-2">
+                                            <span className="text-zinc-500 uppercase tracking-wider text-[10px]">2° Árbitro</span>
+                                            <span className="text-zinc-300 font-medium">{match.secondRefereeName}</span>
+                                        </div>
+                                    )}
+                                    {/* Planillero */}
+                                    {match.scorerName && (
+                                        <div className="flex justify-between items-center pt-2">
+                                            <span className="text-zinc-500 uppercase tracking-wider text-[10px]">Planillero/a</span>
+                                            <span className="text-zinc-300 font-medium">{match.scorerName}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Footer / Referee */}
-                        {match.referee && (
-                            <div className="bg-zinc-950 p-4 px-6 border-t border-white/5 flex items-center justify-between shrink-0">
-                                <span className="text-xs text-zinc-500 font-bold uppercase tracking-widest">
-                                    Árbitro Principal
-                                </span>
-                                <span className="text-sm text-zinc-300 font-medium">
-                                    {match.referee.first_name} {match.referee.last_name}
-                                </span>
-                            </div>
-                        )}
+                        {/* Footer */}
+                        <div className="p-4 bg-zinc-950/80 border-t border-white/5 flex justify-between items-center shrink-0 relative">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="px-4 py-2 border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-white rounded-xl text-xs font-black transition cursor-pointer"
+                            >
+                                Cerrar
+                            </button>
+                            
+                            <button
+                                type="button"
+                                onClick={() => handleShare(match)}
+                                className="px-4 py-2 bg-tdf-orange hover:bg-orange-600 text-white rounded-xl text-xs font-black shadow-md shadow-orange-500/10 flex items-center gap-2 transition cursor-pointer"
+                            >
+                                <Share2 size={14} /> Compartir
+                            </button>
+
+                            {/* Toast Notification Fallback */}
+                            {shareSuccess && (
+                                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-white text-black dark:bg-zinc-900 dark:text-white px-4 py-2.5 rounded-full text-xs font-black flex items-center gap-2 shadow-2xl border border-white/10 z-[110]">
+                                    <ClipboardCheck size={14} className="text-emerald-500" /> ¡Copiado al portapapeles!
+                                </div>
+                            )}
+                        </div>
                     </>
                 )}
             </div>
         </div>
     );
 }
+

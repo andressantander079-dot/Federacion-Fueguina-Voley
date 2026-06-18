@@ -172,6 +172,38 @@ export default function PublicMatchView() {
 
                 </div>
 
+                {/* Historial de Sets Terminados */}
+                {sets && sets.filter((s: any) => s.finished).length > 0 && (
+                    <div className="w-full max-w-2xl mt-6 px-4">
+                        <div className="text-center text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3">
+                            Historial de Sets Anteriores
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-2 justify-start md:justify-center scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                            {sets
+                                .filter((s: any) => s.finished)
+                                .map((s: any, idx: number) => {
+                                    const isHomeWinner = s.home > s.away;
+                                    const winnerName = isHomeWinner ? homeName : awayName;
+                                    const scoreFormatted = isHomeWinner ? `${s.home}-${s.away}` : `${s.away}-${s.home}`;
+                                    
+                                    return (
+                                        <div 
+                                            key={idx} 
+                                            className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold border transition ${
+                                                isHomeWinner 
+                                                    ? 'bg-blue-950/30 border-blue-500/20 text-blue-400 hover:bg-blue-950/50 shadow-md shadow-blue-950/20' 
+                                                    : 'bg-red-950/30 border-red-500/20 text-red-400 hover:bg-red-950/50 shadow-md shadow-red-950/20'
+                                            }`}
+                                        >
+                                            <span className="w-2 h-2 rounded-full bg-current opacity-70"></span>
+                                            <span>Set {s.number}: Ganó {winnerName} {scoreFormatted}</span>
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    </div>
+                )}
+
                 {/* Referees Row */}
                 <div className="flex gap-4 mt-6 text-xs text-zinc-500 font-medium">
                     {staff.referee1 && (

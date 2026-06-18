@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useClubAuth } from '@/hooks/useClubAuth';
 import MatchSheetViewer from '@/components/admin/MatchSheetViewer';
+import { formatArgentinaDateNumerical } from '@/lib/dateUtils';
 
 export default function PlanillasClub() {
     const router = useRouter();
@@ -265,7 +266,7 @@ export default function PlanillasClub() {
                                             </div>
                                             <div className="flex items-center gap-1 text-slate-400 text-xs font-medium">
                                                 <Calendar size={14} />
-                                                {new Date(m.date_time).toLocaleDateString()}
+                                                {formatArgentinaDateNumerical(m.date_time)}
                                             </div>
                                         </div>
 

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Calendar, Clock, MapPin, User, Shield, AlertTriangle, CheckCircle, Search, Filter } from 'lucide-react'
+import { Calendar, Clock, MapPin, User, Shield, AlertTriangle, CheckCircle, Search, Filter, Eye, Share2, X, ClipboardCheck } from 'lucide-react'
+import { formatArgentinaDateNumerical, formatArgentinaTimeLiteral } from '@/lib/dateUtils'
 
 export default function DesignationsPage() {
     const supabase = createClient()
@@ -19,6 +20,17 @@ export default function DesignationsPage() {
         'scorer': '',
         'line_judge': ''
     })
+
+    // Match details and sharing state
+    const [detailsMatch, setDetailsMatch] = useState<any | null>(null)
+    const [shareSuccess, setShareSuccess] = useState(false)
+
+    // Filter states
+    const [selectedCategory, setSelectedCategory] = useState<string>('')
+    const [selectedTeam, setSelectedTeam] = useState<string>('')
+    const [selectedReferee, setSelectedReferee] = useState<string>('')
+    const [selectedDate, setSelectedDate] = useState<string>('')
+    const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
 
     useEffect(() => {
         fetchMatches()
@@ -127,7 +139,84 @@ export default function DesignationsPage() {
         fetchMatches()
     }
 
+    const handleShare = async (match: any) => {
+        if (!match) return
+        const shareText = `🏆 Resultado Oficial FVF 🏆\n\n${match.home_team.name} ${match.home_score} - ${match.away_score} ${match.away_team.name}\nCategoría: ${match.category?.name || 'Voley'}\nFecha: ${formatArgentinaDateNumerical(match.scheduled_time)}\nResultado sets: ${match.set_scores?.join(', ') || 'No registrado'}`
+
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'Resultado del Partido - FVF',
+                    text: shareText
+                })
+            } catch (error) {
+                console.error('Error sharing:', error)
+            }
+        } else {
+            try {
+                await navigator.clipboard.writeText(shareText)
+                setShareSuccess(true)
+                setTimeout(() => setShareSuccess(false), 2000)
+            } catch (err) {
+                console.error('Failed to copy text: ', err)
+            }
+        }
+    }
+
     const availableReferees = getAvailableReferees(selectedMatch)
+
+    // Dynamic lists for filters based on loaded matches
+    const categoriesList = Array.from(new Set(matches.map(m => m.category?.name).filter(Boolean)))
+    const teamsList = Array.from(new Set(matches.flatMap(m => [m.home_team?.name, m.away_team?.name]).filter(Boolean))).sort()
+
+    // Filtering and sorting logic
+    const filteredMatches = matches
+        .filter(match => {
+            // Tab condition
+            const matchesTab = activeTab === 'finalizados' ? match.status === 'finalizado' : match.status !== 'finalizado'
+            if (!matchesTab) return false
+
+            // Category filter
+            if (selectedCategory && match.category?.name !== selectedCategory) return false
+
+            // Team/Club filter
+            if (selectedTeam && match.home_team?.name !== selectedTeam && match.away_team?.name !== selectedTeam) return false
+
+            // Referee filter (both 1st/2nd and scorer)
+            if (selectedReferee) {
+                const refObj = referees.find(r => r.profile?.id === selectedReferee || r.id === selectedReferee)
+                const refProfileId = refObj?.profile?.id
+                const refId = refObj?.id
+
+                const isOfficial = match.match_officials?.some((mo: any) => 
+                    mo.user_id === refProfileId || mo.user_id === selectedReferee
+                )
+                
+                // Match details for 2nd Referee and Scorer can be in sheet_data?.staff
+                const ref2Val = match.sheet_data?.staff?.ref2
+                const isStaff2 = ref2Val && (ref2Val === refProfileId || ref2Val === refId || ref2Val === selectedReferee)
+
+                if (!isOfficial && !isStaff2) return false
+            }
+
+            // Date filter (literal comparison)
+            if (selectedDate) {
+                const matchDatePart = match.scheduled_time?.split('T')[0]
+                if (matchDatePart !== selectedDate) return false
+            }
+
+            return true
+        })
+        .sort((a, b) => {
+            const dateA = a.scheduled_time ? new Date(a.scheduled_time).getTime() : 0
+            const dateB = b.scheduled_time ? new Date(b.scheduled_time).getTime() : 0
+            
+            if (sortOrder === 'desc') {
+                return dateB - dateA
+            } else {
+                return dateA - dateB
+            }
+        })
 
     return (
         <div className="p-4 md:p-8 min-h-screen bg-gray-50 dark:bg-black">
@@ -157,16 +246,112 @@ export default function DesignationsPage() {
                 </button>
             </div>
 
+            {/* FILTROS Y ORDENAMIENTO */}
+            <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-4 mb-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-3 text-slate-700 dark:text-slate-300 font-bold text-sm">
+                    <Filter size={16} className="text-tdf-blue" />
+                    <span>Filtros de Búsqueda</span>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                    {/* Club */}
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Club / Equipo</label>
+                        <select
+                            value={selectedTeam}
+                            onChange={e => setSelectedTeam(e.target.value)}
+                            className="w-full text-xs font-bold p-2 bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg text-slate-700 dark:text-slate-200 outline-none focus:border-tdf-blue transition"
+                        >
+                            <option value="">Todos los clubes</option>
+                            {teamsList.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Categoría */}
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Categoría</label>
+                        <select
+                            value={selectedCategory}
+                            onChange={e => setSelectedCategory(e.target.value)}
+                            className="w-full text-xs font-bold p-2 bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg text-slate-700 dark:text-slate-200 outline-none focus:border-tdf-blue transition"
+                        >
+                            <option value="">Todas las categorías</option>
+                            {categoriesList.map(c => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Árbitro */}
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Árbitro</label>
+                        <select
+                            value={selectedReferee}
+                            onChange={e => setSelectedReferee(e.target.value)}
+                            className="w-full text-xs font-bold p-2 bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg text-slate-700 dark:text-slate-200 outline-none focus:border-tdf-blue transition"
+                        >
+                            <option value="">Todos los árbitros</option>
+                            {referees.map(r => (
+                                <option key={r.id} value={r.profile?.id}>{r.profile?.full_name || 'Sin nombre'}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Fecha de Juego */}
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Fecha de Juego</label>
+                        <input
+                            type="date"
+                            value={selectedDate}
+                            onChange={e => setSelectedDate(e.target.value)}
+                            className="w-full text-xs font-bold p-2 bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg text-slate-700 dark:text-slate-200 outline-none focus:border-tdf-blue transition"
+                        />
+                    </div>
+
+                    {/* Ordenamiento */}
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Ordenar por Fecha</label>
+                        <select
+                            value={sortOrder}
+                            onChange={e => setSortOrder(e.target.value as 'desc' | 'asc')}
+                            className="w-full text-xs font-bold p-2 bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg text-slate-700 dark:text-slate-200 outline-none focus:border-tdf-blue transition"
+                        >
+                            <option value="desc">Más reciente a más viejo</option>
+                            <option value="asc">Más viejo a más reciente</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Limpiar Filtros */}
+                {(selectedCategory || selectedTeam || selectedReferee || selectedDate) && (
+                    <div className="flex justify-end mt-3">
+                        <button
+                            onClick={() => {
+                                setSelectedCategory('')
+                                setSelectedTeam('')
+                                setSelectedReferee('')
+                                setSelectedDate('')
+                            }}
+                            className="text-xs font-bold text-red-500 hover:text-red-600 flex items-center gap-1 transition"
+                        >
+                            <X size={12} /> Limpiar Filtros
+                        </button>
+                    </div>
+                )}
+            </div>
+
             <div className="grid grid-cols-1 gap-4">
-                {matches.filter(m => activeTab === 'finalizados' ? m.status === 'finalizado' : m.status !== 'finalizado').map(match => (
+                {filteredMatches.map(match => (
                     <div key={match.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
 
                         {/* Match Info */}
                         <div className="flex-1">
                             <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase mb-1">
                                 <span className="bg-slate-100 dark:bg-zinc-800 px-2 py-1 rounded">{match.category?.name}</span>
-                                <span className="flex items-center gap-1"><Calendar size={12} /> {new Date(match.scheduled_time).toLocaleDateString()}</span>
-                                <span className="flex items-center gap-1"><Clock size={12} /> {new Date(match.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                <span className="flex items-center gap-1"><Calendar size={12} /> {formatArgentinaDateNumerical(match.scheduled_time)}</span>
+                                <span className="flex items-center gap-1"><Clock size={12} /> {formatArgentinaTimeLiteral(match.scheduled_time)} hs</span>
                             </div>
                             <div className="flex items-center gap-2 mt-2 w-full justify-between overflow-hidden">
                                 <div className="flex items-center justify-end gap-2 text-right flex-1 min-w-0">
@@ -207,8 +392,17 @@ export default function DesignationsPage() {
 
                         {/* Action */}
                         {match.status === 'finalizado' ? (
-                            <div className="flex items-center gap-1 px-4 py-2 bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-400 rounded-lg font-bold text-sm">
-                                <CheckCircle size={16} /> Finalizado
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1 px-4 py-2 bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-400 rounded-lg font-bold text-sm">
+                                    <CheckCircle size={16} /> Finalizado
+                                </div>
+                                <button
+                                    onClick={() => setDetailsMatch(match)}
+                                    className="p-2 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white rounded-lg transition"
+                                    title="Ver Detalles"
+                                >
+                                    <Eye size={16} />
+                                </button>
                             </div>
                         ) : (
                             <button
@@ -221,10 +415,22 @@ export default function DesignationsPage() {
                     </div>
                 ))}
             </div>
-            {matches.filter(m => activeTab === 'finalizados' ? m.status === 'finalizado' : m.status !== 'finalizado').length === 0 && !loading && (
+            {filteredMatches.length === 0 && !loading && (
                 <div className="text-center py-20 bg-white dark:bg-zinc-900 rounded-xl border border-dashed border-gray-300 dark:border-zinc-800">
-                    <p className="text-slate-500 font-bold">No hay partidos {activeTab} en esta vista.</p>
-                    <button onClick={() => fetchMatches()} className="mt-4 text-blue-600 font-bold text-sm hover:underline">Recargar servidor</button>
+                    <p className="text-slate-500 font-bold">No hay partidos con los filtros seleccionados.</p>
+                    {(selectedCategory || selectedTeam || selectedReferee || selectedDate) && (
+                        <button 
+                            onClick={() => {
+                                setSelectedCategory('')
+                                setSelectedTeam('')
+                                setSelectedReferee('')
+                                setSelectedDate('')
+                            }} 
+                            className="mt-4 text-blue-600 font-bold text-sm hover:underline"
+                        >
+                            Limpiar filtros
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -307,6 +513,178 @@ export default function DesignationsPage() {
                     </form>
                 </div>
             )}
+            {/* Modal de Detalles del Partido */}
+            {detailsMatch && (() => {
+                const homeScore = detailsMatch.home_score || 0;
+                const awayScore = detailsMatch.away_score || 0;
+                
+                // Función para formatear la hora programada en formato estrictamente de 24 hs sin desfase de zona horaria
+                const formatMatchTime24h = (isoString: string) => {
+                    if (!isoString) return 'A confirmar';
+                    return `${formatArgentinaTimeLiteral(isoString)} hs`;
+                };
+
+                // Buscar autoridades
+                const firstReferee = detailsMatch.match_officials?.find((mo: any) => mo.role === '1st_referee');
+                
+                // Extraer 2do árbitro y planillero directamente de detailsMatch.sheet_data?.staff
+                const ref2Id = detailsMatch.sheet_data?.staff?.ref2;
+                const ref2Name = ref2Id 
+                    ? (referees.find(r => r.id === ref2Id || r.profile?.id === ref2Id)?.profile?.full_name || 
+                       referees.find(r => r.id === ref2Id || r.profile?.id === ref2Id)?.last_name) 
+                    : null;
+
+                const scorerName = detailsMatch.sheet_data?.staff?.scorer;
+
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-gray-200 dark:border-zinc-800 flex flex-col relative animate-in zoom-in-95 duration-200">
+                            {/* Header */}
+                            <div className="p-4 bg-slate-100 dark:bg-zinc-950/80 border-b border-gray-200 dark:border-zinc-800 flex justify-between items-center">
+                                <div>
+                                    <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase bg-slate-200/50 dark:bg-zinc-800 px-2 py-0.5 rounded">
+                                        {detailsMatch.category?.name || 'Voley'}
+                                    </span>
+                                    <h3 className="font-bold text-slate-800 dark:text-white mt-1 text-sm">Detalles del Partido</h3>
+                                </div>
+                                <button
+                                    onClick={() => setDetailsMatch(null)}
+                                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-full transition"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Contenido */}
+                            <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+                                {/* Resultado visual */}
+                                <div className="flex items-center justify-between gap-4 py-2">
+                                    {/* Local */}
+                                    <div className="flex flex-col items-center flex-1 min-w-0 text-center">
+                                        <div className="w-14 h-14 bg-slate-50 dark:bg-zinc-800 rounded-2xl flex items-center justify-center border border-gray-150 dark:border-zinc-700 p-2 overflow-hidden shadow-sm">
+                                            {detailsMatch.home_team.shield_url ? (
+                                                <img src={detailsMatch.home_team.shield_url} className="w-full h-full object-contain" alt="" />
+                                            ) : (
+                                                <span className="font-black text-slate-400 dark:text-zinc-500 text-lg">L</span>
+                                            )}
+                                        </div>
+                                        <span className="font-black text-slate-800 dark:text-white mt-2 text-sm leading-tight truncate w-full">{detailsMatch.home_team.name}</span>
+                                    </div>
+
+                                    {/* Marcador */}
+                                    <div className="flex flex-col items-center shrink-0">
+                                        <div className="flex items-center gap-3">
+                                            <span className={`text-4xl font-black ${homeScore > awayScore ? 'text-tdf-blue' : 'text-slate-400 dark:text-zinc-500'}`}>{homeScore}</span>
+                                            <span className="text-slate-300 dark:text-zinc-700 text-xl font-bold">-</span>
+                                            <span className={`text-4xl font-black ${awayScore > homeScore ? 'text-tdf-blue' : 'text-slate-400 dark:text-zinc-500'}`}>{awayScore}</span>
+                                        </div>
+                                        <span className="text-[10px] font-black text-slate-400 dark:text-zinc-600 uppercase tracking-widest mt-1">SETS</span>
+                                    </div>
+
+                                    {/* Visitante */}
+                                    <div className="flex flex-col items-center flex-1 min-w-0 text-center">
+                                        <div className="w-14 h-14 bg-slate-50 dark:bg-zinc-800 rounded-2xl flex items-center justify-center border border-gray-150 dark:border-zinc-700 p-2 overflow-hidden shadow-sm">
+                                            {detailsMatch.away_team.shield_url ? (
+                                                <img src={detailsMatch.away_team.shield_url} className="w-full h-full object-contain" alt="" />
+                                            ) : (
+                                                <span className="font-black text-slate-400 dark:text-zinc-500 text-lg">V</span>
+                                            )}
+                                        </div>
+                                        <span className="font-black text-slate-800 dark:text-white mt-2 text-sm leading-tight truncate w-full">{detailsMatch.away_team.name}</span>
+                                    </div>
+                                </div>
+
+                                {/* Sets parciales */}
+                                {detailsMatch.set_scores && detailsMatch.set_scores.length > 0 && (
+                                    <div className="bg-slate-50 dark:bg-zinc-950/40 border border-gray-150 dark:border-zinc-800 rounded-xl p-3 text-center">
+                                        <span className="text-[9px] font-black text-slate-400 dark:text-zinc-600 uppercase tracking-wider block mb-2">Puntuación por Set</span>
+                                        <div className="flex gap-2 justify-center">
+                                            {detailsMatch.set_scores.map((score: string, idx: number) => (
+                                                <span key={idx} className="px-2.5 py-1 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg text-xs font-mono font-bold text-slate-600 dark:text-zinc-300 shadow-sm">
+                                                    {score}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Datos de fecha / gimnasio */}
+                                <div className="space-y-3 bg-slate-50 dark:bg-zinc-950/40 border border-gray-150 dark:border-zinc-800 rounded-xl p-4 text-xs font-bold text-slate-600 dark:text-zinc-400">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400 uppercase tracking-wider text-[10px]">Fecha</span>
+                                        <span className="text-slate-800 dark:text-slate-200">{formatArgentinaDateNumerical(detailsMatch.scheduled_time)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400 uppercase tracking-wider text-[10px]">Hora</span>
+                                        <span className="text-slate-800 dark:text-slate-200">{formatMatchTime24h(detailsMatch.scheduled_time)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400 uppercase tracking-wider text-[10px]">Gimnasio / Cancha</span>
+                                        <span className="text-slate-800 dark:text-slate-200">{detailsMatch.court_name || 'Cancha a confirmar'}</span>
+                                    </div>
+                                </div>
+
+                                {/* Autoridades del partido */}
+                                <div className="space-y-3">
+                                    <span className="text-[10px] font-black text-slate-400 dark:text-zinc-600 uppercase tracking-widest block pl-1">Autoridades</span>
+                                    
+                                    <div className="bg-slate-50 dark:bg-zinc-950/40 border border-gray-150 dark:border-zinc-800 rounded-xl p-4 divide-y divide-gray-150 dark:divide-zinc-800 text-xs font-bold space-y-3">
+                                        {/* Primer Árbitro: Siempre */}
+                                        <div className="flex justify-between items-center pb-2">
+                                            <span className="text-slate-400 uppercase tracking-wider text-[10px]">1° Árbitro</span>
+                                            <span className="text-slate-800 dark:text-white font-medium">
+                                                {firstReferee?.profile?.full_name || 'Sin designar'}
+                                            </span>
+                                        </div>
+
+                                        {/* Segundo Árbitro: Condicional */}
+                                        {ref2Name && (
+                                            <div className="flex justify-between items-center pt-2 pb-2">
+                                                <span className="text-slate-400 uppercase tracking-wider text-[10px]">2° Árbitro</span>
+                                                <span className="text-slate-800 dark:text-white font-medium">{ref2Name}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Planillero / Scorer: Condicional */}
+                                        {scorerName && (
+                                            <div className="flex justify-between items-center pt-2">
+                                                <span className="text-slate-400 uppercase tracking-wider text-[10px]">Planillero/a</span>
+                                                <span className="text-slate-800 dark:text-white font-medium">{scorerName}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer del Modal */}
+                            <div className="p-4 bg-slate-50 dark:bg-zinc-950/80 border-t border-gray-200 dark:border-zinc-800 flex justify-between items-center shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setDetailsMatch(null)}
+                                    className="px-4 py-2 border border-gray-200 dark:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-slate-400 rounded-lg text-xs font-black transition"
+                                >
+                                    Cerrar
+                                </button>
+                                
+                                <button
+                                    type="button"
+                                    onClick={() => handleShare(detailsMatch)}
+                                    className="px-4 py-2 bg-tdf-blue hover:bg-blue-600 text-white rounded-lg text-xs font-black shadow-md shadow-blue-500/10 flex items-center gap-2 transition"
+                                >
+                                    <Share2 size={14} /> Compartir
+                                </button>
+                            </div>
+
+                            {/* Toast Notificación Fallback */}
+                            {shareSuccess && (
+                                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-slate-900 text-white dark:bg-white dark:text-black px-4 py-2.5 rounded-full text-xs font-black flex items-center gap-2 shadow-2xl border border-slate-700/50 z-50">
+                                    <ClipboardCheck size={14} className="text-green-500" /> ¡Copiado al portapapeles!
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            })()}
         </div>
     )
 }
