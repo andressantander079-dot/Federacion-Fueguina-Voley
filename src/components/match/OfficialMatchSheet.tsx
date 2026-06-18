@@ -75,7 +75,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     const confirmR5 = (team: 'home' | 'away') => {
         const matchPosArray: (any | null)[] = [null, null, null, null, null, null];
-        const fillOrder = [0, 1, 2, 3, 4, 5]; // Mapeo ascendente: I->0, II->1, III->2, IV->3, V->4, VI->5
+        const fillOrder = [0, 5, 4, 3, 2, 1]; // I->0, II->5, III->4, IV->3, V->2, VI->1
         
         r5Form.forEach((p, i) => {
             if (p) {
@@ -170,33 +170,40 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     // --- STAFF & CIERRE ---
     const [referees, setReferees] = useState<any[]>([]);
+    const [loggedReferee, setLoggedReferee] = useState<any>(null);
     const [staff, setStaff] = useState({ ref1: '', ref2: '', scorer: '', coachHome: '', ayTecHome: '', coachAway: '', ayTecAway: '' });
     const [clubCoachesHome, setClubCoachesHome] = useState<string[]>([]);
     const [clubCoachesAway, setClubCoachesAway] = useState<string[]>([]);
 
-    const [closingFlow, setClosingFlow] = useState(false);
-    const [closingStep, setClosingStep] = useState(0);
+    const [closingFlow, setClosingFlow] = useState(readOnly);
+    const [closingStep, setClosingStep] = useState(readOnly ? 6 : 0);
     const [observations, setObservations] = useState('');
     const sigPadRef = useRef<HTMLCanvasElement>(null);
     const [signatures, setSignatures] = useState<{
         capHome: string | null;
         capAway: string | null;
         ref1: string | null;
-        dtHome: string | null;
-        dtAway: string | null;
         ref2: string | null;
         scorer: string | null;
-        scorerName: string;
-    }>({ 
-        capHome: null, 
-        capAway: null, 
-        ref1: null, 
-        dtHome: null, 
-        dtAway: null,
-        ref2: null,
-        scorer: null,
-        scorerName: ''
-    });
+        dtHome: string | null;
+        dtAway: string | null;
+    }>({ capHome: null, capAway: null, ref1: null, ref2: null, scorer: null, dtHome: null, dtAway: null });
+
+    const [uploadingSig, setUploadingSig] = useState(false);
+    const [uploadingDtSig, setUploadingDtSig] = useState(false);
+
+    // Helper to convert Base64 DataURL from canvas to Blob for Supabase Storage Upload
+    const dataURLtoBlob = (dataUrl: string): Blob => {
+        const arr = dataUrl.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: mime });
+    };
 
     // DT Signature Flow
     const [dtSignModalOpen, setDtSignModalOpen] = useState(false);
@@ -509,14 +516,20 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         fetchMetadata();
         cargarArbitros(); // Load referees list for dropdowns
 
-        // Auto-select current referee logic
+        // Auto-select current referee logic and load logged referee details
         const autoSelectReferee = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-                // Find referee ID for this user
-                const { data: ref } = await supabase.from('referees').select('id').eq('user_id', user.id).single();
+                // Find referee ID and details for this user
+                const { data: ref } = await supabase.from('referees').select('*, profile:profiles(full_name)').eq('user_id', user.id).maybeSingle();
                 if (ref) {
-                    setStaff(prev => ({ ...prev, ref1: ref.id })); // Set as Ref 1 by default
+                    setLoggedReferee(ref);
+                    setStaff(prev => {
+                        if (!prev.ref1) {
+                            return { ...prev, ref1: ref.id };
+                        }
+                        return prev;
+                    });
                 }
             }
         };
@@ -538,11 +551,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             // Ensures data freshness even if Realtime events are missed
             const intervalId = setInterval(fetchState, 4000);
 
-            // Forza que apenas se monte en modo ReadOnly salte a la pantalla Final (A4)
-            setTimeout(() => {
-                setClosingFlow(true);
-                setClosingStep(4);
-            }, 500);
+            // En modo ReadOnly se inicializa directamente en closingStep=6 y closingFlow=true
 
             // Realtime Subscription
             const channel = supabase
@@ -599,7 +608,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
         // Restaurar variables de estado locales (Vital para el PDF Resumen)
         if (data.staff) setStaff(data.staff);
-        if (data.signatures) setSignatures(prev => ({ ...prev, ...data.signatures }));
+        if (data.signatures) setSignatures(data.signatures);
         if (data.observations) setObservations(data.observations);
     };
 
@@ -640,32 +649,57 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         const dataUrl = sigPadRef.current?.toDataURL() || null;
         if (!dataUrl) return;
 
-        if (dtSignStep === 0) {
-            setSignatures(prev => ({ ...prev, dtHome: dataUrl }));
-            clearSig();
-            setDtSignStep(1); // Move to Away
-        } else {
-            setSignatures(prev => ({ ...prev, dtAway: dataUrl }));
-            clearSig();
-            setDtSignModalOpen(false); // Close Modal
+        setUploadingDtSig(true);
+        try {
+            const blob = dataURLtoBlob(dataUrl);
+            const isHome = dtSignStep === 0;
+            const stepName = isHome ? 'dt_local' : 'dt_visitante';
+            const fileName = `firmas/${matchId}/${stepName}_${Date.now()}.png`;
 
-            // AUTO START LIVE AFTER SIGNING
-            setMatchStatus('live');
-            const { error } = await supabase.from('matches').update({
-                status: 'en_curso',
-                // We also save signatures immediately to be safe
-                sheet_data: {
-                    ...allCurrentData(), // Helper to get current state
-                    signatures: { ...signatures, dtAway: dataUrl } // Include the one just signed
+            const { data, error: uploadError } = await supabase.storage
+                .from('match-signatures')
+                .upload(fileName, blob, {
+                    contentType: 'image/png',
+                    upsert: true
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('match-signatures')
+                .getPublicUrl(fileName);
+
+            if (isHome) {
+                setSignatures(prev => ({ ...prev, dtHome: publicUrl }));
+                clearSig();
+                setDtSignStep(1); // Move to Away
+            } else {
+                const finalSignatures = { ...signatures, dtAway: publicUrl };
+                setSignatures(prev => ({ ...prev, dtAway: publicUrl }));
+                clearSig();
+                setDtSignModalOpen(false); // Close Modal
+
+                // AUTO START LIVE AFTER SIGNING
+                setMatchStatus('live');
+                const { error } = await supabase.from('matches').update({
+                    status: 'en_curso',
+                    sheet_data: {
+                        ...allCurrentData(),
+                        signatures: finalSignatures
+                    }
+                }).eq('id', matchId);
+
+                if (error) alert("Error al iniciar partido: " + error.message);
+                else {
+                    setShowLiveToast(true);
+                    setTimeout(() => setShowLiveToast(false), 1500);
                 }
-            }).eq('id', matchId);
-
-            if (error) alert("Error al iniciar partido: " + error.message);
-            else {
-                // SHOW LIVE TOAST
-                setShowLiveToast(true);
-                setTimeout(() => setShowLiveToast(false), 2000); // 2 seconds visible (user asked for 1s but 2s is safer for reading, will stick to 2s or 1s as requested? User said "1 seg". Let's do 1500ms for balance)
             }
+        } catch (err: any) {
+            console.error("Error al guardar firma de DT:", err);
+            alert("No se pudo guardar la firma: " + err.message);
+        } finally {
+            setUploadingDtSig(false);
         }
     };
 
@@ -1071,13 +1105,76 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             ctx.clearRect(0, 0, sigPadRef.current.width, sigPadRef.current.height);
         }
     };
-    const saveSig = () => {
+    const saveSig = async () => {
         const dataUrl = sigPadRef.current?.toDataURL() || null;
-        if (closingStep === 1) setSignatures(p => ({ ...p, capHome: dataUrl }));
-        if (closingStep === 2) setSignatures(p => ({ ...p, capAway: dataUrl }));
-        if (closingStep === 3) setSignatures(p => ({ ...p, ref1: dataUrl }));
-        clearSig();
-        setClosingStep(p => p + 1);
+        if (!dataUrl) return;
+
+        setUploadingSig(true);
+        try {
+            const blob = dataURLtoBlob(dataUrl);
+            const stepNames = {
+                1: 'capitan_local',
+                2: 'capitan_visitante',
+                3: 'primer_arbitro',
+                4: 'segundo_arbitro',
+                5: 'planillero'
+            };
+            // @ts-ignore
+            const stepName = stepNames[closingStep] || 'firma';
+            const fileName = `firmas/${matchId}/${stepName}_${Date.now()}.png`;
+
+            const { data, error: uploadError } = await supabase.storage
+                .from('match-signatures')
+                .upload(fileName, blob, {
+                    contentType: 'image/png',
+                    upsert: true
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('match-signatures')
+                .getPublicUrl(fileName);
+
+            if (closingStep === 1) setSignatures(p => ({ ...p, capHome: publicUrl }));
+            if (closingStep === 2) setSignatures(p => ({ ...p, capAway: publicUrl }));
+            if (closingStep === 3) setSignatures(p => ({ ...p, ref1: publicUrl }));
+            if (closingStep === 4) setSignatures(p => ({ ...p, ref2: publicUrl }));
+            if (closingStep === 5) setSignatures(p => ({ ...p, scorer: publicUrl }));
+
+            clearSig();
+
+            // Avanzar pasos considerando la lógica condicional del Paso 5 (2do Árbitro)
+            if (closingStep === 3) {
+                // Si el 2do árbitro está asignado, va a paso 4 (Firma 2do Árbitro). Si no, va directo a paso 5 (Firma Planillero).
+                if (staff.ref2) {
+                    setClosingStep(4);
+                } else {
+                    setClosingStep(5);
+                }
+            } else {
+                setClosingStep(p => p + 1);
+            }
+        } catch (err: any) {
+            console.error("Error al subir la firma:", err);
+            alert("No se pudo subir la firma: " + err.message);
+        } finally {
+            setUploadingSig(false);
+        }
+    };
+
+    const handleBackStep = () => {
+        if (closingStep === 0) return;
+        if (closingStep === 5) {
+            // Si retrocedemos desde Planillero, vamos a 2do árbitro si existe, sino a 1er árbitro
+            if (staff.ref2) {
+                setClosingStep(4);
+            } else {
+                setClosingStep(3);
+            }
+        } else {
+            setClosingStep(p => p - 1);
+        }
     };
     const startDraw = (e: any) => {
         const ctx = sigPadRef.current?.getContext('2d'); if (!ctx || !sigPadRef.current) return;
@@ -1103,8 +1200,6 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     // --- CÁLCULO DE SETS GANADOS ---
     const setsWonHome = sets.filter(s => s.finished && s.home > s.away).length;
     const setsWonAway = sets.filter(s => s.finished && s.away > s.home).length;
-    const requiredSets = Math.ceil(bestOfSets / 2);
-    const isMatchDefined = setsWonHome === requiredSets || setsWonAway === requiredSets;
 
     // --- ENVÍO A BASE DE DATOS ---
     const submitMatchSheet = async () => {
@@ -1233,29 +1328,11 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         );
     };
 
-    const homePhysicalSide = isSidesSwapped ? 'right' : 'left';
-    const awayPhysicalSide = isSidesSwapped ? 'left' : 'right';
-
-    const getSteps = () => {
-        const steps = ['Observaciones', 'Firma Capitán Local', 'Firma Capitán Visita', 'Firma 1er Árbitro'];
-        if (staff.ref2) {
-            steps.push('Firma 2do Árbitro');
-        }
-        steps.push('Firma Planillero');
-        steps.push('Vista Previa');
-        return steps;
-    };
-
-    const stepsList = getSteps();
-    const currentStepFriendly = staff.ref2 
-        ? closingStep 
-        : (closingStep <= 3 ? closingStep : (closingStep === 5 ? 4 : 5));
-
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
 
             {/* HEADER APP (Con Logout) */}
-            <header className={`bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-20 ${closingStep === 6 ? 'hidden' : ''}`}>
+            <header className={`bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-20 ${closingStep === 4 ? 'hidden' : ''}`}>
                 <div className="flex gap-3 items-center flex-wrap">
                     <div className="flex items-center gap-2 text-slate-600 text-xs font-bold uppercase"><Calendar size={14} /> {teamsInfo?.date || 'A CONFIRMAR'}</div>
                     <div className="flex items-center gap-2 text-slate-600 text-xs font-bold uppercase"><Clock size={14} /> {teamsInfo?.time || '- : -'}</div>
@@ -1457,9 +1534,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                     </Link>
                                 )}
                                 <h1 className="text-slate-300 font-black text-4xl uppercase tracking-widest leading-none">SETS</h1>
-                                <div className="border-2 border-slate-100 rounded-lg p-2 font-bold text-slate-600 w-full">
-                                    SET {sets[currentSetIdx].number}: {isSidesSwapped ? sets[currentSetIdx].away : sets[currentSetIdx].home} - {isSidesSwapped ? sets[currentSetIdx].home : sets[currentSetIdx].away}
-                                </div>
+                                <div className="border-2 border-slate-100 rounded-lg p-2 font-bold text-slate-600 w-full">SET {sets[currentSetIdx].number}: {sets[currentSetIdx].home} - {sets[currentSetIdx].away}</div>
                                 {!readOnly && (
                                     <>
                                         {!sets[currentSetIdx].finished ? (
@@ -1509,20 +1584,20 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">1er Árbitro</label>
-                            <select disabled={readOnly || (matchStatus !== 'scheduled' && matchStatus !== 'live')} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref1 || ''} onChange={e => setStaff({ ...staff, ref1: e.target.value })}>
+                            <select disabled={readOnly || matchStatus !== 'scheduled'} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref1 || ''} onChange={e => setStaff({ ...staff, ref1: e.target.value })}>
                                 <option value="">Seleccionar...</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name || ''}</option>)}
                             </select>
                         </div>
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
                             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">2do Árbitro</label>
-                            <select disabled={readOnly || (matchStatus !== 'scheduled' && matchStatus !== 'live')} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref2 || ''} onChange={e => setStaff({ ...staff, ref2: e.target.value })}>
+                            <select disabled={readOnly || matchStatus !== 'scheduled'} className="font-bold text-slate-700 bg-transparent outline-none text-sm disabled:opacity-50" value={staff.ref2 || ''} onChange={e => setStaff({ ...staff, ref2: e.target.value })}>
                                 <option value="">Opcional</option> {referees.map(r => <option key={r.id} value={r.id}>{r.last_name || r.profile?.full_name} {r.first_name || ''}</option>)}
                             </select>
                         </div>
                     </div>
 
                     <div className={`bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full flex overflow-hidden ${isSidesSwapped ? 'flex-row-reverse' : 'flex-row'}`}>
-                        <div className="absolute left-1/2 top-0 bottom-0 border-l-4 border-dashed border-slate-800 z-10 -ml-[2px]"></div>
+                        <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-slate-800 z-10 shadow-xl -ml-[3px]"></div>
                         <div className={`relative flex-1 bg-blue-50/30 border-slate-200/50 ${isSidesSwapped ? 'border-l' : 'border-r'}`}>
                             {posHome.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
                                 <div className="absolute inset-0 flex items-center justify-center z-20">
@@ -1532,25 +1607,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 </div>
                             )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                {homePhysicalSide === 'left' ? (
-                                    <>
-                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[4]} team="home" /></div>
-                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[3]} team="home" /></div>
-                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[5]} team="home" /></div>
-                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
-                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
-                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posHome[1]} team="home" /></div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[1]} team="home" /></div>
-                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
-                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
-                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[5]} team="home" /></div>
-                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[3]} team="home" /></div>
-                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posHome[4]} team="home" /></div>
-                                    </>
-                                )}
+                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[3]} team="home" /></div>
+                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
+                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posHome[1]} team="home" /></div>
+                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[4]} team="home" /></div>
+                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[5]} team="home" /></div>
+                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
                             </div>
                         </div>
                         <div className="relative flex-1 bg-red-50/30">
@@ -1562,25 +1624,12 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 </div>
                             )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                {awayPhysicalSide === 'left' ? (
-                                    <>
-                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[4]} team="away" /></div>
-                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[3]} team="away" /></div>
-                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[5]} team="away" /></div>
-                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
-                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posAway[0]} team="away" isPos1={true} /></div>
-                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posAway[1]} team="away" /></div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[1]} team="away" /></div>
-                                        <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[0]} team="away" isPos1={true} /></div>
-                                        <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
-                                        <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[5]} team="away" /></div>
-                                        <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posAway[3]} team="away" /></div>
-                                        <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posAway[4]} team="away" /></div>
-                                    </>
-                                )}
+                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[1]} team="away" /></div>
+                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
+                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posAway[3]} team="away" /></div>
+                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[0]} team="away" isPos1={true} /></div>
+                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[5]} team="away" /></div>
+                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posAway[4]} team="away" /></div>
                             </div>
                         </div>
                     </div>
@@ -1634,17 +1683,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 
                                 {/* Botón Finalizar Encuentro (Debajo de los otros, centrado) */}
                                 <button 
-                                    onClick={() => {
-                                        if (matchStatus === 'suspended') {
-                                            setClosingFlow(true);
-                                            return;
-                                        }
-                                        if (!isMatchDefined) {
-                                            alert(`No se puede finalizar el encuentro. El partido no está definido matemáticamente (se requieren ${requiredSets} sets ganados por un equipo; actualmente van ${setsWonHome} - ${setsWonAway}).`);
-                                            return;
-                                        }
-                                        setClosingFlow(true);
-                                    }} 
+                                    onClick={() => setClosingFlow(true)} 
                                     className="bg-slate-900 text-white px-8 py-4 mt-2 rounded-full font-black text-sm flex items-center justify-center gap-2 shadow-lg hover:bg-black transition w-64 active:scale-95 uppercase tracking-wide"
                                 >
                                     <Check size={18} /> Finalizar Encuentro
@@ -2253,7 +2292,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             )}
 
             {/* --- DT SIGNATURE MODAL --- */}
-            {dtSignModalOpen && (
+            {dtSignModalOpen && !readOnly && (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
                         <div className="bg-blue-600 p-4 text-white font-black text-center text-xl uppercase tracking-widest">
@@ -2466,326 +2505,301 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 </div>
             )}
 
-            {closingFlow && (
-                <div className="fixed inset-0 bg-slate-100 z-[70] flex flex-col animate-in fade-in overflow-y-auto">
-                    <div className="p-4 border-b bg-white flex justify-between items-center shadow-sm sticky top-0 z-50">
-                        <h2 className="font-black text-slate-800 text-lg">
-                            {readOnly ? 'Visualización de Planilla Oficial' : `Cierre de Encuentro - Paso ${currentStepFriendly + 1}/${stepsList.length} (${stepsList[currentStepFriendly]})`}
-                        </h2>
-                        {!readOnly && (
-                            <button onClick={() => setClosingFlow(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={18} /></button>
+            {closingFlow && (() => {
+                const hasRef2 = !!staff.ref2;
+                const totalSteps = hasRef2 ? 7 : 6;
+                const getDisplayStep = () => {
+                    if (closingStep <= 3) return closingStep + 1;
+                    if (closingStep === 4) return 5;
+                    if (closingStep === 5) return hasRef2 ? 6 : 5;
+                    return hasRef2 ? 7 : 6;
+                };
+                return (
+                    <div className="fixed inset-0 bg-slate-100 z-[70] flex flex-col animate-in fade-in overflow-y-auto">
+                        <div className="p-4 border-b bg-white flex justify-between items-center shadow-sm sticky top-0 z-50">
+                            <h2 className="font-black text-slate-800 text-lg">
+                                {readOnly ? 'Visualización de Planilla Oficial' : `Cierre de Encuentro - Paso ${getDisplayStep()}/${totalSteps}`}
+                            </h2>
+                            {!readOnly && (
+                                <button onClick={() => setClosingFlow(false)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={18} /></button>
+                            )}
+                        </div>
+
+                        {/* 1. OBS */}
+                        {closingStep === 0 && !readOnly && (
+                            <div className="flex-1 p-8 max-w-3xl mx-auto w-full">
+                                <h3 className="font-black text-2xl text-slate-800 mb-4">Observaciones del Árbitro</h3>
+                                <textarea className="w-full h-64 bg-white border-2 border-slate-200 rounded-2xl p-6 text-lg outline-none focus:border-blue-500 transition resize-none" placeholder="Escriba aquí cualquier incidencia..." value={observations} onChange={e => setObservations(e.target.value)}></textarea>
+                                <button onClick={() => setClosingStep(1)} className="mt-6 bg-slate-900 hover:bg-black text-white px-8 py-4 rounded-2xl font-bold float-right shadow-lg transition active:scale-95">Siguiente: Firmas</button>
+                            </div>
+                        )}
+
+                        {/* 2-6. FIRMAS */}
+                        {(closingStep >= 1 && closingStep <= 5) && !readOnly && (
+                            <div className="flex-1 flex flex-col">
+                                <div className="bg-blue-50 p-4 text-center flex flex-col gap-1">
+                                    <span className="font-black text-xl text-blue-900 uppercase tracking-widest">
+                                        {closingStep === 1 ? 'Firma: Capitán Local' :
+                                         closingStep === 2 ? 'Firma: Capitán Visitante' :
+                                         closingStep === 3 ? 'Firma: 1er Árbitro' :
+                                         closingStep === 4 ? 'Firma: 2do Árbitro' :
+                                         'Firma: Planillero/a'}
+                                    </span>
+                                    {closingStep === 3 && (
+                                        <span className="text-xs font-bold text-blue-700 bg-blue-100/50 px-3 py-1 rounded-full mx-auto">
+                                            Nombre del 1er Árbitro: {(() => {
+                                                const ref1Obj = referees.find(r => r.id === staff.ref1) || (loggedReferee?.id === staff.ref1 ? loggedReferee : null);
+                                                return ref1Obj ? `${ref1Obj.first_name || ''} ${ref1Obj.last_name || ref1Obj.profile?.full_name || ''}`.trim() : (loggedReferee ? `${loggedReferee.first_name || ''} ${loggedReferee.last_name || loggedReferee.profile?.full_name || ''}`.trim() : 'Sin designar');
+                                            })()}
+                                        </span>
+                                    )}
+                                    {closingStep === 4 && (
+                                        <span className="text-xs font-bold text-blue-700 bg-blue-100/50 px-3 py-1 rounded-full mx-auto">
+                                            Nombre del 2do Árbitro: {(() => {
+                                                const ref2Obj = referees.find(r => r.id === staff.ref2);
+                                                return ref2Obj ? `${ref2Obj.first_name || ''} ${ref2Obj.last_name || ref2Obj.profile?.full_name || ''}`.trim() : 'Sin designar';
+                                            })()}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {closingStep === 5 && (
+                                    <div className="bg-white p-6 max-w-xl mx-auto w-full border-b border-slate-100">
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">
+                                            Nombre y Apellido del Planillero/a <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ingresar Nombre y Apellido (Solo letras)"
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-800 focus:border-blue-500 focus:bg-white outline-none transition uppercase text-sm"
+                                            value={staff.scorer || ''}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                // Bloqueo estricto de números y caracteres no alfabéticos
+                                                const cleanVal = val.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
+                                                setStaff(prev => ({ ...prev, scorer: cleanVal }));
+                                            }}
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="flex-1 relative bg-white touch-none cursor-crosshair shadow-inner min-h-[300px]">
+                                    <canvas ref={sigPadRef} className="w-full h-full" width={typeof window !== 'undefined' ? window.innerWidth : 800} height={typeof window !== 'undefined' ? window.innerHeight * 0.5 : 400} onMouseDown={startDraw} onMouseMove={moveDraw} onTouchStart={startDraw} onTouchMove={moveDraw} />
+                                    <p className="absolute bottom-10 left-0 right-0 text-center text-slate-200 font-black text-3xl pointer-events-none select-none uppercase tracking-widest">Firmar aquí</p>
+                                </div>
+                                <div className="p-6 bg-white border-t border-slate-200 flex gap-4 justify-center">
+                                    <button onClick={handleBackStep} className="px-8 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition active:scale-95">Atrás</button>
+                                    <button onClick={clearSig} className="px-8 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition active:scale-95">Borrar</button>
+                                    <button 
+                                        disabled={uploadingSig || (closingStep === 5 && !staff.scorer?.trim())}
+                                        onClick={saveSig} 
+                                        className="px-12 py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-bold shadow-lg transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                                    >
+                                        {uploadingSig ? 'Subiendo Firma...' : 'Confirmar Firma'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 7. PREVIEW A4 REAL (DEFINITIVO) */}
+                        {(closingStep === 6 || readOnly) && (
+                            <div className="flex-1 bg-slate-200 py-10 px-4 flex justify-center">
+                                {/* HOJA A4 */}
+                                <div className="bg-white w-[210mm] min-h-[297mm] shadow-2xl p-10 flex flex-col relative text-slate-900">
+
+                                    {/* HEADER OFICIAL */}
+                                    <div className="border-b-4 border-slate-900 pb-6 mb-8 flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <img src="/logo-fvf.png" alt="FVF" className="w-16 h-16 object-contain" />
+                                            <div>
+                                                <h1 className="text-2xl font-black uppercase tracking-tight leading-none text-blue-900">Federación de Voley Fueguina</h1>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <h3 className="text-3xl font-black text-slate-900 uppercase">Planilla Oficial</h3>
+                                            <p className="text-xs font-bold text-slate-400 mt-1 uppercase">ID: {Date.now().toString().slice(-8)}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* DATOS ENCUENTRO COMPACTOS */}
+                                    <div className="grid grid-cols-4 gap-2 mb-6 text-[10px] uppercase bg-slate-50 p-2 border border-slate-200 rounded-md">
+                                        <div><strong className="block text-slate-400 font-black">Fecha</strong> {teamsInfo?.date || new Date().toLocaleDateString()}</div>
+                                        <div><strong className="block text-slate-400 font-black">Hora</strong> {teamsInfo?.time?.slice(0, 5) || 'A CONFIRMAR'}</div>
+                                        <div className="col-span-2"><strong className="block text-slate-400 font-black">Gimnasio</strong> {teamsInfo?.gym || 'Polivalente'}</div>
+
+                                        <div><strong className="block text-slate-400 font-black">Competencia</strong> Apertura 2026</div>
+                                        <div><strong className="block text-slate-400 font-black">Instancia</strong> {teamsInfo?.phase || 'Fase Regular'}</div>
+                                        <div><strong className="block text-slate-400 font-black">Categoría</strong> {teamsInfo?.category || 'Mayores'}</div>
+                                        <div><strong className="block text-slate-400 font-black">Género</strong> {teamsInfo?.gender || 'Masculino'}</div>
+                                    </div>
+
+                                    {/* MARCADOR GLOBAL */}
+                                    <div className="flex items-center justify-between mb-8 px-8">
+                                        <div className="text-center w-1/3">
+                                            <h2 className="text-2xl font-black text-blue-800 uppercase">{teamsInfo?.home?.name || 'Local'}</h2>
+                                            <div className="w-full h-1 bg-blue-800 mt-2 mx-auto"></div>
+                                        </div>
+                                        <div className="text-6xl font-black text-slate-800 px-8 border-x-2 border-slate-100 flex items-center justify-center gap-4">
+                                            <span>{setsWonHome}</span>
+                                            <span className="text-slate-300 text-4xl">-</span>
+                                            <span>{setsWonAway}</span>
+                                        </div>
+                                        <div className="text-center w-1/3">
+                                            <h2 className="text-2xl font-black text-red-800 uppercase">{teamsInfo?.away?.name || 'Visita'}</h2>
+                                            <div className="w-full h-1 bg-red-800 mt-2 mx-auto"></div>
+                                        </div>
+                                    </div>
+
+                                    {/* TABLA DE SETS */}
+                                    <table className="w-full mb-8 text-sm text-center border-collapse border border-slate-200">
+                                        <thead className="bg-slate-900 text-white font-bold uppercase">
+                                            <tr>
+                                                <th className="py-2">Set</th>
+                                                <th>Puntos Local</th>
+                                                <th>Puntos Visita</th>
+                                                <th>Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {sets.map((s, i) => (
+                                                <tr key={i} className="border-b border-slate-200 even:bg-slate-50">
+                                                    <td className="py-2 font-bold">{s.number}</td>
+                                                    <td>{s.home}</td>
+                                                    <td>{s.away}</td>
+                                                    <td className="text-xs font-bold uppercase text-slate-500">{s.finished ? 'Finalizado' : ''}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+
+                                    {/* LISTAS DE JUGADORES */}
+                                    <div className="grid grid-cols-2 gap-8 mb-8 flex-1">
+                                        {/* Local Roster */}
+                                        <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                            <div className="bg-blue-100 p-2 text-center font-bold text-blue-900 text-xs uppercase border-b border-blue-200">Plantel Local</div>
+                                            <ul className="text-xs p-2 space-y-1">
+                                                {fullRosterHome.map(p => (
+                                                    <li key={p.id} className="flex justify-between border-b border-slate-50 pb-1">
+                                                        <span className="font-bold">#{p.number}</span> <span>{p.name}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                        {/* Away Roster */}
+                                        <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                            <div className="bg-red-100 p-2 text-center font-bold text-red-900 text-xs uppercase border-b border-red-200">Plantel Visita</div>
+                                            <ul className="text-xs p-2 space-y-1">
+                                                {fullRosterAway.map(p => (
+                                                    <li key={p.id} className="flex justify-between border-b border-slate-50 pb-1">
+                                                        <span className="font-bold">#{p.number}</span> <span>{p.name}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    {/* SANCTIONS DIAGRAM / LOG */}
+                                    {sanctionsLog && sanctionsLog.length > 0 && (
+                                        <div className="mb-8 border border-slate-200 rounded-lg overflow-hidden">
+                                            <div className="bg-red-50 text-red-900 font-bold p-2 text-center text-xs uppercase border-b border-red-200">
+                                                Registro de Sanciones (Tarjetas)
+                                            </div>
+                                            <table className="w-full text-[10px] text-center">
+                                                <thead className="bg-slate-50 text-slate-500 uppercase">
+                                                    <tr>
+                                                        <th className="p-1">Jugador/a</th>
+                                                        <th className="p-1">Sanción</th>
+                                                        <th className="p-1">Set</th>
+                                                        <th className="p-1">Puntos</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sanctionsLog.map(s => (
+                                                        <tr key={s.id} className="border-b border-slate-100 uppercase font-medium">
+                                                            <td className="p-1 text-slate-700">{s.playerName} ({s.team === 'home' ? 'L' : 'V'})</td>
+                                                            <td className="p-1">
+                                                                {s.type === 'yellow' ? <span className="text-yellow-600">Amonestación</span> :
+                                                                    s.type === 'red' ? <span className="text-red-600">Castigo</span> :
+                                                                        s.type === 'expulsion' ? <span className="text-orange-600 tracking-tighter">Expulsión (Set)</span> :
+                                                                            <span className="text-rose-800 tracking-tighter">Descalif. (Partido)</span>}
+                                                            </td>
+                                                            <td className="p-1 font-bold">{s.setNum}</td>
+                                                            <td className="p-1 font-bold">{s.homeScore} - {s.awayScore}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+
+                                    {/* OBSERVACIONES */}
+                                    <div className="bg-yellow-50 border border-yellow-200 p-4 mb-8 text-xs rounded-lg">
+                                        <strong className="block text-yellow-700 uppercase mb-2">Observaciones del Árbitro</strong>
+                                        <p className="italic text-slate-700">{observations || "Sin observaciones."}</p>
+                                    </div>
+
+                                    {/* FIRMAS */}
+                                    <div className={`grid gap-4 mb-8 mt-auto ${staff.ref2 ? 'grid-cols-5' : 'grid-cols-4'}`}>
+                                        <div className="text-center border-t border-slate-300 pt-2 relative">
+                                            <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachHome ? `DT: ${staff.coachHome}` : ''} {staff.ayTecHome ? `| Ay: ${staff.ayTecHome}` : ''}</p>
+                                            {signatures.capHome && <img src={signatures.capHome} className="h-12 mx-auto mb-1 object-contain" alt="Firma Capitán Local" />}
+                                            <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Local</p>
+                                        </div>
+                                        <div className="text-center border-t border-slate-300 pt-2 relative">
+                                            <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachAway ? `DT: ${staff.coachAway}` : ''} {staff.ayTecAway ? `| Ay: ${staff.ayTecAway}` : ''}</p>
+                                            {signatures.capAway && <img src={signatures.capAway} className="h-12 mx-auto mb-1 object-contain" alt="Firma Capitán Visitante" />}
+                                            <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Visita</p>
+                                        </div>
+                                        <div className="text-center border-t border-slate-300 pt-2">
+                                            {signatures.ref1 && <img src={signatures.ref1} className="h-12 mx-auto mb-1 object-contain" alt="Firma 1er Árbitro" />}
+                                            <p className="text-[10px] font-bold uppercase text-slate-500">1er Árbitro</p>
+                                            <p className="text-[9px] text-slate-500 font-medium">{referees.find(r => r.id === staff.ref1)?.last_name || 'Sin designar'}</p>
+                                        </div>
+                                        {staff.ref2 && (
+                                            <div className="text-center border-t border-slate-300 pt-2">
+                                                {signatures.ref2 && <img src={signatures.ref2} className="h-12 mx-auto mb-1 object-contain" alt="Firma 2do Árbitro" />}
+                                                <p className="text-[10px] font-bold uppercase text-slate-500">2do Árbitro</p>
+                                                <p className="text-[9px] text-slate-500 font-medium">{referees.find(r => r.id === staff.ref2)?.last_name || 'Sin designar'}</p>
+                                            </div>
+                                        )}
+                                        <div className="text-center border-t border-slate-300 pt-2">
+                                            {signatures.scorer && <img src={signatures.scorer} className="h-12 mx-auto mb-1 object-contain" alt="Firma Planillero" />}
+                                            <p className="text-[10px] font-bold uppercase text-slate-500">Planillero/a</p>
+                                            <p className="text-[9px] text-slate-500 font-medium">{staff.scorer || 'Sin Nombre'}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* FOOTER */}
+                                    <div className="flex justify-between items-end text-[10px] text-slate-400 pt-4 border-t border-slate-100">
+                                        <div>
+                                            {staff.ref1 && <p>1º Árbitro: <span className="font-bold text-slate-600">{referees.find(r => r.id === staff.ref1)?.last_name || 'Sin designar'}</span></p>}
+                                            {staff.ref2 && <p>2º Árbitro: <span className="font-bold text-slate-600">{referees.find(r => r.id === staff.ref2)?.last_name || 'Sin designar'}</span></p>}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <QrCode size={32} className="text-slate-800" />
+                                            <div className="text-right">
+                                                <p className="font-bold">VALIDACIÓN DIGITAL</p>
+                                                <p>Escanee para verificar</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+
+                                {/* BOTONES ACCIÓN FLOTANTES */}
+                                <div className="fixed bottom-8 right-8 flex gap-4 z-50 print:hidden">
+                                    <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-black transition active:scale-95"><Download size={16} /> Imprimir</button>
+                                    {!readOnly && (
+                                        <button onClick={submitMatchSheet} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-green-700 transition active:scale-95"><Check size={16} /> Finalizar y Enviar</button>
+                                    )}
+                                </div>
+                            </div>
                         )}
                     </div>
+                );
+            })()}
 
-                    {/* 0. OBS */}
-                    {closingStep === 0 && (
-                        <div className="flex-1 p-8 max-w-3xl mx-auto w-full">
-                            <h3 className="font-black text-2xl text-slate-800 mb-4">Observaciones del Árbitro</h3>
-                            <textarea className="w-full h-64 bg-white border-2 border-slate-200 rounded-2xl p-6 text-lg outline-none focus:border-blue-500 transition resize-none" placeholder="Escriba aquí cualquier incidencia..." value={observations} onChange={e => setObservations(e.target.value)}></textarea>
-                            <button onClick={() => setClosingStep(1)} className="mt-6 bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold float-right shadow-lg">Siguiente: Firmas</button>
-                        </div>
-                    )}
-
-                    {/* 1-3. FIRMAS */}
-                    {(closingStep >= 1 && closingStep <= 3) && (
-                        <div className="flex-1 flex flex-col">
-                            <div className="bg-blue-50 p-4 text-center">
-                                <span className="font-black text-xl text-blue-900 uppercase tracking-widest">
-                                    FIRMA: {closingStep === 1 ? 'CAPITÁN LOCAL' : closingStep === 2 ? 'CAPITÁN VISITA' : '1ER ÁRBITRO'}
-                                </span>
-                            </div>
-                            <div className="flex-1 relative bg-white touch-none cursor-crosshair shadow-inner">
-                                <canvas ref={sigPadRef} className="w-full h-full" width={typeof window !== 'undefined' ? window.innerWidth : 800} height={typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600} onMouseDown={startDraw} onMouseMove={moveDraw} onTouchStart={startDraw} onTouchMove={moveDraw} />
-                                <p className="absolute bottom-10 left-0 right-0 text-center text-slate-200 font-black text-5xl pointer-events-none select-none">FIRMAR AQUÍ</p>
-                            </div>
-                            <div className="p-6 bg-white border-t border-slate-200 flex gap-4 justify-center">
-                                <button onClick={clearSig} className="px-8 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 hover:bg-slate-50">Borrar</button>
-                                <button onClick={saveSig} className="px-12 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Confirmar Firma</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 4. FIRMA 2DO ÁRBITRO */}
-                    {closingStep === 4 && (
-                        <div className="flex-1 flex flex-col">
-                            <div className="bg-blue-50 p-4 text-center">
-                                <span className="font-black text-xl text-blue-900 uppercase tracking-widest">
-                                    FIRMA: 2DO ÁRBITRO ({referees.find(r => r.id === staff.ref2)?.last_name || 'Asignado'})
-                                </span>
-                            </div>
-                            <div className="flex-1 relative bg-white touch-none cursor-crosshair shadow-inner">
-                                <canvas ref={sigPadRef} className="w-full h-full" width={typeof window !== 'undefined' ? window.innerWidth : 800} height={typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600} onMouseDown={startDraw} onMouseMove={moveDraw} onTouchStart={startDraw} onTouchMove={moveDraw} />
-                                <p className="absolute bottom-10 left-0 right-0 text-center text-slate-200 font-black text-5xl pointer-events-none select-none">FIRMAR AQUÍ</p>
-                            </div>
-                            <div className="p-6 bg-white border-t border-slate-200 flex gap-4 justify-center">
-                                <button onClick={clearSig} className="px-8 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 hover:bg-slate-50">Borrar</button>
-                                <button onClick={saveSig} className="px-12 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Confirmar Firma</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 5. FIRMA PLANILLERO */}
-                    {closingStep === 5 && (
-                        <div className="flex-1 flex flex-col">
-                            <div className="bg-blue-50 p-4 text-center flex flex-col gap-2 items-center">
-                                <span className="font-black text-xl text-blue-900 uppercase tracking-widest">
-                                    FIRMA: PLANILLERO
-                                </span>
-                                <div className="w-full max-w-md mt-2">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 text-left">Nombre y Apellido del Planillero</label>
-                                    <input 
-                                        type="text" 
-                                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold outline-none focus:border-blue-500 text-slate-800"
-                                        placeholder="Ej: Juan Pérez"
-                                        value={signatures.scorerName || ''}
-                                        onChange={e => setSignatures(p => ({ ...p, scorerName: e.target.value }))}
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex-1 relative bg-white touch-none cursor-crosshair shadow-inner">
-                                <canvas ref={sigPadRef} className="w-full h-full" width={typeof window !== 'undefined' ? window.innerWidth : 800} height={typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600} onMouseDown={startDraw} onMouseMove={moveDraw} onTouchStart={startDraw} onTouchMove={moveDraw} />
-                                <p className="absolute bottom-10 left-0 right-0 text-center text-slate-200 font-black text-5xl pointer-events-none select-none">FIRMAR AQUÍ</p>
-                            </div>
-                            <div className="p-6 bg-white border-t border-slate-200 flex gap-4 justify-center">
-                                <button onClick={clearSig} className="px-8 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500 hover:bg-slate-50">Borrar</button>
-                                <button onClick={() => {
-                                    if (!signatures.scorerName || !signatures.scorerName.trim()) {
-                                        alert("Por favor, ingrese el nombre y apellido del planillero antes de confirmar.");
-                                        return;
-                                    }
-                                    saveSig();
-                                }} className="px-12 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Confirmar Firma</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 6. PREVIEW A4 REAL (DEFINITIVO) */}
-                    {closingStep === 6 && (
-                        <div className="flex-1 bg-slate-200 py-10 px-4 flex justify-center">
-                            {/* HOJA A4 */}
-                            <div className="bg-white w-[210mm] min-h-[297mm] shadow-2xl p-10 flex flex-col relative text-slate-900">
-
-                                {/* HEADER OFICIAL */}
-                                <div className="border-b-4 border-slate-900 pb-6 mb-8 flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                        <img src="/logo-fvf.png" alt="FVF" className="w-16 h-16 object-contain" />
-                                        <div>
-                                            <h1 className="text-2xl font-black uppercase tracking-tight leading-none text-blue-900">Federación de Voley Fueguina</h1>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <h3 className="text-3xl font-black text-slate-900 uppercase">Planilla Oficial</h3>
-                                        <p className="text-xs font-bold text-slate-400 mt-1 uppercase">ID: {Date.now().toString().slice(-8)}</p>
-                                    </div>
-                                </div>
-
-                                {/* DATOS ENCUENTRO COMPACTOS */}
-                                <div className="grid grid-cols-4 gap-2 mb-6 text-[10px] uppercase bg-slate-50 p-2 border border-slate-200 rounded-md">
-                                    <div><strong className="block text-slate-400 font-black">Fecha</strong> {teamsInfo?.date || new Date().toLocaleDateString()}</div>
-                                    <div><strong className="block text-slate-400 font-black">Hora</strong> {teamsInfo?.time?.slice(0, 5) || 'A CONFIRMAR'}</div>
-                                    <div className="col-span-2"><strong className="block text-slate-400 font-black">Gimnasio</strong> {teamsInfo?.gym || 'Polivalente'}</div>
-
-                                    <div><strong className="block text-slate-400 font-black">Competencia</strong> Apertura 2026</div>
-                                    <div><strong className="block text-slate-400 font-black">Instancia</strong> {teamsInfo?.phase || 'Fase Regular'}</div>
-                                    <div><strong className="block text-slate-400 font-black">Categoría</strong> {teamsInfo?.category || 'Mayores'}</div>
-                                    <div><strong className="block text-slate-400 font-black">Género</strong> {teamsInfo?.gender || 'Masculino'}</div>
-                                </div>
-
-                                {/* MARCADOR GLOBAL */}
-                                <div className="flex items-center justify-between mb-8 px-8">
-                                    <div className="text-center w-1/3">
-                                        <h2 className="text-2xl font-black text-blue-800 uppercase">{teamsInfo?.home?.name || 'Local'}</h2>
-                                        <div className="w-full h-1 bg-blue-800 mt-2 mx-auto"></div>
-                                    </div>
-                                    <div className="text-6xl font-black text-slate-800 px-8 border-x-2 border-slate-100 flex items-center justify-center gap-4">
-                                        <span>{setsWonHome}</span>
-                                        <span className="text-slate-300 text-4xl">-</span>
-                                        <span>{setsWonAway}</span>
-                                    </div>
-                                    <div className="text-center w-1/3">
-                                        <h2 className="text-2xl font-black text-red-800 uppercase">{teamsInfo?.away?.name || 'Visita'}</h2>
-                                        <div className="w-full h-1 bg-red-800 mt-2 mx-auto"></div>
-                                    </div>
-                                </div>
-
-                                {/* TABLA DE SETS */}
-                                <table className="w-full mb-8 text-sm text-center border-collapse border border-slate-200">
-                                    <thead className="bg-slate-900 text-white font-bold uppercase">
-                                        <tr>
-                                            <th className="py-2">Set</th>
-                                            <th>Puntos Local</th>
-                                            <th>Puntos Visita</th>
-                                            <th>Estado</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {sets.map((s, i) => (
-                                            <tr key={i} className="border-b border-slate-200 even:bg-slate-50">
-                                                <td className="py-2 font-bold">{s.number}</td>
-                                                <td>{s.home}</td>
-                                                <td>{s.away}</td>
-                                                {/* ESTADO LIMPIO: Si no terminó, no muestra nada */}
-                                                <td className="text-xs font-bold uppercase text-slate-500">{s.finished ? 'Finalizado' : ''}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-
-                                {/* LISTAS DE JUGADORES */}
-                                <div className="grid grid-cols-2 gap-8 mb-8 flex-1">
-                                    {/* Local Roster */}
-                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
-                                        <div className="bg-blue-100 p-2 text-center font-bold text-blue-900 text-xs uppercase border-b border-blue-200">Plantel Local</div>
-                                        <ul className="text-xs p-2 space-y-1">
-                                            {fullRosterHome.map(p => (
-                                                <li key={p.id} className="flex justify-between border-b border-slate-50 pb-1">
-                                                    <span className="font-bold">#{p.number}</span> <span>{p.name}</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                    {/* Away Roster */}
-                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
-                                        <div className="bg-red-100 p-2 text-center font-bold text-red-900 text-xs uppercase border-b border-red-200">Plantel Visita</div>
-                                        <ul className="text-xs p-2 space-y-1">
-                                            {fullRosterAway.map(p => (
-                                                <li key={p.id} className="flex justify-between border-b border-slate-50 pb-1">
-                                                    <span className="font-bold">#{p.number}</span> <span>{p.name}</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                </div>
-
-                                {/* SANCTIONS DIAGRAM / LOG */}
-                                {sanctionsLog && sanctionsLog.length > 0 && (
-                                    <div className="mb-8 border border-slate-200 rounded-lg overflow-hidden">
-                                        <div className="bg-red-50 text-red-900 font-bold p-2 text-center text-xs uppercase border-b border-red-200">
-                                            Registro de Sanciones (Tarjetas)
-                                        </div>
-                                        <table className="w-full text-[10px] text-center">
-                                            <thead className="bg-slate-50 text-slate-500 uppercase">
-                                                <tr>
-                                                    <th className="p-1">Jugador/a</th>
-                                                    <th className="p-1">Sanción</th>
-                                                    <th className="p-1">Set</th>
-                                                    <th className="p-1">Puntos</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {sanctionsLog.map(s => (
-                                                    <tr key={s.id} className="border-b border-slate-100 uppercase font-medium">
-                                                        <td className="p-1 text-slate-700">{s.playerName} ({s.team === 'home' ? 'L' : 'V'})</td>
-                                                        <td className="p-1">
-                                                            {s.type === 'yellow' ? <span className="text-yellow-600">Amonestación</span> :
-                                                                s.type === 'red' ? <span className="text-red-600">Castigo</span> :
-                                                                    s.type === 'expulsion' ? <span className="text-orange-600 tracking-tighter">Expulsión (Set)</span> :
-                                                                        <span className="text-rose-800 tracking-tighter">Descalif. (Partido)</span>}
-                                                        </td>
-                                                        <td className="p-1 font-bold">{s.setNum}</td>
-                                                        <td className="p-1 font-bold">{s.homeScore} - {s.awayScore}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-
-                                {/* OBSERVACIONES */}
-                                <div className="bg-yellow-50 border border-yellow-200 p-4 mb-8 text-xs rounded-lg">
-                                    <strong className="block text-yellow-700 uppercase mb-2">Observaciones del Árbitro</strong>
-                                    <p className="italic text-slate-700">{observations || "Sin observaciones."}</p>
-                                </div>
-
-                                {/* FIRMAS */}
-                                {(() => {
-                                    const isNewSignatureLayout = !!signatures.scorer || !!signatures.scorerName || !!signatures.ref2;
-                                    if (isNewSignatureLayout) {
-                                        return (
-                                            <div className="mt-auto flex flex-col gap-6">
-                                                {/* Fila 1: Capitanes */}
-                                                <div className="grid grid-cols-2 gap-8 mb-2">
-                                                    <div className="text-center border-t border-slate-300 pt-2 relative">
-                                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachHome ? `DT: ${staff.coachHome}` : ''} {staff.ayTecHome ? `| Ay: ${staff.ayTecHome}` : ''}</p>
-                                                        {signatures.capHome && <img src={signatures.capHome} className="h-12 mx-auto mb-1" />}
-                                                        <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Local</p>
-                                                    </div>
-                                                    <div className="text-center border-t border-slate-300 pt-2 relative">
-                                                        <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachAway ? `DT: ${staff.coachAway}` : ''} {staff.ayTecAway ? `| Ay: ${staff.ayTecAway}` : ''}</p>
-                                                        {signatures.capAway && <img src={signatures.capAway} className="h-12 mx-auto mb-1" />}
-                                                        <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Visita</p>
-                                                    </div>
-                                                </div>
-                                                {/* Fila 2: Cuerpo Arbitral */}
-                                                <div className={`grid ${staff.ref2 ? 'grid-cols-3' : 'grid-cols-2'} gap-8 mb-8`}>
-                                                    <div className="text-center border-t border-slate-300 pt-2">
-                                                        {signatures.ref1 && <img src={signatures.ref1} className="h-12 mx-auto mb-1" />}
-                                                        <p className="text-[10px] font-bold uppercase text-slate-500">1er Árbitro: {referees.find(r => r.id === staff.ref1)?.last_name || 'Asignado'}</p>
-                                                    </div>
-                                                    {staff.ref2 && (
-                                                        <div className="text-center border-t border-slate-300 pt-2">
-                                                            {signatures.ref2 && <img src={signatures.ref2} className="h-12 mx-auto mb-1" />}
-                                                            <p className="text-[10px] font-bold uppercase text-slate-500">2do Árbitro: {referees.find(r => r.id === staff.ref2)?.last_name || 'Asignado'}</p>
-                                                        </div>
-                                                    )}
-                                                    <div className="text-center border-t border-slate-300 pt-2">
-                                                        {signatures.scorer && <img src={signatures.scorer} className="h-12 mx-auto mb-1" />}
-                                                        <p className="text-[10px] font-bold uppercase text-slate-500">Planillero: {signatures.scorerName || 'Planillero'}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    } else {
-                                        return (
-                                            <div className="grid grid-cols-3 gap-8 mb-8 mt-auto">
-                                                <div className="text-center border-t border-slate-300 pt-2 relative">
-                                                    <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachHome ? `DT: ${staff.coachHome}` : ''} {staff.ayTecHome ? `| Ay: ${staff.ayTecHome}` : ''}</p>
-                                                    {signatures.capHome && <img src={signatures.capHome} className="h-12 mx-auto mb-1" />}
-                                                    <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Local</p>
-                                                </div>
-                                                <div className="text-center border-t border-slate-300 pt-2 relative">
-                                                    <p className="absolute -top-4 w-full text-center text-[9px] font-bold text-slate-500">{staff.coachAway ? `DT: ${staff.coachAway}` : ''} {staff.ayTecAway ? `| Ay: ${staff.ayTecAway}` : ''}</p>
-                                                    {signatures.capAway && <img src={signatures.capAway} className="h-12 mx-auto mb-1" />}
-                                                    <p className="text-[10px] font-bold uppercase text-slate-500">Capitán Visita</p>
-                                                </div>
-                                                <div className="text-center border-t border-slate-300 pt-2">
-                                                    {signatures.ref1 && <img src={signatures.ref1} className="h-12 mx-auto mb-1" />}
-                                                    <p className="text-[10px] font-bold uppercase text-slate-500">1er Árbitro: {referees.find(r => r.id === staff.ref1)?.last_name || 'Asignado'}</p>
-                                                </div>
-                                            </div>
-                                        );
-                                    }
-                                })()}
-
-                                {/* FOOTER */}
-                                <div className="flex justify-between items-end text-[10px] text-slate-400 pt-4 border-t border-slate-100">
-                                    <div>
-                                        {staff.ref1 && <p>1º Árbitro: <span className="font-bold text-slate-600">{referees.find(r => r.id === staff.ref1)?.last_name}</span></p>}
-                                        {staff.ref2 && <p>2º Árbitro: <span className="font-bold text-slate-600">{referees.find(r => r.id === staff.ref2)?.last_name}</span></p>}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <QrCode size={32} className="text-slate-800" />
-                                        <div className="text-right">
-                                            <p className="font-bold">VALIDACIÓN DIGITAL</p>
-                                            <p>Escanee para verificar</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                            </div>
-
-                            {/* BOTONES ACCIÓN FLOTANTES */}
-                            <div className="fixed bottom-8 right-8 flex gap-4 z-50 print:hidden">
-                                <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-black transition"><Download size={16} /> Imprimir</button>
-                                {!readOnly && (
-                                    <button onClick={submitMatchSheet} className="bg-green-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg hover:bg-green-700 transition"><Check size={16} /> Finalizar y Enviar</button>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-            
             {duplicateNumberWarning && (
                 <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl z-[100] font-bold border-2 border-red-400 flex items-center gap-2 animate-bounce">
                     <AlertTriangle size={20} /> {duplicateNumberWarning}

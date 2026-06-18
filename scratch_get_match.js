@@ -1,19 +1,47 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 
-const env = fs.readFileSync('.env.local', 'utf8');
-let supabaseUrl = '';
-let supabaseKey = '';
+let envConfig = {};
+try {
+    const env = fs.readFileSync('.env.local', 'utf8');
+    env.split('\n').forEach(line => {
+        const parts = line.split('=');
+        if (parts.length >= 2) {
+            envConfig[parts[0].trim()] = parts.slice(1).join('=').trim();
+        }
+    });
+} catch (e) {}
 
-env.split('\n').forEach(line => {
-    if (line.startsWith('NEXT_PUBLIC_SUPABASE_URL=')) supabaseUrl = line.split('=')[1].trim();
-    if (line.startsWith('NEXT_PUBLIC_SUPABASE_ANON_KEY=')) supabaseKey = line.split('=')[1].trim();
-});
+const supabaseUrl = envConfig['NEXT_PUBLIC_SUPABASE_URL'];
+const serviceRoleKey = envConfig['SUPABASE_SERVICE_ROLE_KEY'];
 
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-async function run() {
-    const { data } = await supabase.from('matches').select('id, sheet_status').eq('sheet_status', 'submitted').limit(1);
-    console.log(data);
+if (!supabaseUrl || !serviceRoleKey) {
+    console.error("Faltan variables en .env.local");
+    process.exit(1);
 }
-run();
+
+// Inicializar cliente administrativo
+const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+async function initBucket() {
+    console.log("Intentando crear el bucket 'match-signatures'...");
+    
+    // Crear el bucket
+    const { data, error } = await supabase.storage.createBucket('match-signatures', {
+        public: true,
+        allowedMimeTypes: ['image/png'],
+        fileSizeLimit: 1024 * 1024 * 2 // 2MB
+    });
+
+    if (error) {
+        if (error.message.includes('already exists')) {
+            console.log("El bucket 'match-signatures' ya existe.");
+        } else {
+            console.error("Error al crear el bucket:", error);
+        }
+    } else {
+        console.log("Bucket creado exitosamente:", data);
+    }
+}
+
+initBucket();

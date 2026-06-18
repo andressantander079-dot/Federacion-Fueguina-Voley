@@ -4,8 +4,14 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Eye, FileCheck, Calendar, Download } from 'lucide-react';
 import MatchSheetViewer from './MatchSheetViewer';
+import { formatArgentinaDateNumerical } from '@/lib/dateUtils';
 
-export default function MatchSheetsTable() {
+interface MatchSheetsTableProps {
+    categoryId?: string;
+    gender?: string;
+}
+
+export default function MatchSheetsTable({ categoryId, gender }: MatchSheetsTableProps) {
     const [sheets, setSheets] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
@@ -14,19 +20,38 @@ export default function MatchSheetsTable() {
 
     useEffect(() => {
         fetchSheets();
-    }, []);
+    }, [categoryId, gender]);
 
     async function fetchSheets() {
         setLoading(true);
-        // Traemos solo los partidos que tienen planilla ENVIADA (submitted)
-        const { data, error } = await supabase
+        // Traemos solo los partidos que tienen planilla ENVIADA (submitted), optimizando sin sheet_data y removiendo sheet_url que no existe en DB
+        let query = supabase
             .from('matches')
-            .select('*, home_team:home_team_id(name), away_team:away_team_id(name)')
-            .eq('sheet_status', 'submitted')
-            .order('scheduled_time', { ascending: false });
+            .select(`
+                id,
+                scheduled_time,
+                home_score,
+                away_score,
+                sheet_status,
+                home_team:home_team_id(name),
+                away_team:away_team_id(name),
+                category:categories(name),
+                tournaments!inner(gender)
+            `)
+            .eq('sheet_status', 'submitted');
+
+        if (categoryId) {
+            query = query.eq('category_id', categoryId);
+        }
+
+        if (gender) {
+            query = query.eq('tournaments.gender', gender);
+        }
+
+        const { data, error } = await query.order('scheduled_time', { ascending: true });
 
         if (error) {
-            console.error('Error fetching sheets:', error);
+            console.error("Detalle del error:", error.message, error.details, error.hint, error);
         }
 
         setSheets(data || []);
@@ -68,7 +93,7 @@ export default function MatchSheetsTable() {
                                 <tr key={match.id} className="hover:bg-gray-50 transition group">
                                     <td className="px-3 py-4 md:px-6 font-bold text-gray-600 flex items-center gap-2 whitespace-nowrap text-xs md:text-sm">
                                         <Calendar size={14} className="text-gray-300 hidden md:block" />
-                                        {new Date(match.scheduled_time).toLocaleDateString()}
+                                        {formatArgentinaDateNumerical(match.scheduled_time)}
                                     </td>
                                     <td className="px-3 py-4 md:px-6 min-w-[150px]">
                                         <div className="font-black text-gray-800 uppercase text-xs md:text-sm leading-tight">
@@ -77,12 +102,12 @@ export default function MatchSheetsTable() {
                                     </td>
                                     <td className="px-3 py-4 md:px-6 text-center">
                                         <span className="bg-slate-900 text-white px-2 py-1 md:px-3 rounded font-mono font-bold text-xs md:text-sm whitespace-nowrap">
-                                            {match.sheet_data?.final_score?.home || 0} - {match.sheet_data?.final_score?.away || 0}
+                                            {match.home_score ?? 0} - {match.away_score ?? 0}
                                         </span>
                                     </td>
                                     <td className="px-3 py-4 md:px-6 text-center hidden sm:table-cell">
                                         <span className="text-[10px] md:text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded whitespace-nowrap">
-                                            {match.sheet_data?.metadata?.category || 'General'}
+                                            {match.category?.name || 'General'}
                                         </span>
                                     </td>
                                     <td className="px-3 py-4 md:px-6 text-right">

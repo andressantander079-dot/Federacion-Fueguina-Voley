@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Settings, Image, DollarSign, MapPin, Users, Info, Save, Upload, Trash2, Plus, GripVertical, X, ExternalLink } from 'lucide-react';
+import { Settings, Image, DollarSign, MapPin, Users, Info, Save, Upload, Trash2, Plus, GripVertical, X, ExternalLink, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSettings } from '@/hooks/useSettings';
 
@@ -44,6 +44,8 @@ export default function AdminConfigPage() {
    const [tramites, setTramites] = useState<any[]>([{ title: '', price: '' }]);
    const [categories, setCategories] = useState<any[]>([]);
    const [newCategory, setNewCategory] = useState<{ name: string, min_year?: string, max_year?: string }>({ name: '' });
+   const [editingCategory, setEditingCategory] = useState<{ id: string, name: string, min_year?: string, max_year?: string } | null>(null);
+   const [isEditingCategory, setIsEditingCategory] = useState(false);
 
 
    // Uploads
@@ -294,6 +296,47 @@ export default function AdminConfigPage() {
             console.error("Delete category error:", err);
             toast.error(err.message);
          }
+      }
+   }
+
+   function handleEditCategory(c: any) {
+      setEditingCategory({
+         id: c.id,
+         name: c.name,
+         min_year: c.min_year ? String(c.min_year) : '',
+         max_year: c.max_year ? String(c.max_year) : ''
+      });
+      setIsEditingCategory(true);
+   }
+
+   async function handleSaveCategory(e: React.FormEvent) {
+      e.preventDefault();
+      if (!editingCategory || !editingCategory.name) return;
+
+      const confirmSave = window.confirm("¿Seguro que desea guardar este cambio?");
+      if (!confirmSave) return;
+
+      try {
+         const payload: any = {
+            name: editingCategory.name,
+            min_year: editingCategory.min_year ? parseInt(editingCategory.min_year) : null,
+            max_year: editingCategory.max_year ? parseInt(editingCategory.max_year) : null
+         };
+
+         const { error } = await supabase
+            .from('categories')
+            .update(payload)
+            .eq('id', editingCategory.id);
+
+         if (error) throw error;
+
+         toast.success("Categoría actualizada correctamente");
+         setIsEditingCategory(false);
+         setEditingCategory(null);
+         fetchSubData();
+      } catch (err: any) {
+         console.error("Error saving category:", err);
+         toast.error("Error al guardar la categoría: " + err.message);
       }
    }
 
@@ -685,10 +728,76 @@ export default function AdminConfigPage() {
                                           </span>
                                        )}
                                     </div>
-                                    <button onClick={() => deleteCategory(c.id)} className="text-zinc-500 hover:text-red-600 transition"><Trash2 size={16} /></button>
+                                    <div className="flex items-center gap-2">
+                                       <button onClick={() => handleEditCategory(c)} className="text-zinc-500 hover:text-blue-500 transition"><Pencil size={16} /></button>
+                                       <button onClick={() => deleteCategory(c.id)} className="text-zinc-500 hover:text-red-600 transition"><Trash2 size={16} /></button>
+                                    </div>
                                  </div>
                               ))}
                            </div>
+
+                           {/* MODAL PARA EDITAR CATEGORÍA */}
+                           {isEditingCategory && editingCategory && (
+                              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                 <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-zinc-700 animate-in zoom-in-95">
+                                    <div className="flex justify-between items-center mb-6">
+                                       <h3 className="text-xl font-bold dark:text-white text-zinc-800">Editar Categoría</h3>
+                                       <button onClick={() => { setIsEditingCategory(false); setEditingCategory(null); }} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-white"><X className="w-6 h-6" /></button>
+                                    </div>
+
+                                    <form onSubmit={handleSaveCategory} className="space-y-4">
+                                       <div>
+                                          <label className="block text-xs font-bold text-slate-500 mb-1">Nombre</label>
+                                          <input
+                                             className="w-full p-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-bold text-slate-800 dark:text-white"
+                                             value={editingCategory.name}
+                                             onChange={e => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                                             required
+                                          />
+                                       </div>
+
+                                       <div className="grid grid-cols-2 gap-4">
+                                          <div>
+                                             <label className="block text-xs font-bold text-slate-500 mb-1">Año Mínimo</label>
+                                             <input
+                                                type="number"
+                                                className="w-full p-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-bold text-slate-800 dark:text-white"
+                                                placeholder="2000"
+                                                value={editingCategory.min_year || ''}
+                                                onChange={e => setEditingCategory({ ...editingCategory, min_year: e.target.value })}
+                                             />
+                                          </div>
+                                          <div>
+                                             <label className="block text-xs font-bold text-slate-500 mb-1">Año Máximo</label>
+                                             <input
+                                                type="number"
+                                                className="w-full p-2 rounded-lg bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-sm font-bold text-slate-800 dark:text-white"
+                                                placeholder="2010"
+                                                value={editingCategory.max_year || ''}
+                                                onChange={e => setEditingCategory({ ...editingCategory, max_year: e.target.value })}
+                                             />
+                                          </div>
+                                       </div>
+
+                                       <div className="flex gap-3 mt-6">
+                                          <button 
+                                             type="button"
+                                             onClick={() => { setIsEditingCategory(false); setEditingCategory(null); }}
+                                             className="flex-1 py-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-lg font-bold transition text-center text-sm"
+                                          >
+                                             Cancelar
+                                          </button>
+                                          <button 
+                                             type="submit"
+                                             className="flex-1 py-3 bg-tdf-orange hover:bg-orange-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition text-sm"
+                                          >
+                                             <Save className="w-5 h-5" /> Guardar
+                                          </button>
+                                       </div>
+                                    </form>
+                                 </div>
+                              </div>
+                           )}
                         </div>
                      </div>
                   </div>

@@ -9,6 +9,7 @@ import MatchSheetModal from '@/components/Club/MatchSheetModal';
 import { calculateStandings, StandingRow } from '@/lib/tournamentUtils';
 import { ArrowLeft, Trophy, Calendar, FileText, Download, MapPin, Clock, AlertTriangle, ChevronDown, Check, Users, Eye } from 'lucide-react';
 import MatchSheetViewer from '@/components/admin/MatchSheetViewer';
+import { formatArgentinaDateNumerical, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 
 // Helper for logos
 function TeamLogo({ url, name, className = "w-10 h-10" }: { url?: string, name: string, className?: string }) {
@@ -44,6 +45,8 @@ export default function CompetitionDetail() {
     const [categories, setCategories] = useState<any[]>([]); // For modal logic
     const [standings, setStandings] = useState<StandingRow[]>([]);
     const [activeTab, setActiveTab] = useState<'standings' | 'fixture' | 'sheets'>('standings');
+    const [clubSheets, setClubSheets] = useState<any[]>([]);
+    const [loadingSheets, setLoadingSheets] = useState(true);
 
     // Modal State
     const [isSheetModalOpen, setIsSheetModalOpen] = useState(false);
@@ -65,14 +68,26 @@ export default function CompetitionDetail() {
             if (tError) throw tError;
             setTournament(t);
 
-            // 3. Matches (for Fixture & Standings)
+            // 3. Matches (for Fixture & Standings) - Optimized selecting specific columns, omitting sheet_data
             const { data: m, error: mError } = await supabase
                 .from('matches')
                 .select(`
-          *,
-          home_team:teams!home_team_id(id, name, shield_url),
-          away_team:teams!away_team_id(id, name, shield_url)
-        `)
+                    id,
+                    tournament_id,
+                    category_id,
+                    home_team_id,
+                    away_team_id,
+                    round,
+                    scheduled_time,
+                    court_name,
+                    status,
+                    home_score,
+                    away_score,
+                    set_scores,
+                    sheet_status,
+                    home_team:teams!home_team_id(id, name, shield_url),
+                    away_team:teams!away_team_id(id, name, shield_url)
+                `)
                 .eq('tournament_id', tournamentId)
                 .order('scheduled_time', { ascending: true }); // Chronological for Fixture
 
@@ -99,9 +114,37 @@ export default function CompetitionDetail() {
             );
             setStandings(calculatedStandings);
 
+            // 6. Fetch Club specific finished sheets (strictly filtered in DB, omitting sheet_data)
+            setLoadingSheets(true);
+            const { data: cSheets, error: cSheetsError } = await supabase
+                .from('matches')
+                .select(`
+                    id,
+                    scheduled_time,
+                    home_score,
+                    away_score,
+                    status,
+                    sheet_status,
+                    round,
+                    home_team:teams!home_team_id(id, name, shield_url),
+                    away_team:teams!away_team_id(id, name, shield_url)
+                `)
+                .eq('tournament_id', tournamentId)
+                .in('status', ['finalizado', 'finished'])
+                .or(`home_team_id.eq.${currentTeamId},away_team_id.eq.${currentTeamId}`)
+                .order('scheduled_time', { ascending: false });
+
+            if (cSheetsError) {
+                console.error("Error fetching club sheets:", cSheetsError);
+            } else {
+                setClubSheets(cSheets || []);
+            }
+            setLoadingSheets(false);
+
         } catch (error: any) {
             console.error("Fetch Data Error:", JSON.stringify(error, null, 2));
             if (error?.message) console.error("Error Message:", error.message);
+            setLoadingSheets(false);
         } finally {
             setLoading(false);
         }
@@ -249,22 +292,22 @@ export default function CompetitionDetail() {
 
                                     <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between gap-6 text-xs text-slate-400 font-medium">
                                         <div className="flex items-center gap-4">
-                                            {m.date_time && (
+                                            {m.scheduled_time && (
                                                 <div className="flex items-center gap-1.5">
                                                     <Calendar size={14} className="text-slate-300" />
-                                                    {new Date(m.date_time).toLocaleDateString()}
+                                                    {formatArgentinaDateNumerical(m.scheduled_time)}
                                                 </div>
                                             )}
-                                            {m.date_time && (
+                                            {m.scheduled_time && (
                                                 <div className="flex items-center gap-1.5">
                                                     <Clock size={14} className="text-slate-300" />
-                                                    {new Date(m.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    {formatArgentinaTimeLiteral(m.scheduled_time)} hs
                                                 </div>
                                             )}
-                                            {m.venue && (
+                                            {m.court_name && (
                                                 <div className="flex items-center gap-1.5">
                                                     <MapPin size={14} className="text-slate-300" />
-                                                    {m.venue.name}
+                                                    {m.court_name}
                                                 </div>
                                             )}
                                         </div>
@@ -291,10 +334,12 @@ export default function CompetitionDetail() {
                 {/* --- TAB: PLANILLAS --- */}
                 {activeTab === 'sheets' && (
                     <div className="grid gap-3">
-                        {matches.filter(m => m.status === 'finalizado').length === 0 ? (
-                            <div className="text-center py-10 text-slate-400">No hay partidos finalizados con planilla disponible.</div>
+                        {loadingSheets ? (
+                            <div className="text-center py-10 text-slate-400">Cargando planillas...</div>
+                        ) : clubSheets.length === 0 ? (
+                            <div className="text-center py-10 text-slate-400">No hay partidos finalizados con planilla disponible para su club.</div>
                         ) : (
-                            matches.filter(m => m.status === 'finalizado').map(m => (
+                            clubSheets.map(m => (
                                 <div key={m.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between hover:border-blue-300 transition group">
                                     <div className="flex items-center gap-4">
                                         <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center shrink-0">
@@ -305,26 +350,34 @@ export default function CompetitionDetail() {
                                                 {m.home_team?.name} vs {m.away_team?.name}
                                             </p>
                                             <p className="text-xs text-slate-400 mt-0.5">
-                                                {new Date(m.scheduled_time).toLocaleDateString()} • {m.home_score}-{m.away_score}
+                                                {formatArgentinaDateNumerical(m.scheduled_time)} • {m.home_score}-{m.away_score}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setSelectedSheetId(m.id)}
-                                            className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-black transition shadow-lg shadow-slate-200"
-                                        >
-                                            <Eye size={14} /> Ver Planilla
-                                        </button>
-                                        {m.sheet_url && (
-                                            <a
-                                                href={m.sheet_url}
-                                                target="_blank"
-                                                className="px-3 py-2 bg-white text-slate-700 border border-slate-200 text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-slate-50 transition"
-                                            >
-                                                <Download size={14} /> PDF
-                                            </a>
+                                        {m.sheet_status === 'submitted' ? (
+                                            <>
+                                                <button
+                                                    onClick={() => setSelectedSheetId(m.id)}
+                                                    className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-black transition shadow-lg shadow-slate-200"
+                                                >
+                                                    <Eye size={14} /> Ver Planilla
+                                                </button>
+                                                {m.sheet_url && (
+                                                    <a
+                                                        href={m.sheet_url}
+                                                        target="_blank"
+                                                        className="px-3 py-2 bg-white text-slate-700 border border-slate-200 text-xs font-bold rounded-lg flex items-center gap-2 hover:bg-slate-50 transition"
+                                                    >
+                                                        <Download size={14} /> PDF
+                                                    </a>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-3 py-1 rounded-full border border-yellow-200">
+                                                En curso
+                                            </span>
                                         )}
                                     </div>
                                 </div>
