@@ -28,7 +28,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const { bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, setServingTeam, addPoint, subtractPoint, substitutePlayer, finishSet, startNextSet, canFinishSet, initPositions, addPlayerToBench, setAllState, setBenchHome, setBenchAway, setPosHome, setPosAway, // Important for hydration
         moveToCourt, removeFromCourt, removePlayerFromMatch,
         blockedPlayers, blockPlayer, unblockSetPlayers, sanctionsLog, addSanction,
-        timeouts, requestTimeout, subsCount, subHistory
+        timeouts, requestTimeout, subsCount, subHistory,
+        courtPositionsHome, courtPositionsAway, warnings, USE_NEW_ROTATION, confirmR5Lineup
     } = useVolleyMatch();
 
     // --- ESTADOS DE UI ---
@@ -64,6 +65,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     // Si cambia el set, podríamos resetear el manualSideSwap, pero para mantenerlo simple aplicamos el XOR.
     const isSidesSwapped = (currentSetIdx % 2 !== 0) !== manualSideSwap;
 
+    const leftTeam: 'home' | 'away' = isSidesSwapped ? 'away' : 'home';
+    const rightTeam: 'home' | 'away' = isSidesSwapped ? 'home' : 'away';
+
+    const leftPositions = leftTeam === 'home' ? courtPositionsHome : courtPositionsAway;
+    const rightPositions = rightTeam === 'home' ? courtPositionsHome : courtPositionsAway;
+
+    const leftRawPos = leftTeam === 'home' ? posHome : posAway;
+    const rightRawPos = rightTeam === 'home' ? posHome : posAway;
+
     const openR5 = (team: 'home' | 'away') => {
         setR5Form([null, null, null, null, null, null]);
         setR5Libero(null);
@@ -74,49 +84,19 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     };
 
     const confirmR5 = (team: 'home' | 'away') => {
-        const matchPosArray: (any | null)[] = [null, null, null, null, null, null];
-        const fillOrder = [0, 5, 4, 3, 2, 1]; // I->0, II->5, III->4, IV->3, V->2, VI->1
-        
-        r5Form.forEach((p, i) => {
-            if (p) {
-                // @ts-ignore
-                matchPosArray[fillOrder[i]] = p;
-            }
-        });
+        const liberos = [r5Libero, r5Libero2].filter((p): p is any => p !== null);
 
-        // Duplicate Check
-        const allR5Players = [...r5Form, r5Libero, r5Libero2].filter(p => !!p);
-        const numbers = allR5Players.map(p => p.number);
-        const duplicates = numbers.filter((item, index) => numbers.indexOf(item) !== index);
-        if (duplicates.length > 0) {
-            setDuplicateNumberWarning(`El número ${duplicates[0]} está duplicado en la formación inicial.`);
+        try {
+            confirmR5Lineup(team, r5Form, liberos);
+            
+            if (team === 'home') {
+                setShowR5ModalHome(false);
+            } else {
+                setShowR5ModalAway(false);
+            }
+        } catch (err: any) {
+            setDuplicateNumberWarning(err.message || "Error en la formación.");
             setTimeout(() => setDuplicateNumberWarning(null), 3000);
-            return;
-        }
-
-        // Handle Libero: update the isLibero flag in bench if assigned here
-        
-        if (team === 'home') {
-            setPosHome(matchPosArray);
-            if (r5Libero) {
-                setBenchHome(prev => prev.map(p => p.id === r5Libero.id ? {...p, isLibero: true} : p));
-            }
-            if (r5Libero2) {
-                setBenchHome(prev => prev.map(p => p.id === r5Libero2.id ? {...p, isLibero: true} : p));
-            }
-            // Remove players from bench that went to court
-            setBenchHome(prev => prev.filter(p => !matchPosArray.find(mp => mp?.id === p.id)));
-            setShowR5ModalHome(false);
-        } else {
-            setPosAway(matchPosArray);
-            if (r5Libero) {
-                setBenchAway(prev => prev.map(p => p.id === r5Libero.id ? {...p, isLibero: true} : p));
-            }
-            if (r5Libero2) {
-                setBenchAway(prev => prev.map(p => p.id === r5Libero2.id ? {...p, isLibero: true} : p));
-            }
-            setBenchAway(prev => prev.filter(p => !matchPosArray.find(mp => mp?.id === p.id)));
-            setShowR5ModalAway(false);
         }
     };
 
@@ -782,7 +762,6 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 setSaveError("La conexión es lenta o se perdió. Reintentando...");
             }
         }, 7000);
-
         const timeoutId = setTimeout(async () => {
             const currentSheetData = {
                 // ... (existing data construction)
@@ -801,6 +780,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 serving_team: servingTeam,
                 blocked_players: blockedPlayers,
                 sanctionsLog,
+                warnings: warnings || [], // Telemetry warnings for post-deploy monitoring
                 metadata: {
                     category: teamsInfo?.category || 'Voley',
                     competition: 'Torneo Oficial',
@@ -827,7 +807,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         }, 2000); // 2 second debounce
 
         return () => { clearTimeout(timeoutId); clearTimeout(watchdog); };
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase, blockedPlayers, sanctionsLog]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase, blockedPlayers, sanctionsLog, warnings]);
 
     // Manual Refresh for Viewers
     const handleForceRefresh = () => {
@@ -1341,6 +1321,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         <div className="flex items-center gap-2 text-emerald-700 text-xs font-black uppercase bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100"><Users size={12} /> {teamsInfo.category}</div>
                     )}
                     <div className="flex items-center gap-2 text-orange-600 text-xs font-black uppercase bg-orange-50 px-3 py-1 rounded-full border border-orange-100">Al Mejor de {bestOfSets} Sets</div>
+                    {USE_NEW_ROTATION && (
+                        <div 
+                            className="flex items-center gap-2 text-indigo-700 text-xs font-black uppercase bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 cursor-help"
+                            title="Mejora: Rotación fluida e inmutable de jugadoras v2 activa para mayor precisión y transiciones suaves."
+                        >
+                            <Volleyball size={12} className="animate-pulse" /> Rotación Fluida v2
+                        </div>
+                    )}
                     <button onClick={() => setShowRostersModal(true)} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 text-xs font-bold uppercase transition"><Users size={14} /> Planteles</button>
                 </div>
 
@@ -1596,40 +1584,42 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     </div>
 
-                    <div className={`bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full flex overflow-hidden ${isSidesSwapped ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className="bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full flex overflow-hidden flex-row">
                         <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-slate-800 z-10 shadow-xl -ml-[3px]"></div>
-                        <div className={`relative flex-1 bg-blue-50/30 border-slate-200/50 ${isSidesSwapped ? 'border-l' : 'border-r'}`}>
-                            {posHome.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
+                        {/* Cancha Lado Izquierdo (Red a la derecha; Ataque en col 2, Saque/P1 en Fila 3 Col 1) */}
+                        <div className={`relative flex-1 border-slate-200/50 border-r ${leftTeam === 'home' ? 'bg-blue-50/30' : 'bg-red-50/30'}`}>
+                            {leftRawPos.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
                                 <div className="absolute inset-0 flex items-center justify-center z-20">
-                                    <button onClick={() => openR5('home')} className="bg-blue-600 text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:bg-blue-700 hover:scale-105 active:scale-95 transition border-4 border-white/20">
-                                        R5 Local
+                                    <button onClick={() => openR5(leftTeam)} className={`${leftTeam === 'home' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'} text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:scale-105 active:scale-95 transition border-4 border-white/20`}>
+                                        R5 {leftTeam === 'home' ? 'Local' : 'Visitante'}
                                     </button>
                                 </div>
                             )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[3]} team="home" /></div>
-                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[2]} team="home" /></div>
-                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posHome[1]} team="home" /></div>
-                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[4]} team="home" /></div>
-                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posHome[5]} team="home" /></div>
-                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posHome[0]} team="home" isPos1={true} /></div>
+                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(4) || null} team={leftTeam} /></div>
+                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(5) || null} team={leftTeam} /></div>
+                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={leftPositions.get(6) || null} team={leftTeam} /></div>
+                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(3) || null} team={leftTeam} /></div>
+                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(2) || null} team={leftTeam} /></div>
+                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={leftPositions.get(1) || null} team={leftTeam} isPos1={true} /></div>
                             </div>
                         </div>
-                        <div className="relative flex-1 bg-red-50/30">
-                            {posAway.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
+                        {/* Cancha Lado Derecho (Red a la izquierda; Ataque en col 1, Saque/P1 en Fila 1 Col 2) */}
+                        <div className={`relative flex-1 ${rightTeam === 'home' ? 'bg-blue-50/30' : 'bg-red-50/30'}`}>
+                            {rightRawPos.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
                                 <div className="absolute inset-0 flex items-center justify-center z-20">
-                                    <button onClick={() => openR5('away')} className="bg-red-600 text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:bg-red-700 hover:scale-105 active:scale-95 transition border-4 border-white/20">
-                                        R5 Visitante
+                                    <button onClick={() => openR5(rightTeam)} className={`${rightTeam === 'home' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'} text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:scale-105 active:scale-95 transition border-4 border-white/20`}>
+                                        R5 {rightTeam === 'home' ? 'Local' : 'Visitante'}
                                     </button>
                                 </div>
                             )}
                             <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[1]} team="away" /></div>
-                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[2]} team="away" /></div>
-                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={posAway[3]} team="away" /></div>
-                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[0]} team="away" isPos1={true} /></div>
-                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={posAway[5]} team="away" /></div>
-                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={posAway[4]} team="away" /></div>
+                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(6) || null} team={rightTeam} /></div>
+                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(5) || null} team={rightTeam} /></div>
+                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={rightPositions.get(4) || null} team={rightTeam} /></div>
+                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(1) || null} team={rightTeam} isPos1={true} /></div>
+                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(2) || null} team={rightTeam} /></div>
+                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={rightPositions.get(3) || null} team={rightTeam} /></div>
                             </div>
                         </div>
                     </div>

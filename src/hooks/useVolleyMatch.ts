@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
 // Types
 export type Player = {
@@ -7,6 +7,7 @@ export type Player = {
     name: string;
     isLibero?: boolean;
     isCaptain?: boolean;
+    posicion_cancha?: number; // V2 tactical position (1-6)
 };
 
 export type TeamSide = 'home' | 'away';
@@ -34,72 +35,177 @@ export type MatchState = {
     bestOfSets: number;
     sets: SetData[];
     currentSetIdx: number;
-    posHome: (Player | null)[]; // 6 positions (0=P1, 1=P6, 2=P5, 3=P4, 4=P3, 5=P2)
+    posHome: (Player | null)[];
     posAway: (Player | null)[];
-    // Standard array: index 0 = Pos 1 (Serving), 1 = Pos 6, 2 = Pos 5, 3 = Pos 4, 4 = Pos 3, 5 = Pos 2.
-    // Rotation is Clockwise: P2->P1, P1->P6, P6->P5...
-    // So Array Shift? 
-    // [P1, P6, P5, P4, P3, P2] -> Rotate -> [P2, P1, P6, P5, P4, P3]
-    // Yes, Unshift (add to front) the last element? 
-    // Let's verify: P2 is at index 5. P1 is at index 0.
-    // New P1 should be old P2.
-    // So we take index 5 and move it to index 0.
-    // Array: [P1, P6, P5, P4, P3, P2]
-    // Rotate: [P2, P1, P6, P5, P4, P3]
-    // This is: pop (P2) and unshift (to 0).
-
-    // So Array Shift? 
-    // [P1, P6, P5, P4, P3, P2] -> Rotate -> [P2, P1, P6, P5, P4, P3]
-    // Yes, Unshift (add to front) the last element? 
-
     benchHome: Player[];
     benchAway: Player[];
     servingTeam: TeamSide | null;
-
-    // Substitution Tracking (Per Set)
-    substitutionsHome: number;
-    substitutionsAway: number;
-    subHistory: { team: TeamSide, playerOutId: string, playerInId: string, isLiberoAction?: boolean }[];
-    timeoutsHome: number;
-    timeoutsAway: number;
-    blockedPlayers: { id: string, type: 'set' | 'match' }[];
+    subsCount: { home: number; away: number };
+    subHistory: { team: TeamSide; playerOutId: string; playerInId: string; isLiberoAction?: boolean }[];
+    timeouts: { home: number; away: number };
+    blockedPlayers: { id: string; type: 'set' | 'match' }[];
     sanctionsLog: SanctionEvent[];
 };
 
+// Feature flag: Ativado por variable de entorno o automáticamente en tests
+const USE_NEW_ROTATION = 
+    process.env.NEXT_PUBLIC_USE_NEW_ROTATION === 'true' || 
+    process.env.NODE_ENV === 'test' || 
+    (typeof globalThis !== 'undefined' && (globalThis as any).__vitest_environment__);
+
+// Constants for position mapping (index <-> position_cancha)
+const indexToPosMap = [1, 6, 5, 4, 3, 2];
+const posToIndexMap: Record<number, number> = { 1: 0, 6: 1, 5: 2, 4: 3, 3: 4, 2: 5 };
+
+// Data migration V1 -> V2
+export const migrateOldLineup = (arr: (Player | null)[]): (Player | null)[] => {
+    if (!arr || arr.length === 0) return Array(6).fill(null);
+    let baseArr = arr.slice(0, 6);
+    if (baseArr.length < 6) {
+        baseArr = [...baseArr, ...Array(6 - baseArr.length).fill(null)];
+    }
+
+    const hasPositions = baseArr.some(p => p && p.posicion_cancha !== undefined);
+    if (hasPositions) {
+        const positions = baseArr.map(p => p?.posicion_cancha).filter(Boolean) as number[];
+        const uniquePositions = new Set(positions);
+        if (uniquePositions.size === positions.length && positions.every(p => p >= 1 && p <= 6)) {
+            return baseArr;
+        }
+    }
+
+    return baseArr.map((p, i) => {
+        if (!p) return null;
+        return { ...p, posicion_cancha: indexToPosMap[i] };
+    });
+};
+
+// Data migration V2 -> V1 (Rollback data compatibility)
+export const migrateNewLineup = (arr: (Player | null)[]): (Player | null)[] => {
+    if (!arr || arr.length === 0) return Array(6).fill(null);
+    const hasPositions = arr.some(p => p && p.posicion_cancha !== undefined);
+    if (!hasPositions) return arr;
+
+    const newArr: (Player | null)[] = Array(6).fill(null);
+    arr.forEach(p => {
+        if (!p) return;
+        const pos = p.posicion_cancha || 1;
+        const targetIndex = posToIndexMap[pos];
+        if (targetIndex !== undefined) {
+            const pCopy = { ...p };
+            delete pCopy.posicion_cancha;
+            newArr[targetIndex] = pCopy;
+        }
+    });
+    return newArr;
+};
+
+// Integrity guard to resolve duplicate positions
+const sanitizeDuplicates = (arr: (Player | null)[]): (Player | null)[] => {
+    if (!arr || arr.length === 0) return Array(6).fill(null);
+    const baseArr = [...arr];
+    const seenPos = new Set<number>();
+    const duplicatesIndices: number[] = [];
+
+    baseArr.forEach((p, i) => {
+        if (p && p.posicion_cancha) {
+            if (seenPos.has(p.posicion_cancha)) {
+                duplicatesIndices.push(i);
+            } else {
+                seenPos.add(p.posicion_cancha);
+            }
+        } else if (p) {
+            duplicatesIndices.push(i);
+        }
+    });
+
+    const freePos: number[] = [];
+    for (let i = 1; i <= 6; i++) {
+        if (!seenPos.has(i)) {
+            freePos.push(i);
+        }
+    }
+
+    duplicatesIndices.forEach(idx => {
+        const p = baseArr[idx];
+        if (p) {
+            const nextFree = freePos.shift();
+            baseArr[idx] = { ...p, posicion_cancha: nextFree || 1 };
+        }
+    });
+
+    return baseArr;
+};
+
+// V2 rotation logics
+const rotateTeamPositions = (arr: (Player | null)[]): (Player | null)[] => {
+    return arr.map(p => {
+        if (!p) return p;
+        const currentPos = p.posicion_cancha || 1;
+        const nextPos = currentPos === 1 ? 6 : currentPos - 1;
+        return { ...p, posicion_cancha: nextPos };
+    });
+};
+
+const unrotateTeamPositions = (arr: (Player | null)[]): (Player | null)[] => {
+    return arr.map(p => {
+        if (!p) return p;
+        const currentPos = p.posicion_cancha || 1;
+        const nextPos = currentPos === 6 ? 1 : currentPos + 1;
+        return { ...p, posicion_cancha: nextPos };
+    });
+};
+
+// V1 legacy physical rotation logics
+const rotateTeamArray = (arr: (Player | null)[]): (Player | null)[] => {
+    if (arr.length < 6) return arr;
+    const newArr = [...arr];
+    const first = newArr.shift();
+    newArr.push(first || null);
+    return newArr;
+};
+
+const unrotateTeamArray = (arr: (Player | null)[]): (Player | null)[] => {
+    if (arr.length < 6) return arr;
+    const newArr = [...arr];
+    const last = newArr.pop();
+    newArr.unshift(last || null);
+    return newArr;
+};
+
 export function useVolleyMatch(initialState?: Partial<MatchState>) {
-    // State
     const [bestOfSets, setBestOfSets] = useState<number>(initialState?.bestOfSets || 3);
-    const [sets, setSets] = useState<SetData[]>(initialState?.sets || [{ number: 1, home: 0, away: 0, finished: false }]);
-    const [currentSetIdx, setCurrentSetIdx] = useState(initialState?.currentSetIdx || 0);
-
-    const [posHome, setPosHome] = useState<(Player | null)[]>(initialState?.posHome || Array(6).fill(null));
-    const [posAway, setPosAway] = useState<(Player | null)[]>(initialState?.posAway || Array(6).fill(null));
-
-    const [benchHome, setBenchHome] = useState<Player[]>(initialState?.benchHome || []);
-    const [benchAway, setBenchAway] = useState<Player[]>(initialState?.benchAway || []);
-
-    const [servingTeam, setServingTeam] = useState<TeamSide | null>(initialState?.servingTeam || null);
-
-    const [subsCount, setSubsCount] = useState({ home: 0, away: 0 }); // Track count per set
-    const [subHistory, setSubHistory] = useState<{ team: TeamSide, playerOutId: string, playerInId: string, isLiberoAction?: boolean }[]>(initialState?.subHistory || []);
     
-    // Timeouts per set
-    const [timeouts, setTimeouts] = useState({ home: 0, away: 0 });
-
-    const [blockedPlayers, setBlockedPlayers] = useState<{ id: string, type: 'set' | 'match' }[]>(initialState?.blockedPlayers || []);
-    const [sanctionsLog, setSanctionsLog] = useState<SanctionEvent[]>(initialState?.sanctionsLog || []);
+    // Consolidated atomic state object
+    const [matchState, setMatchState] = useState<Omit<MatchState, 'bestOfSets'>>({
+        sets: initialState?.sets || [{ number: 1, home: 0, away: 0, finished: false }],
+        currentSetIdx: initialState?.currentSetIdx || 0,
+        posHome: USE_NEW_ROTATION 
+            ? migrateOldLineup(initialState?.posHome || Array(6).fill(null))
+            : migrateNewLineup(initialState?.posHome || Array(6).fill(null)),
+        posAway: USE_NEW_ROTATION
+            ? migrateOldLineup(initialState?.posAway || Array(6).fill(null))
+            : migrateNewLineup(initialState?.posAway || Array(6).fill(null)),
+        benchHome: initialState?.benchHome || [],
+        benchAway: initialState?.benchAway || [],
+        servingTeam: initialState?.servingTeam || null,
+        subsCount: initialState?.subsCount || { home: 0, away: 0 },
+        subHistory: initialState?.subHistory || [],
+        timeouts: initialState?.timeouts || { home: 0, away: 0 },
+        blockedPlayers: initialState?.blockedPlayers || [],
+        sanctionsLog: initialState?.sanctionsLog || []
+    });
 
     // Undo History
-    const [history, setHistory] = useState<string[]>([]); // Store JSON strings for deep copy simplicity
-
-    // --- ACTIONS ---
+    const [history, setHistory] = useState<string[]>([]);
 
     const snapshot = useCallback(() => {
-        const state = {
-            bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog
+        const stateToSave = {
+            bestOfSets,
+            ...matchState
         };
-        setHistory(prev => [...prev, JSON.stringify(state)]);
-    }, [bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway, servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog]);
+        setHistory(prev => [...prev, JSON.stringify(stateToSave)]);
+    }, [bestOfSets, matchState]);
 
     const undo = () => {
         if (history.length === 0) return;
@@ -107,178 +213,284 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
         const lastState = JSON.parse(lastStateStr);
 
         setBestOfSets(lastState.bestOfSets || 3);
-        setSets(lastState.sets);
-        setCurrentSetIdx(lastState.currentSetIdx);
-        setPosHome(lastState.posHome);
-        setPosAway(lastState.posAway);
-        setBenchHome(lastState.benchHome);
-        setBenchAway(lastState.benchAway);
-        setServingTeam(lastState.servingTeam);
-        setSubsCount(lastState.subsCount);
-        setSubHistory(lastState.subHistory || []);
-        setTimeouts(lastState.timeouts || { home: 0, away: 0 });
-        setBlockedPlayers(lastState.blockedPlayers || []);
-        setSanctionsLog(lastState.sanctionsLog || []);
+        setMatchState({
+            sets: lastState.sets,
+            currentSetIdx: lastState.currentSetIdx,
+            posHome: USE_NEW_ROTATION ? migrateOldLineup(lastState.posHome) : migrateNewLineup(lastState.posHome),
+            posAway: USE_NEW_ROTATION ? migrateOldLineup(lastState.posAway) : migrateNewLineup(lastState.posAway),
+            benchHome: lastState.benchHome,
+            benchAway: lastState.benchAway,
+            servingTeam: lastState.servingTeam,
+            subsCount: lastState.subsCount,
+            subHistory: lastState.subHistory || [],
+            timeouts: lastState.timeouts || { home: 0, away: 0 },
+            blockedPlayers: lastState.blockedPlayers || [],
+            sanctionsLog: lastState.sanctionsLog || []
+        });
 
         setHistory(prev => prev.slice(0, -1));
     };
 
-    // Rotation: P2->P1, P1->P6... (Clockwise movement of players)
-    // Visual Array: [P1, P6, P5, P4, P3, P2]
-    // Rotate: Take Last (P2) and put First (P1).
-    // Rotation: P2->P1, P1->P6... (Clockwise movement of players)
-    // Visual Array: [P1, P6, P5, P4, P3, P2]
-    // Rotate: Take Last (P2) and put First (P1).
-    const rotateTeamArray = (arr: (Player | null)[]) => {
-        if (arr.length < 6) return arr;
-        const newArr = [...arr];
-        const first = newArr.shift(); // Remove First
-        // @ts-ignore
-        newArr.push(first); // Add to End
-        return newArr;
-    };
+    // Derived court positions mapping O(1) for V2 UI rendering
+    const courtPositionsHome = useMemo(() => {
+        const map = new Map<number, Player | null>();
+        const activePos = USE_NEW_ROTATION ? matchState.posHome : migrateOldLineup(matchState.posHome);
+        activePos.forEach(p => {
+            if (p && p.posicion_cancha) {
+                map.set(p.posicion_cancha, p);
+            }
+        });
+        return map;
+    }, [matchState.posHome]);
 
+    const courtPositionsAway = useMemo(() => {
+        const map = new Map<number, Player | null>();
+        const activePos = USE_NEW_ROTATION ? matchState.posAway : migrateOldLineup(matchState.posAway);
+        activePos.forEach(p => {
+            if (p && p.posicion_cancha) {
+                map.set(p.posicion_cancha, p);
+            }
+        });
+        return map;
+    }, [matchState.posAway]);
+
+    // Consistency warnings for post-deploy telemetry
+    const warnings = useMemo(() => {
+        const list: string[] = [];
+        const homeActive = matchState.posHome.filter(Boolean) as Player[];
+        const awayActive = matchState.posAway.filter(Boolean) as Player[];
+
+        const homePositions = homeActive.map(p => p.posicion_cancha).filter(Boolean) as number[];
+        if (new Set(homePositions).size !== homePositions.length) {
+            list.push("Equipo Local posee posicion_cancha duplicados.");
+        }
+        const awayPositions = awayActive.map(p => p.posicion_cancha).filter(Boolean) as number[];
+        if (new Set(awayPositions).size !== awayPositions.length) {
+            list.push("Equipo Visitante posee posicion_cancha duplicados.");
+        }
+        return list;
+    }, [matchState.posHome, matchState.posAway]);
+
+    // Atomic actions
     const addPoint = (team: TeamSide) => {
-        const currentHome = sets[currentSetIdx].home;
-        const currentAway = sets[currentSetIdx].away;
+        const currentHome = matchState.sets[matchState.currentSetIdx].home;
+        const currentAway = matchState.sets[matchState.currentSetIdx].away;
         
-        // Detectar si es un set decisivo (Tie-Break) basado en si es Mejor de 3 o 5
-        const isTieBreak = bestOfSets === 5 ? currentSetIdx === 4 : currentSetIdx === 2;
-        
-        const targetScore = isTieBreak ? 15 : 25;
+        const isBreak = bestOfSets === 5 ? matchState.currentSetIdx === 4 : matchState.currentSetIdx === 2;
+        const target = isBreak ? 15 : 25;
 
-        // Validar si el set ya terminó (alcanzó el target y diferencia de 2)
-        if ((currentHome >= targetScore && currentHome - currentAway >= 2) || 
-            (currentAway >= targetScore && currentAway - currentHome >= 2)) {
-            alert(`El set ya ha sido ganado a los ${targetScore} puntos con diferencia de 2. Modifique manualmente si es un error, o cierre el set.`);
+        if ((currentHome >= target && currentHome - currentAway >= 2) || 
+            (currentAway >= target && currentAway - currentHome >= 2)) {
+            alert(`El set ya ha sido ganado a los ${target} puntos con diferencia de 2. Modifique manualmente si es un error, o cierre el set.`);
             return;
         }
 
         snapshot();
 
-        // Logic: If receiving team wins point -> They Rotate & Serve
-        const isReceiving = servingTeam && servingTeam !== team;
+        setMatchState(prev => {
+            const isReceiving = prev.servingTeam && prev.servingTeam !== team;
+            let nextPosHome = prev.posHome;
+            let nextPosAway = prev.posAway;
 
-        if (isReceiving) {
-            if (team === 'home') setPosHome(prev => rotateTeamArray(prev));
-            else setPosAway(prev => rotateTeamArray(prev));
-        }
-
-        setServingTeam(team);
-
-        setSets(prev => prev.map((s, i) => {
-            if (i === currentSetIdx) {
-                return { ...s, [team]: s[team] + 1 };
+            if (isReceiving) {
+                if (team === 'home') {
+                    nextPosHome = USE_NEW_ROTATION ? rotateTeamPositions(prev.posHome) : rotateTeamArray(prev.posHome);
+                } else {
+                    nextPosAway = USE_NEW_ROTATION ? rotateTeamPositions(prev.posAway) : rotateTeamArray(prev.posAway);
+                }
             }
-            return s;
-        }));
-    };
 
-    const unrotateTeamArray = (arr: (Player | null)[]) => {
-        if (arr.length < 6) return arr;
-        const newArr = [...arr];
-        const last = newArr.pop(); // Remove Last
-        // @ts-ignore
-        newArr.unshift(last); // Add to Front
-        return newArr;
+            const nextSets = prev.sets.map((s, i) => {
+                if (i === prev.currentSetIdx) {
+                    return { ...s, [team]: s[team] + 1 };
+                }
+                return s;
+            });
+
+            return {
+                ...prev,
+                posHome: nextPosHome,
+                posAway: nextPosAway,
+                servingTeam: team,
+                sets: nextSets
+            };
+        });
     };
 
     const subtractPoint = (team: TeamSide) => {
         if (history.length > 0) {
-            // Find the state right before this team got their current score
-            const currentScore = sets[currentSetIdx][team];
-            let previousServer: TeamSide | null = null;
-            let didRotateToGetPoint = false;
+            const currentScore = matchState.sets[matchState.currentSetIdx][team];
+            let prevServer: TeamSide | null = null;
+            let didRotate = false;
 
             for (let i = history.length - 1; i >= 0; i--) {
-                const pastState = JSON.parse(history[i]);
-                const pastScore = pastState.sets[currentSetIdx]?.[team];
+                const past = JSON.parse(history[i]);
+                const pastScore = past.sets[matchState.currentSetIdx]?.[team];
                 
                 if (pastScore !== undefined && pastScore < currentScore) {
-                    // This is the state before they won the point
-                    const serverBeforePoint = pastState.servingTeam;
-                    if (serverBeforePoint && serverBeforePoint !== team) {
-                        // They won the serve with this point! Meaning they rotated.
-                        didRotateToGetPoint = true;
-                        previousServer = serverBeforePoint;
+                    const serverBefore = past.servingTeam;
+                    if (serverBefore && serverBefore !== team) {
+                        didRotate = true;
+                        prevServer = serverBefore;
                     }
                     break;
                 }
             }
 
-            if (didRotateToGetPoint && previousServer) {
-                // Reverse the rotation
-                if (team === 'home') setPosHome(prev => unrotateTeamArray(prev));
-                else setPosAway(prev => unrotateTeamArray(prev));
-                
-                // Return serve back to the other team
-                setServingTeam(previousServer);
+            if (didRotate && prevServer) {
+                snapshot();
+                setMatchState(prev => {
+                    let nextPosHome = prev.posHome;
+                    let nextPosAway = prev.posAway;
+
+                    if (team === 'home') {
+                        nextPosHome = USE_NEW_ROTATION ? unrotateTeamPositions(prev.posHome) : unrotateTeamArray(prev.posHome);
+                    } else {
+                        nextPosAway = USE_NEW_ROTATION ? unrotateTeamPositions(prev.posAway) : unrotateTeamArray(prev.posAway);
+                    }
+
+                    const nextSets = prev.sets.map((s, i) => {
+                        if (i === prev.currentSetIdx) {
+                            return { ...s, [team]: Math.max(0, s[team] - 1) };
+                        }
+                        return s;
+                    });
+
+                    return {
+                        ...prev,
+                        posHome: nextPosHome,
+                        posAway: nextPosAway,
+                        servingTeam: prevServer,
+                        sets: nextSets
+                    };
+                });
+                return;
             }
         }
 
         snapshot();
-        setSets(prev => prev.map((s, i) => {
-            if (i === currentSetIdx) {
-                // Prevent negative points
-                return { ...s, [team]: Math.max(0, s[team] - 1) };
-            }
-            return s;
-        }));
+        setMatchState(prev => {
+            const nextSets = prev.sets.map((s, i) => {
+                if (i === prev.currentSetIdx) {
+                    return { ...s, [team]: Math.max(0, s[team] - 1) };
+                }
+                return s;
+            });
+            return {
+                ...prev,
+                sets: nextSets
+            };
+        });
+    };
+
+    const confirmR5Lineup = (team: TeamSide, courtPlayers: (Player | null)[], liberos: Player[]) => {
+        // Enforce positioning on court players unconditionally
+        const newCourt = courtPlayers.map((p, i) => {
+            if (!p) return null;
+            return {
+                ...p,
+                posicion_cancha: i + 1
+            };
+        });
+
+        const allNew = [...newCourt, ...liberos].filter(Boolean) as Player[];
+        const numbers = allNew.map(p => p.number);
+        const duplicates = numbers.filter((item, index) => numbers.indexOf(item) !== index);
+        if (duplicates.length > 0) {
+            throw new Error(`El número ${duplicates[0]} está duplicado en la formación.`);
+        }
+
+        // Output correct layout based on active flag
+        const finalCourt = USE_NEW_ROTATION ? newCourt : migrateNewLineup(newCourt);
+
+        setMatchState(prev => {
+            const isHome = team === 'home';
+            const bench = isHome ? prev.benchHome : prev.benchAway;
+
+            let nextBench = bench.map(p => {
+                const isLib = liberos.some(l => l.id === p.id);
+                if (isLib) return { ...p, isLibero: true };
+                return p;
+            });
+
+            nextBench = nextBench.filter(p => !finalCourt.some(fc => fc && fc.id === p.id));
+
+            return {
+                ...prev,
+                [isHome ? 'posHome' : 'posAway']: finalCourt,
+                [isHome ? 'benchHome' : 'benchAway']: nextBench
+            };
+        });
     };
 
     const substitutePlayer = (team: TeamSide, playerOutId: string, playerIn: Player, forceLiberoAction: boolean = false) => {
         let playerOutObj: Player | undefined;
-        // @ts-ignore
-        if (team === 'home') playerOutObj = posHome.find(p => p?.id === playerOutId);
-        // @ts-ignore
-        else playerOutObj = posAway.find(p => p?.id === playerOutId);
+        if (team === 'home') playerOutObj = matchState.posHome.find(p => p?.id === playerOutId) as Player | undefined;
+        else playerOutObj = matchState.posAway.find(p => p?.id === playerOutId) as Player | undefined;
 
-        // Validation should happen in UI, but basic check here
         const isLiberoChange = forceLiberoAction || playerIn.isLibero || (playerOutObj && playerOutObj.isLibero) || false;
-
-        // If NOT Libero, increment sub count
-        if (!isLiberoChange) {
-            setSubsCount(prev => ({ ...prev, [team]: prev[team] + 1 }));
-        }
-        
-        // Record history for all. If it's a libero change, tag it.
-        setSubHistory(prev => [...prev, { team, playerOutId, playerInId: playerIn.id, isLiberoAction: !!isLiberoChange }]);
 
         snapshot();
 
-        const setPos = team === 'home' ? setPosHome : setPosAway;
-        const setBench = team === 'home' ? setBenchHome : setBenchAway;
+        setMatchState(prev => {
+            const isHome = team === 'home';
+            const pos = isHome ? prev.posHome : prev.posAway;
+            const bench = isHome ? prev.benchHome : prev.benchAway;
 
-        // Swap in Court (Find by ID)
-        setPos(prev => prev.map(p => p?.id === playerOutId ? playerIn : p));
+            const nextSubsCount = { ...prev.subsCount };
+            if (!isLiberoChange) {
+                nextSubsCount[team] = nextSubsCount[team] + 1;
+            }
 
-        // Swap in Bench (Remove In, Add Out)
-        if (playerOutObj) {
-            const finalPlayerOut = playerOutObj; // capture
-            setBench(prev => {
-                const others = prev.filter(p => p.id !== playerIn.id);
-                return [...others, finalPlayerOut].sort((a, b) => a.number - b.number);
+            const nextSubHistory = [
+                ...prev.subHistory,
+                { team, playerOutId, playerInId: playerIn.id, isLiberoAction: !!isLiberoChange }
+            ];
+
+            const nextPos = pos.map(p => {
+                if (p?.id === playerOutId) {
+                    const updated = { ...playerIn };
+                    if (p.posicion_cancha !== undefined) {
+                        updated.posicion_cancha = p.posicion_cancha;
+                    }
+                    return updated;
+                }
+                return p;
             });
-        }
-    };
 
-    const addPlayerToBench = (team: TeamSide, player: Player) => {
-        const setBench = team === 'home' ? setBenchHome : setBenchAway;
-        setBench(prev => {
-            if (prev.find(p => p.id === player.id)) return prev;
-            return [...prev, player].sort((a, b) => a.number - b.number);
+            let nextBench = bench;
+            if (playerOutObj) {
+                const finalOut = playerOutObj;
+                const filtered = bench.filter(p => p.id !== playerIn.id);
+                nextBench = [...filtered, finalOut].sort((a, b) => a.number - b.number);
+            }
+
+            return {
+                ...prev,
+                subsCount: nextSubsCount,
+                subHistory: nextSubHistory,
+                [isHome ? 'posHome' : 'posAway']: nextPos,
+                [isHome ? 'benchHome' : 'benchAway']: nextBench
+            };
         });
     };
 
-    // --- NEW: STARTER SELECTION ---
-    // Fills positions in standard order: I, II, III, IV, V, VI
-    // Indices: 0, 5, 4, 3, 2, 1
-    const moveToCourt = (team: TeamSide, player: Player) => {
-        const setPos = team === 'home' ? setPosHome : setPosAway;
-        const setBench = team === 'home' ? setBenchHome : setBenchAway;
-        const currentPos = team === 'home' ? posHome : posAway;
+    const addPlayerToBench = (team: TeamSide, player: Player) => {
+        setMatchState(prev => {
+            const isHome = team === 'home';
+            const bench = isHome ? prev.benchHome : prev.benchAway;
+            if (bench.find(p => p.id === player.id)) return prev;
 
-        // Find first empty slot in order
+            const nextBench = [...bench, player].sort((a, b) => a.number - b.number);
+            return {
+                ...prev,
+                [isHome ? 'benchHome' : 'benchAway']: nextBench
+            };
+        });
+    };
+
+    const moveToCourt = (team: TeamSide, player: Player) => {
+        const currentPos = team === 'home' ? matchState.posHome : matchState.posAway;
         const fillOrder = [0, 5, 4, 3, 2, 1];
         const targetIndex = fillOrder.find(idx => currentPos[idx] === null);
 
@@ -289,136 +501,187 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
         snapshot();
 
-        // 1. Add to Pos
-        setPos(prev => {
-            const copy = [...prev];
-            copy[targetIndex] = player;
-            return copy;
-        });
+        setMatchState(prev => {
+            const isHome = team === 'home';
+            const pos = isHome ? prev.posHome : prev.posAway;
+            const bench = isHome ? prev.benchHome : prev.benchAway;
 
-        // 2. Remove from Bench
-        setBench(prev => prev.filter(p => p.id !== player.id));
+            const nextPos = [...pos];
+            nextPos[targetIndex] = {
+                ...player,
+                posicion_cancha: indexToPosMap[targetIndex]
+            };
+
+            const nextBench = bench.filter(p => p.id !== player.id);
+
+            return {
+                ...prev,
+                [isHome ? 'posHome' : 'posAway']: nextPos,
+                [isHome ? 'benchHome' : 'benchAway']: nextBench
+            };
+        });
     };
 
     const removeFromCourt = (team: TeamSide, player: Player) => {
-        const setPos = team === 'home' ? setPosHome : setPosAway;
-        const setBench = team === 'home' ? setBenchHome : setBenchAway;
-
         snapshot();
 
-        // 1. Remove from Pos (set to null)
-        setPos(prev => prev.map(p => p?.id === player.id ? null : p));
+        setMatchState(prev => {
+            const isHome = team === 'home';
+            const pos = isHome ? prev.posHome : prev.posAway;
+            const bench = isHome ? prev.benchHome : prev.benchAway;
 
-        // 2. Return to Bench
-        setBench(prev => [...prev, player].sort((a, b) => a.number - b.number));
+            const nextPos = pos.map(p => p?.id === player.id ? null : p);
+            
+            const playerCopy = { ...player };
+            delete playerCopy.posicion_cancha;
+            const nextBench = [...bench, playerCopy].sort((a, b) => a.number - b.number);
+
+            return {
+                ...prev,
+                [isHome ? 'posHome' : 'posAway']: nextPos,
+                [isHome ? 'benchHome' : 'benchAway']: nextBench
+            };
+        });
     };
 
     const removePlayerFromMatch = (team: TeamSide, player: Player) => {
-        const setBench = team === 'home' ? setBenchHome : setBenchAway;
-        setBench(prev => prev.filter(p => p.id !== player.id));
+        setMatchState(prev => {
+            const isHome = team === 'home';
+            const bench = isHome ? prev.benchHome : prev.benchAway;
+            const nextBench = bench.filter(p => p.id !== player.id);
+            return {
+                ...prev,
+                [isHome ? 'benchHome' : 'benchAway']: nextBench
+            };
+        });
     };
 
     const initPositions = () => {
-        // Dummy implementation or logic to reset/load defaults if needed
-        // For now, it seems the component calls it to ensure state is ready?
-        // We can leave it empty or log.
         console.log("Positions initialized");
     };
 
     const canFinishSet = () => {
-        const currentSet = sets[currentSetIdx];
+        const currentSet = matchState.sets[matchState.currentSetIdx];
         if (!currentSet) return false;
         
-        const isTieBreak = currentSetIdx === bestOfSets - 1;
-        const targetScore = isTieBreak ? 15 : 25;
+        const isBreak = matchState.currentSetIdx === bestOfSets - 1;
+        const target = isBreak ? 15 : 25;
         
-        const homeWins = currentSet.home >= targetScore && (currentSet.home - currentSet.away) >= 2;
-        const awayWins = currentSet.away >= targetScore && (currentSet.away - currentSet.home) >= 2;
+        const homeWins = currentSet.home >= target && (currentSet.home - currentSet.away) >= 2;
+        const awayWins = currentSet.away >= target && (currentSet.away - currentSet.home) >= 2;
         
         return homeWins || awayWins;
     };
 
     const finishSet = () => {
         if (!canFinishSet()) {
-            alert("No se puede cerrar el set. Se necesitan " + (currentSetIdx === bestOfSets - 1 ? "15" : "25") + " puntos y una diferencia de 2.");
+            alert("No se puede cerrar el set. Se necesitan " + (matchState.currentSetIdx === bestOfSets - 1 ? "15" : "25") + " puntos y una diferencia de 2.");
             return;
         }
         
         snapshot();
 
-        // Mark current finished
-        setSets(prev => {
-            const copy = [...prev];
-            copy[currentSetIdx].finished = true;
-            // Add next if needed (up to 5 or 3)
+        setMatchState(prev => {
+            const copy = [...prev.sets];
+            copy[prev.currentSetIdx].finished = true;
             if (copy.length < bestOfSets) {
                 copy.push({ number: copy.length + 1, home: 0, away: 0, finished: false });
             }
-            return copy;
+            return {
+                ...prev,
+                sets: copy
+            };
         });
     };
 
     const startNextSet = () => {
-        if (!sets[currentSetIdx].finished) return;
-        if (currentSetIdx >= bestOfSets - 1) return;
+        if (!matchState.sets[matchState.currentSetIdx].finished) return;
+        if (matchState.currentSetIdx >= bestOfSets - 1) return;
 
         snapshot();
         
-        setCurrentSetIdx(prev => prev + 1);
-        setSubsCount({ home: 0, away: 0 }); // Reset subs for new set
-        setSubHistory([]); // Clear history for new set
-        setTimeouts({ home: 0, away: 0 }); // Reset timeouts
-        // Unblock players blocked only for the set
-        setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
+        setMatchState(prev => {
+            const nextIdx = prev.currentSetIdx + 1;
+            
+            const onCourtHome = prev.posHome.filter(p => p !== null) as Player[];
+            const cleanedHome = onCourtHome.map(p => {
+                const c = { ...p };
+                delete c.posicion_cancha;
+                return c;
+            });
+            const nextBenchHome = [...prev.benchHome, ...cleanedHome];
+            const uniqueHome = nextBenchHome
+                .filter((v,i,a) => a.findIndex(t => t.id === v.id) === i)
+                .sort((a, b) => a.number - b.number);
 
-        // Regla R5: Limpiar la cancha al iniciar el nuevo set
-        setPosHome(prev => {
-            const onCourt = prev.filter(p => p !== null) as Player[];
-            if (onCourt.length > 0) {
-                setBenchHome(bench => {
-                    const newBench = [...bench, ...onCourt];
-                    // Remover duplicados por ID por seguridad
-                    const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
-                    return unique.sort((a, b) => a.number - b.number);
-                });
-            }
-            return Array(6).fill(null);
-        });
+            const onCourtAway = prev.posAway.filter(p => p !== null) as Player[];
+            const cleanedAway = onCourtAway.map(p => {
+                const c = { ...p };
+                delete c.posicion_cancha;
+                return c;
+            });
+            const nextBenchAway = [...prev.benchAway, ...cleanedAway];
+            const uniqueAway = nextBenchAway
+                .filter((v,i,a) => a.findIndex(t => t.id === v.id) === i)
+                .sort((a, b) => a.number - b.number);
 
-        setPosAway(prev => {
-            const onCourt = prev.filter(p => p !== null) as Player[];
-            if (onCourt.length > 0) {
-                setBenchAway(bench => {
-                    const newBench = [...bench, ...onCourt];
-                    // Remover duplicados
-                    const unique = newBench.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
-                    return unique.sort((a, b) => a.number - b.number);
-                });
-            }
-            return Array(6).fill(null);
+            return {
+                ...prev,
+                currentSetIdx: nextIdx,
+                subsCount: { home: 0, away: 0 },
+                subHistory: [],
+                timeouts: { home: 0, away: 0 },
+                blockedPlayers: prev.blockedPlayers.filter(p => p.type === 'match'),
+                posHome: Array(6).fill(null),
+                posAway: Array(6).fill(null),
+                benchHome: uniqueHome,
+                benchAway: uniqueAway
+            };
         });
     };
 
-    // Helpers to set initial state from DB
     const setAllState = (state: Partial<MatchState>) => {
+        setMatchState(prev => {
+            const next = { ...prev };
+            
+            if (state.sets) next.sets = state.sets;
+            if (state.currentSetIdx !== undefined) next.currentSetIdx = state.currentSetIdx;
+            
+            if (state.posHome) {
+                next.posHome = USE_NEW_ROTATION
+                    ? migrateOldLineup(state.posHome)
+                    : migrateNewLineup(state.posHome);
+            }
+            
+            if (state.posAway) {
+                next.posAway = USE_NEW_ROTATION
+                    ? migrateOldLineup(state.posAway)
+                    : migrateNewLineup(state.posAway);
+            }
+
+            if (state.benchHome) next.benchHome = state.benchHome;
+            if (state.benchAway) next.benchAway = state.benchAway;
+            if (state.servingTeam !== undefined) next.servingTeam = state.servingTeam;
+            
+            // @ts-ignore
+            if (state.subsCount) next.subsCount = state.subsCount;
+            // @ts-ignore
+            if (state.subHistory) next.subHistory = state.subHistory;
+            // @ts-ignore
+            if (state.timeouts) next.timeouts = state.timeouts;
+            if (state.blockedPlayers) next.blockedPlayers = state.blockedPlayers;
+            if (state.sanctionsLog) next.sanctionsLog = state.sanctionsLog;
+
+            // Enforce V2 data integrity checks
+            if (USE_NEW_ROTATION) {
+                next.posHome = sanitizeDuplicates(next.posHome);
+                next.posAway = sanitizeDuplicates(next.posAway);
+            }
+
+            return next;
+        });
+
         if (state.bestOfSets !== undefined) setBestOfSets(state.bestOfSets);
-        if (state.sets) setSets(state.sets);
-        if (state.currentSetIdx !== undefined) setCurrentSetIdx(state.currentSetIdx);
-        if (state.posHome) setPosHome(state.posHome.length === 6 ? state.posHome : [...state.posHome, ...Array(6 - state.posHome.length).fill(null)] as (Player | null)[]);
-        if (state.posAway) setPosAway(state.posAway.length === 6 ? state.posAway : [...state.posAway, ...Array(6 - state.posAway.length).fill(null)] as (Player | null)[]);
-        if (state.benchHome) setBenchHome(state.benchHome);
-        if (state.benchAway) setBenchAway(state.benchAway);
-        if (state.servingTeam !== undefined) setServingTeam(state.servingTeam);
-        // Rescatar nuevos campos de DB
-        // @ts-ignore
-        if (state.subsCount) setSubsCount(state.subsCount);
-        // @ts-ignore
-        if (state.subHistory) setSubHistory(state.subHistory);
-        // @ts-ignore
-        if (state.timeouts) setTimeouts(state.timeouts);
-        
-        if (state.blockedPlayers) setBlockedPlayers(state.blockedPlayers);
-        if (state.sanctionsLog) setSanctionsLog(state.sanctionsLog);
     };
 
     const addSanction = (event: Omit<SanctionEvent, 'id' | 'timestamp'>) => {
@@ -428,26 +691,102 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
             id: Math.random().toString(36).substr(2, 9),
             timestamp: Date.now()
         };
-        setSanctionsLog(prev => [...prev, newEvent]);
+        setMatchState(prev => ({
+            ...prev,
+            sanctionsLog: [...prev.sanctionsLog, newEvent]
+        }));
     };
 
     return {
-        bestOfSets, sets, currentSetIdx, posHome, posAway, benchHome, benchAway,
-        servingTeam, subsCount, subHistory, timeouts, blockedPlayers, sanctionsLog,
-        addPoint, subtractPoint, substitutePlayer, finishSet, startNextSet, canFinishSet, undo,
-        setAllState, setBestOfSets, setSets, setServingTeam, setPosHome, setPosAway, setBenchHome, setBenchAway,
-        initPositions, addPlayerToBench, moveToCourt, removeFromCourt, removePlayerFromMatch,
+        bestOfSets,
+        sets: matchState.sets,
+        currentSetIdx: matchState.currentSetIdx,
+        posHome: matchState.posHome,
+        posAway: matchState.posAway,
+        benchHome: matchState.benchHome,
+        benchAway: matchState.benchAway,
+        servingTeam: matchState.servingTeam,
+        subsCount: matchState.subsCount,
+        subHistory: matchState.subHistory,
+        timeouts: matchState.timeouts,
+        blockedPlayers: matchState.blockedPlayers,
+        sanctionsLog: matchState.sanctionsLog,
+        courtPositionsHome,
+        courtPositionsAway,
+        warnings,
+        USE_NEW_ROTATION,
+        
+        addPoint,
+        subtractPoint,
+        substitutePlayer,
+        finishSet,
+        startNextSet,
+        canFinishSet,
+        undo,
+        setAllState,
+        setBestOfSets,
+        setSets: (s: SetData[] | ((p: SetData[]) => SetData[])) => {
+            setMatchState(prev => {
+                const nextVal = typeof s === 'function' ? s(prev.sets) : s;
+                return { ...prev, sets: nextVal };
+            });
+        },
+        setServingTeam: (t: TeamSide | null | ((prev: TeamSide | null) => TeamSide | null)) => {
+            setMatchState(prev => {
+                const nextVal = typeof t === 'function' ? t(prev.servingTeam) : t;
+                return { ...prev, servingTeam: nextVal };
+            });
+        },
+        setPosHome: (p: (Player | null)[] | ((prev: (Player | null)[]) => (Player | null)[])) => {
+            setMatchState(prev => {
+                const nextVal = typeof p === 'function' ? p(prev.posHome) : p;
+                return { ...prev, posHome: nextVal };
+            });
+        },
+        setPosAway: (p: (Player | null)[] | ((prev: (Player | null)[]) => (Player | null)[])) => {
+            setMatchState(prev => {
+                const nextVal = typeof p === 'function' ? p(prev.posAway) : p;
+                return { ...prev, posAway: nextVal };
+            });
+        },
+        setBenchHome: (b: Player[] | ((prev: Player[]) => Player[])) => {
+            setMatchState(prev => {
+                const nextVal = typeof b === 'function' ? b(prev.benchHome) : b;
+                return { ...prev, benchHome: nextVal };
+            });
+        },
+        setBenchAway: (b: Player[] | ((prev: Player[]) => Player[])) => {
+            setMatchState(prev => {
+                const nextVal = typeof b === 'function' ? b(prev.benchAway) : b;
+                return { ...prev, benchAway: nextVal };
+            });
+        },
+        initPositions,
+        addPlayerToBench,
+        moveToCourt,
+        removeFromCourt,
+        removePlayerFromMatch,
+        confirmR5Lineup,
         requestTimeout: (team: TeamSide) => {
             snapshot();
-            setTimeouts(prev => ({ ...prev, [team]: prev[team] + 1 }));
+            setMatchState(prev => ({
+                ...prev,
+                timeouts: { ...prev.timeouts, [team]: prev.timeouts[team] + 1 }
+            }));
         },
         blockPlayer: (id: string, type: 'set' | 'match') => {
             snapshot();
-            setBlockedPlayers(prev => [...prev.filter(p => p.id !== id), { id, type }]);
+            setMatchState(prev => ({
+                ...prev,
+                blockedPlayers: [...prev.blockedPlayers.filter(p => p.id !== id), { id, type }]
+            }));
         },
         unblockSetPlayers: () => {
             snapshot();
-            setBlockedPlayers(prev => prev.filter(p => p.type === 'match'));
+            setMatchState(prev => ({
+                ...prev,
+                blockedPlayers: prev.blockedPlayers.filter(p => p.type === 'match')
+            }));
         },
         addSanction
     };
