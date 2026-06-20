@@ -86,8 +86,18 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const confirmR5 = (team: 'home' | 'away') => {
         const liberos = [r5Libero, r5Libero2].filter((p): p is any => p !== null);
 
+        // Reordenar las jugadoras del R5 para que coincidan con la lógica de celdas físicas de la cancha
+        const orderedForm = [
+            r5Form[0], // Posición I   -> posicion_cancha = 1
+            r5Form[5], // Posición VI  -> posicion_cancha = 2
+            r5Form[4], // Posición V   -> posicion_cancha = 3
+            r5Form[3], // Posición IV  -> posicion_cancha = 4
+            r5Form[2], // Posición III -> posicion_cancha = 5
+            r5Form[1], // Posición II  -> posicion_cancha = 6
+        ];
+
         try {
-            confirmR5Lineup(team, r5Form, liberos);
+            confirmR5Lineup(team, orderedForm, liberos);
             
             if (team === 'home') {
                 setShowR5ModalHome(false);
@@ -1585,7 +1595,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     </div>
 
                     <div className="bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full flex overflow-hidden flex-row">
-                        <div className="absolute left-1/2 top-0 bottom-0 w-1.5 bg-slate-800 z-10 shadow-xl -ml-[3px]"></div>
+                        <div className="absolute left-1/2 top-0 bottom-0 border-l-[6px] border-dashed border-slate-800 z-10 -ml-[3px]"></div>
                         {/* Cancha Lado Izquierdo (Red a la derecha; Ataque en col 2, Saque/P1 en Fila 3 Col 1) */}
                         <div className={`relative flex-1 border-slate-200/50 border-r ${leftTeam === 'home' ? 'bg-blue-50/30' : 'bg-red-50/30'}`}>
                             {leftRawPos.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
