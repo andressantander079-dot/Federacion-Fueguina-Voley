@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Inbox, Check, X, Shield, Clock, Loader2, User, Key, CheckCircle, FileSignature, AlertCircle, ArrowRight, FileText, Download } from 'lucide-react';
+import { ArrowLeft, Inbox, Check, X, Shield, Clock, Loader2, User, Key, CheckCircle, FileSignature, AlertCircle, ArrowRight, FileText, Download, Ban } from 'lucide-react';
 import { toast } from 'sonner';
+import { HistorialPases } from '@/components/pases/HistorialPases';
+import { cancelarPaseAction } from '@/app/pases/actions/cancelarPase';
 
 export default function AdminPasesInboxPage() {
     const supabase = createClient();
@@ -20,6 +22,8 @@ export default function AdminPasesInboxPage() {
     // Modal State
     const [selectedPase, setSelectedPase] = useState<any>(null);
     const [modalMode, setModalMode] = useState<'approve_pago' | 'reject_pago' | 'approve_firma' | 'anular_tramite' | null>(null);
+    const [paseToCancel, setPaseToCancel] = useState<any>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
 
     // Action State
     const [motivoRechazo, setMotivoRechazo] = useState('');
@@ -253,9 +257,31 @@ export default function AdminPasesInboxPage() {
         }
     };
 
+    const handleConfirmCancelPase = async () => {
+        if (!paseToCancel) return;
+        setIsCancelling(true);
+        try {
+            const res = await cancelarPaseAction(paseToCancel.id);
+            if (res.success) {
+                toast.success(res.message || "Trámite cancelado correctamente.");
+                setPaseToCancel(null);
+                setSelectedPase(null);
+                await fetchPases();
+            } else {
+                toast.error(res.error || "Ocurrió un error al cancelar el trámite.");
+            }
+        } catch (error: any) {
+            console.error("Error al cancelar trámite:", error);
+            toast.error("Error de red o conexión al servidor.");
+        } finally {
+            setIsCancelling(false);
+        }
+    };
+
     const resetModal = () => {
         setModalMode(null);
         setSelectedPase(null);
+        setPaseToCancel(null);
         setMotivoRechazo('');
         fetchPases();
     };
@@ -284,8 +310,8 @@ export default function AdminPasesInboxPage() {
             <div className="flex flex-1 overflow-hidden relative">
 
                 {/* LIST */}
-                <div className={`w-full md:w-1/3 min-w-[350px] bg-zinc-900 border-r border-zinc-800 flex flex-col z-10 transition-all ${selectedPase ? 'hidden md:flex' : 'flex'}`}>
-                    <div className="p-6">
+                <div className={`w-full md:w-1/3 min-w-[350px] bg-zinc-900 border-r border-zinc-800 flex flex-col z-10 transition-all ${selectedPase ? 'hidden md:flex' : 'flex'} h-full overflow-hidden`}>
+                    <div className="p-6 flex flex-col h-full overflow-hidden">
                         <div className="flex flex-col mb-8 gap-4">
                             <div>
                                 <h1 className="text-3xl font-black tracking-tight mb-2">Auditoría Dual</h1>
@@ -323,7 +349,18 @@ export default function AdminPasesInboxPage() {
 
                         {/* TAB CONTENT MULTIPLEXER */}
                         {(() => {
-                            let list = activeTab === 'pagos' ? pendingPagos : activeTab === 'firmas' ? pendingFirmas : historicalPases;
+                            if (activeTab === 'historial') {
+                                return (
+                                    <HistorialPases
+                                        pases={historicalPases}
+                                        selectedPase={selectedPase}
+                                        onSelectPase={(pase) => setSelectedPase(pase)}
+                                        onCancelPase={(pase) => setPaseToCancel(pase)}
+                                    />
+                                );
+                            }
+
+                            let list = activeTab === 'pagos' ? pendingPagos : pendingFirmas;
 
                             if (list.length === 0) {
                                 return (
@@ -336,24 +373,27 @@ export default function AdminPasesInboxPage() {
                             }
 
                             return (
-                                <div className="grid gap-3 overflow-y-auto pb-20">
+                                <div className="flex-1 overflow-y-auto grid gap-3 pb-20 pr-1">
                                     {list.map(pase => (
-                                        <div key={pase.id} onClick={() => { if (activeTab !== 'historial') setSelectedPase(pase); }} className={`bg-zinc-950 border border-zinc-800 rounded-2xl p-4 flex flex-col justify-between gap-3 transition ${activeTab !== 'historial' ? 'cursor-pointer hover:border-zinc-500' : 'opacity-75'}`}>
+                                        <div 
+                                            key={pase.id} 
+                                            onClick={() => setSelectedPase(pase)} 
+                                            className={`bg-zinc-950 border rounded-2xl p-4 flex flex-col justify-between gap-3 transition cursor-pointer hover:border-zinc-500 ${
+                                                selectedPase?.id === pase.id ? 'border-zinc-500' : 'border-zinc-800'
+                                            }`}
+                                        >
                                             <div className="flex items-center gap-3 w-full">
-                                                <div className={`w-2 h-2 rounded-full ${activeTab === 'pagos' ? 'bg-tdf-blue' : activeTab === 'firmas' ? 'bg-amber-500' : pase.estado === 'completado' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                                <div className={`w-2 h-2 rounded-full ${activeTab === 'pagos' ? 'bg-tdf-blue' : 'bg-amber-500'}`} />
                                                 <div className="flex-1 truncate">
                                                     <h3 className="text-sm font-black text-white truncate">{pase.player?.name}</h3>
                                                     <p className="text-xs text-zinc-500 font-mono">DNI: {pase.player?.dni}</p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0 bg-zinc-900 px-3 py-2 rounded-lg border border-zinc-800/50">
-                                                <img src={pase.origen?.shield_url || '/placeholder.png'} className="w-5 h-5 bg-white rounded flex-shrink-0" alt="S" />
+                                                <img src={pase.origen?.shield_url || '/placeholder.png'} className="w-5 h-5 bg-white rounded flex-shrink-0 object-contain" alt="S" />
                                                 <ArrowRight className="text-zinc-600" size={14} />
-                                                <img src={pase.solicitante?.shield_url || '/placeholder.png'} className="w-5 h-5 bg-white rounded flex-shrink-0" alt="S" />
+                                                <img src={pase.solicitante?.shield_url || '/placeholder.png'} className="w-5 h-5 bg-white rounded flex-shrink-0 object-contain" alt="S" />
                                             </div>
-                                            {activeTab === 'historial' && (
-                                                <div className="text-[10px] font-black uppercase text-zinc-500 mt-1">{pase.estado.replace('_', ' ')}</div>
-                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -399,7 +439,7 @@ export default function AdminPasesInboxPage() {
                                     </div>
                                 </div>
 
-                                {activeTab === 'pagos' && (
+                                 {(activeTab === 'pagos' || (activeTab === 'historial' && selectedPase.comprobante_url)) && (
                                     <div className="bg-zinc-900 border-l-4 border-l-tdf-blue border-r border-t border-b border-zinc-800 rounded-r-3xl p-6">
                                         <h3 className="text-lg font-black text-white mb-6 flex items-center gap-2"><CheckCircle className="text-tdf-blue" /> Etapa 1: Cotejo de Pagos</h3>
                                         <p className="text-sm text-zinc-400 leading-relaxed mb-6">El Club solicitante ha anexado el recibo bancario para el inicio del trámite. <strong className="text-white">Verifique su validez en el Homebanking de FVF</strong> antes de darle curso y notificar al Club Cedente.</p>
@@ -418,7 +458,7 @@ export default function AdminPasesInboxPage() {
                                     </div>
                                 )}
 
-                                {activeTab === 'firmas' && (
+                                 {(activeTab === 'firmas' || (activeTab === 'historial' && (selectedPase.firma_solicitante || selectedPase.firma_origen || selectedPase.firma_jugador))) && (
                                     <div className="bg-zinc-900 border-l-4 border-l-amber-500 border-r border-t border-b border-zinc-800 rounded-r-3xl p-6">
                                         <h3 className="text-lg font-black text-white mb-6 flex items-center gap-2"><Shield className="text-amber-500" /> Etapa 6: Auditoría Final de Documentación</h3>
 
@@ -502,6 +542,16 @@ export default function AdminPasesInboxPage() {
                                                 {isSubmitting ? <Loader2 className="animate-spin" /> : <><Shield size={20} className="text-green-600" /> Validar Legales y Traspasar (Fase 7)</>}
                                             </button>
                                         </div>
+                                    ) : activeTab === 'historial' && 
+                                        !['completado', 'cancelado', 'rechazado', 'rechazado_origen', 'cancelado_por_vencimiento'].includes(selectedPase.estado?.toLowerCase()) ? (
+                                        <div className="flex gap-4">
+                                            <button
+                                                onClick={() => setPaseToCancel(selectedPase)}
+                                                className="w-full py-3 bg-red-700 hover:bg-red-600 text-white rounded-xl font-black transition flex justify-center items-center gap-2 shadow-lg hover:shadow-red-900/20"
+                                            >
+                                                <Ban size={18} /> Cancelar Trámite (Revertir Traspaso)
+                                            </button>
+                                        </div>
                                     ) : null}
                                 </div>
                             </div>
@@ -515,6 +565,44 @@ export default function AdminPasesInboxPage() {
                     )}
                 </div>
             </div>
+
+            {/* MODAL DE CONFIRMACION ESTRICTO PARA CANCELAR TRAMITE */}
+            {paseToCancel && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-4">
+                            <AlertCircle size={24} />
+                        </div>
+                        <h3 className="text-lg font-black text-white mb-2">¿Seguro desea cancelar el trámite?</h3>
+                        <p className="text-sm text-zinc-400 leading-relaxed mb-6">
+                            El jugador volverá a <strong className="text-white">{paseToCancel.origen?.name || 'su club de origen'}</strong> y el trámite se tendrá que hacer nuevamente desde cero.
+                        </p>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={() => setPaseToCancel(null)}
+                                disabled={isCancelling}
+                                className="flex-1 py-3 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 font-bold rounded-xl transition"
+                            >
+                                Volver
+                            </button>
+                            <button
+                                onClick={handleConfirmCancelPase}
+                                disabled={isCancelling}
+                                className="flex-[2] py-3 bg-red-650 hover:bg-red-600 text-white font-black rounded-xl transition flex justify-center items-center gap-2"
+                            >
+                                {isCancelling ? (
+                                    <>
+                                        <Loader2 className="animate-spin" size={16} />
+                                        <span>Procesando...</span>
+                                    </>
+                                ) : (
+                                    <span>Confirmar Cancelación</span>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
