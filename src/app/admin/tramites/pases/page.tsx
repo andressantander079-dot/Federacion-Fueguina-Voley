@@ -8,6 +8,8 @@ import { ArrowLeft, Inbox, Check, X, Shield, Clock, Loader2, User, Key, CheckCir
 import { toast } from 'sonner';
 import { HistorialPases } from '@/components/pases/HistorialPases';
 import { cancelarPaseAction } from '@/app/pases/actions/cancelarPase';
+import { CancelarPaseModal } from '@/components/pases/CancelarPaseModal';
+import { cancelarPaseFaltaFirmasAction, aprobarPaseBypassTesoreriaAction } from '@/app/pases/actions/revisionFirmasActions';
 
 export default function AdminPasesInboxPage() {
     const supabase = createClient();
@@ -24,6 +26,12 @@ export default function AdminPasesInboxPage() {
     const [modalMode, setModalMode] = useState<'approve_pago' | 'reject_pago' | 'approve_firma' | 'anular_tramite' | null>(null);
     const [paseToCancel, setPaseToCancel] = useState<any>(null);
     const [isCancelling, setIsCancelling] = useState(false);
+    
+    // Firma & Bypass States
+    const [paseToCancelFirmas, setPaseToCancelFirmas] = useState<any>(null);
+    const [isCancellingFirmas, setIsCancellingFirmas] = useState(false);
+    const [bypassTesoreria, setBypassTesoreria] = useState(false);
+    const [motivoBypass, setMotivoBypass] = useState('');
 
     // Action State
     const [motivoRechazo, setMotivoRechazo] = useState('');
@@ -278,10 +286,55 @@ export default function AdminPasesInboxPage() {
         }
     };
 
+    const handleConfirmCancelFaltaFirmas = async () => {
+        if (!paseToCancelFirmas) return;
+        setIsCancellingFirmas(true);
+        try {
+            const res = await cancelarPaseFaltaFirmasAction(paseToCancelFirmas.id);
+            if (res.success) {
+                toast.success(res.message || "Pase cancelado por falta de firmas correctamente.");
+                setPaseToCancelFirmas(null);
+                setSelectedPase(null);
+                await fetchPases();
+            } else {
+                toast.error(res.error || "Ocurrió un error al cancelar el pase.");
+            }
+        } catch (error: any) {
+            console.error("Error al cancelar por falta de firmas:", error);
+            toast.error("Error de red o conexión al servidor.");
+        } finally {
+            setIsCancellingFirmas(false);
+        }
+    };
+
+    const handleApprovePagoWithBypass = async () => {
+        if (!selectedPase || motivoBypass.trim().length < 10) return;
+        setIsSubmitting(true);
+        try {
+            const res = await aprobarPaseBypassTesoreriaAction(selectedPase.id, motivoBypass);
+            if (res.success) {
+                toast.success(res.message || "Trámite aprobado con bypass de tesorería.");
+                setBypassTesoreria(false);
+                setMotivoBypass('');
+                resetModal();
+            } else {
+                toast.error(res.error || "Ocurrió un error al aprobar con bypass.");
+            }
+        } catch (error: any) {
+            console.error("Error en aprobación con bypass:", error);
+            toast.error("Error de red o conexión al servidor.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const resetModal = () => {
         setModalMode(null);
         setSelectedPase(null);
         setPaseToCancel(null);
+        setPaseToCancelFirmas(null);
+        setBypassTesoreria(false);
+        setMotivoBypass('');
         setMotivoRechazo('');
         fetchPases();
     };
@@ -513,19 +566,62 @@ export default function AdminPasesInboxPage() {
                                             </div>
                                         </div>
                                     ) : activeTab === 'pagos' ? (
-                                        <div className="flex gap-4">
-                                            <button
-                                                onClick={() => setModalMode('reject_pago')} disabled={isSubmitting}
-                                                className="flex-1 py-3 border border-red-900/50 text-red-500 hover:bg-red-900/20 rounded-xl font-bold transition flex justify-center items-center gap-2"
-                                            >
-                                                <X size={18} /> Fallo en Boleto
-                                            </button>
-                                            <button
-                                                onClick={handleApprovePago} disabled={isSubmitting}
-                                                className="flex-[2] py-3 bg-tdf-blue hover:bg-blue-600 text-white rounded-xl font-black transition flex justify-center items-center gap-2"
-                                            >
-                                                {isSubmitting ? <Loader2 className="animate-spin" /> : <><CheckCircle size={20} /> Aprobar y Notificar a Origen (Fase 3)</>}
-                                            </button>
+                                        <div className="flex flex-col gap-4">
+                                            {/* CHECKBOX DE BYPASS DE TESORERIA */}
+                                            <label className="flex items-start gap-3 cursor-pointer group bg-zinc-950 p-3 rounded-xl border border-zinc-800 focus-within:border-zinc-700 transition">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={bypassTesoreria}
+                                                    onChange={(e) => {
+                                                        setBypassTesoreria(e.target.checked);
+                                                        if (!e.target.checked) setMotivoBypass('');
+                                                    }}
+                                                    className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-tdf-blue focus:ring-tdf-blue focus:ring-offset-zinc-900 mt-0.5"
+                                                />
+                                                <div className="flex-1">
+                                                    <span className="block text-xs font-bold text-zinc-300">Aceptar sin impacto en Tesorería</span>
+                                                    <span className="block text-[10px] text-zinc-500 font-medium">El pago ya fue registrado previamente por otra vía.</span>
+                                                </div>
+                                            </label>
+
+                                            {/* TEXTAREA OBLIGATORIO SI EL BYPASS ESTA ACTIVADO */}
+                                            {bypassTesoreria && (
+                                                <div className="animate-in slide-in-from-top-1 duration-150">
+                                                    <label className="text-[10px] font-black text-zinc-400 uppercase mb-1.5 block">Motivo / Referencia (Mínimo 10 caracteres):</label>
+                                                    <textarea
+                                                        value={motivoBypass}
+                                                        onChange={(e) => setMotivoBypass(e.target.value)}
+                                                        rows={2}
+                                                        placeholder="Ej: Cobrado en efectivo en oficina central o transferencia directa Banco del 22/06."
+                                                        className="w-full bg-zinc-950 border border-zinc-800 focus:border-tdf-blue rounded-xl p-3 text-xs text-white outline-none resize-none transition"
+                                                    />
+                                                    {motivoBypass.trim().length < 10 && (
+                                                        <span className="text-[9px] text-red-500/80 font-bold block mt-1">Se requieren {10 - motivoBypass.trim().length} caracteres adicionales.</span>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="flex gap-4">
+                                                <button
+                                                    onClick={() => setModalMode('reject_pago')} disabled={isSubmitting}
+                                                    className="flex-1 py-3 border border-red-900/50 text-red-500 hover:bg-red-900/20 rounded-xl font-bold transition flex justify-center items-center gap-2 text-xs"
+                                                >
+                                                    <X size={16} /> Fallo en Boleto
+                                                </button>
+                                                <button
+                                                    onClick={bypassTesoreria ? handleApprovePagoWithBypass : handleApprovePago} 
+                                                    disabled={isSubmitting || (bypassTesoreria && motivoBypass.trim().length < 10)}
+                                                    className="flex-[2] py-3 bg-tdf-blue hover:bg-blue-600 text-white rounded-xl font-black transition flex justify-center items-center gap-2 text-xs"
+                                                >
+                                                    {isSubmitting ? (
+                                                        <Loader2 className="animate-spin" size={16} />
+                                                    ) : bypassTesoreria ? (
+                                                        <><CheckCircle size={16} /> Aprobar con Bypass (Fase 3)</>
+                                                    ) : (
+                                                        <><CheckCircle size={16} /> Aprobar y Facturar (Fase 3)</>
+                                                    )}
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : activeTab === 'firmas' ? (
                                         <div className="flex gap-4">
@@ -544,12 +640,18 @@ export default function AdminPasesInboxPage() {
                                         </div>
                                     ) : activeTab === 'historial' && 
                                         !['completado', 'cancelado', 'rechazado', 'rechazado_origen', 'cancelado_por_vencimiento'].includes(selectedPase.estado?.toLowerCase()) ? (
-                                        <div className="flex gap-4">
+                                        <div className="flex flex-col gap-3">
+                                            <button
+                                                onClick={() => setPaseToCancelFirmas(selectedPase)}
+                                                className="w-full py-3 bg-red-700 hover:bg-red-600 text-white rounded-xl font-black transition flex justify-center items-center gap-2 shadow-lg hover:shadow-red-900/20 text-xs"
+                                            >
+                                                <Ban size={16} /> Cancelar Pase (Falta de Firmas)
+                                            </button>
                                             <button
                                                 onClick={() => setPaseToCancel(selectedPase)}
-                                                className="w-full py-3 bg-red-700 hover:bg-red-600 text-white rounded-xl font-black transition flex justify-center items-center gap-2 shadow-lg hover:shadow-red-900/20"
+                                                className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-xl font-bold transition flex justify-center items-center gap-2 text-[10px] uppercase tracking-wider"
                                             >
-                                                <Ban size={18} /> Cancelar Trámite (Revertir Traspaso)
+                                                Cancelar Trámite General (Reversión Simple)
                                             </button>
                                         </div>
                                     ) : null}
@@ -603,6 +705,15 @@ export default function AdminPasesInboxPage() {
                     </div>
                 </div>
             )}
+
+            {/* MODAL DE CONFIRMACION ESTRICTO PARA FALTA DE FIRMAS */}
+            <CancelarPaseModal
+                isOpen={!!paseToCancelFirmas}
+                onClose={() => setPaseToCancelFirmas(null)}
+                onConfirm={handleConfirmCancelFaltaFirmas}
+                clubOrigenNombre={paseToCancelFirmas?.origen?.name || ''}
+                isPending={isCancellingFirmas}
+            />
         </div>
     );
 }
