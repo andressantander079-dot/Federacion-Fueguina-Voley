@@ -1,17 +1,24 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useVolleyMatch, TeamSide } from '@/hooks/useVolleyMatch';
+import { useMatchPreflight } from '@/hooks/useMatchPreflight';
+import { SheetData } from '@/types/match';
 import { createClient } from '@/lib/supabase/client';
 import LogoutButton from '@/components/LogoutButton';
+import { CourtView } from './CourtView';
+import { ScoreControls } from './ScoreControls';
+import { IntermissionModal } from './IntermissionModal';
+import { R5Modal } from './R5Modal';
 import {
     RefreshCw, Trophy, X, Check, Search, Plus,
     Download, User, Users, Calendar, Clock, ArrowRightLeft, Volleyball,
-    QrCode, MapPin, ArrowLeft, Trash2, Edit2, AlertTriangle
+    QrCode, MapPin, ArrowLeft, Trash2, Edit2, AlertTriangle, Maximize2, Minimize2, Palette
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
+import { hexToRgb, getContrastColor } from '@/lib/colorUtils';
 
 interface OfficialMatchSheetProps {
     redirectAfterSubmit: string;
@@ -29,7 +36,15 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         moveToCourt, removeFromCourt, removePlayerFromMatch,
         blockedPlayers, blockPlayer, unblockSetPlayers, sanctionsLog, addSanction,
         timeouts, requestTimeout, subsCount, subHistory,
-        courtPositionsHome, courtPositionsAway, warnings, USE_NEW_ROTATION, confirmR5Lineup
+        courtPositionsHome, courtPositionsAway, warnings, USE_NEW_ROTATION, confirmR5Lineup,
+        intermissionStartAt,
+        isScoringBlocked,
+        timeLeft,
+        audioBlockedWarning,
+        clearAlarm,
+        setIntermissionStartAt,
+        teamColors,
+        updateTeamColors
     } = useVolleyMatch();
 
     // --- ESTADOS DE UI ---
@@ -37,16 +52,63 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [modalActionOpen, setModalActionOpen] = useState(false);
     const [modalSubOpen, setModalSubOpen] = useState(false);
     const [timeoutModal, setTimeoutModal] = useState<{ isOpen: boolean, team: 'home' | 'away' | 'set_break' | null, timeLeft: number }>({ isOpen: false, team: null, timeLeft: 30 });
+    
+    // Layout and audio control states for set break
+    const [isIntermissionMinimized, setIsIntermissionMinimized] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('fvf_intermission_minimized') === 'true';
+        }
+        return false;
+    });
 
+    // Sincronizar estado de minimizado en localStorage
+    useEffect(() => {
+        localStorage.setItem('fvf_intermission_minimized', String(isIntermissionMinimized));
+    }, [isIntermissionMinimized]);
+
+
+
+
+
+    // Sincronizar el descanso entre sets de useVolleyMatch (F5 Safe y Anti-Negativos)
+    useEffect(() => {
+        if (intermissionStartAt) {
+            setTimeoutModal({
+                isOpen: true,
+                team: 'set_break',
+                timeLeft: timeLeft
+            });
+        } else {
+            setTimeoutModal(prev => {
+                if (prev.team === 'set_break') {
+                    return { isOpen: false, team: null, timeLeft: 0 };
+                }
+                return prev;
+            });
+        }
+    }, [intermissionStartAt, timeLeft]);
+
+    // Bucle del temporizador para tiempos muertos regulares de 30s
     useEffect(() => {
         let interval: NodeJS.Timeout;
-        if (timeoutModal.isOpen && timeoutModal.timeLeft > 0) {
-            interval = setInterval(() => {
-                setTimeoutModal(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
-            }, 1000);
+        if (timeoutModal.isOpen) {
+            if (timeoutModal.team === 'set_break') {
+                setTimeoutModal(prev => {
+                    if (prev.timeLeft !== timeLeft) {
+                        return { ...prev, timeLeft };
+                    }
+                    return prev;
+                });
+            } else if (timeoutModal.timeLeft > 0) {
+                interval = setInterval(() => {
+                    setTimeoutModal(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
+                }, 1000);
+            }
         }
-        return () => clearInterval(interval);
-    }, [timeoutModal.isOpen, timeoutModal.timeLeft]);
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [timeoutModal.isOpen, timeoutModal.team, timeoutModal.timeLeft, timeLeft]);
     
     // R5 Modal States
     const [showR5ModalHome, setShowR5ModalHome] = useState(false);
@@ -139,6 +201,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
     // New: Match Status & Metadata
     const [matchStatus, setMatchStatus] = useState<'scheduled' | 'live' | 'finished' | 'suspended'>('scheduled'); // 'finalizado' is db value but let's map 'scheduled' = 'programmado'
+
+    // Limpiar localStorage cuando el partido se finalice (submitted o W.O.)
+    useEffect(() => {
+        if (matchStatus === 'finished') {
+            localStorage.removeItem('fvf_intermission_minimized');
+        }
+    }, [matchStatus]);
+
     const [teamsInfo, setTeamsInfo] = useState<{
         home: { name: string, shield: string | null },
         away: { name: string, shield: string | null },
@@ -178,6 +248,296 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         dtHome: string | null;
         dtAway: string | null;
     }>({ capHome: null, capAway: null, ref1: null, ref2: null, scorer: null, dtHome: null, dtAway: null });
+
+    // Instanciación reactiva de Preflight
+    const preflight = useMatchPreflight({
+        sheet_data: { referees: staff.ref1 ? [staff.ref1] : [], staff, signatures },
+        posHome,
+        posAway,
+        benchHome,
+        benchAway,
+        staff,
+        signatures
+    });
+
+    // --- PALETA DE COLORES DINÁMICOS POR EQUIPO ---
+    const defaultHomeColors = ["#E11D48", "#FDA4AF"];
+    const defaultAwayColors = ["#2563EB", "#93C5FD"];
+
+    // Estado local rápido síncrono para cero lag
+    const [localTeamColors, setLocalTeamColors] = useState<{ home: string[]; away: string[] }>(() => ({
+        home: teamColors?.home || defaultHomeColors,
+        away: teamColors?.away || defaultAwayColors
+    }));
+
+    // Sincronizar estado local al hidratar
+    useEffect(() => {
+        if (teamColors) {
+            setLocalTeamColors({
+                home: teamColors.home || defaultHomeColors,
+                away: teamColors.away || defaultAwayColors
+            });
+        }
+    }, [teamColors]);
+
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Limpieza de timer al desmontar
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+        };
+    }, []);
+
+    // Persistencia con Safe Merge y Type-Safety (aserción estricta de SheetData)
+    const persistColors = useCallback(async (updatedColors: { home: string[]; away: string[] }) => {
+        try {
+            const { data: currentMatch } = await supabase
+                .from('matches')
+                .select('sheet_data')
+                .eq('id', matchId)
+                .single();
+
+            const rawSheet = currentMatch?.sheet_data;
+            const sheetData = (rawSheet as SheetData | null) || {};
+            
+            // Fusión segura (Safe Merge)
+            const updatedSheetData: SheetData = {
+                ...sheetData,
+                teamColors: updatedColors
+            };
+
+            const { error } = await supabase
+                .from('matches')
+                .update({ sheet_data: updatedSheetData })
+                .eq('id', matchId);
+
+            if (error) throw error;
+        } catch (err) {
+            console.error("Error al persistir colores en Supabase:", err);
+        }
+    }, [matchId, supabase]);
+
+    const handleColorChange = useCallback((team: 'home' | 'away', type: 'primary' | 'secondary', color: string) => {
+        setLocalTeamColors(prev => {
+            const currentColors = [...prev[team]];
+            if (type === 'primary') currentColors[0] = color;
+            else currentColors[1] = color;
+
+            const nextColors = {
+                ...prev,
+                [team]: currentColors
+            };
+
+            // Cambiar reactivamente en memoria en el hook central
+            updateTeamColors(team, currentColors);
+
+            // Debounce a base de datos de 500ms
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+            debounceTimerRef.current = setTimeout(() => {
+                persistColors(nextColors);
+            }, 500);
+
+            return nextColors;
+        });
+    }, [updateTeamColors, persistColors]);
+
+    const [activeColorTeam, setActiveColorTeam] = useState<'home' | 'away' | null>(null);
+
+    // Componente Modal de Selección de Color Centrado en Pantalla (Premium UI/UX)
+    const ColorPickerModal = ({ team, onClose }: { team: 'home' | 'away'; onClose: () => void }) => {
+        const colors = localTeamColors[team];
+        const teamName = team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name;
+        
+        // Sincronización Obligatoria al Abrir (Reset on Open)
+        const [localPrimary, setLocalPrimary] = useState(colors[0]);
+        const [localSecondary, setLocalSecondary] = useState(colors[1]);
+        
+        const primaryInputRef = useRef<HTMLInputElement | null>(null);
+        const secondaryInputRef = useRef<HTMLInputElement | null>(null);
+        
+        const presetColors = ["#E11D48", "#2563EB", "#16A34A", "#D97706", "#7C3AED", "#111827", "#FFFFFF", "#EA580C"];
+
+        const handleConfirm = () => {
+            // Persistir cambios al confirmar explícitamente
+            handleColorChange(team, 'primary', localPrimary);
+            handleColorChange(team, 'secondary', localSecondary);
+            onClose();
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div 
+                    className="bg-white rounded-3xl p-6 shadow-2xl max-w-lg w-full border border-slate-100 flex flex-col gap-6 animate-in fade-in zoom-in duration-200 text-left pointer-events-auto"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* Encabezado */}
+                    <div className="flex justify-between items-center border-b pb-3">
+                        <h3 className="font-black text-slate-800 text-lg">
+                            Configurar Colores - {teamName || (team === 'home' ? 'LOCAL' : 'VISITANTE')}
+                        </h3>
+                        <button 
+                            type="button" 
+                            onClick={onClose} 
+                            className="text-slate-400 hover:text-slate-600 transition"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
+                    
+                    {/* Cuerpo Principal (2 Columnas) */}
+                    <div className="grid grid-cols-5 gap-6 items-center">
+                        
+                        {/* Columna Izquierda: Vista Previa Jersey Gigante */}
+                        <div className="col-span-2 border-r border-slate-100 pr-6 flex flex-col items-center justify-center gap-2 shrink-0">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Previsualización</span>
+                            
+                            <svg viewBox="0 0 100 100" className="w-28 h-28 drop-shadow-lg mx-auto">
+                                {/* Cuerpo de la Camiseta */}
+                                <path 
+                                    d="M 30,20 L 70,20 L 85,35 L 75,45 L 68,38 L 68,90 L 32,90 L 32,38 L 25,45 L 15,35 Z" 
+                                    fill={localPrimary} 
+                                    stroke={localSecondary} 
+                                    strokeWidth="2" 
+                                    className="transition-all duration-300"
+                                />
+                                {/* Cuello */}
+                                <path 
+                                    d="M 40,20 A 10,10 0 0,0 60,20 Z" 
+                                    fill={localSecondary} 
+                                    className="transition-all duration-300"
+                                />
+                                {/* Borde Mangas */}
+                                <path d="M 15,35 L 25,45" stroke={localSecondary} strokeWidth="3" className="transition-all duration-300" />
+                                <path d="M 85,35 L 75,45" stroke={localSecondary} strokeWidth="3" className="transition-all duration-300" />
+                                {/* Borde Inferior */}
+                                <line x1="32" y1="90" x2="68" y2="90" stroke={localSecondary} strokeWidth="4" className="transition-all duration-300" />
+                                {/* Número 10 */}
+                                <text 
+                                    x="50" 
+                                    y="62" 
+                                    textAnchor="middle" 
+                                    fill={getContrastColor(localPrimary)} 
+                                    className="font-black text-2xl transition-all duration-300 select-none" 
+                                    fontSize="24"
+                                >
+                                    10
+                                </text>
+                            </svg>
+
+                            <div className="flex flex-col items-center gap-0.5 mt-2">
+                                <span className="text-[9px] font-bold text-slate-500 uppercase">Texto: {getContrastColor(localPrimary)}</span>
+                                <div className="flex gap-1.5 items-center mt-1">
+                                    <span className="w-3.5 h-3.5 rounded-full border border-slate-200" style={{ backgroundColor: localPrimary }} title="Principal"></span>
+                                    <span className="w-3.5 h-3.5 rounded-full border border-slate-200" style={{ backgroundColor: localSecondary }} title="Secundario"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Columna Derecha: Controles de Selección */}
+                        <div className="col-span-3 flex flex-col gap-4">
+                            
+                            {/* Sección 1: Color Primario (Fondo) */}
+                            <div className="flex flex-col gap-1.5">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">1. Color Primario (Fondo)</span>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap gap-1.5 flex-1">
+                                        {presetColors.map(color => (
+                                            <button
+                                                key={`prim-${color}`}
+                                                type="button"
+                                                onClick={() => setLocalPrimary(color)}
+                                                className={`w-6 h-6 rounded-full border shadow-sm transition hover:scale-110 active:scale-95 cursor-pointer ${
+                                                    localPrimary === color 
+                                                        ? 'border-slate-800 ring-2 ring-slate-400 ring-offset-1 scale-105' 
+                                                        : color === '#FFFFFF' ? 'border-slate-200' : 'border-transparent'
+                                                }`}
+                                                style={{ backgroundColor: color }}
+                                                title={color}
+                                            />
+                                        ))}
+                                    </div>
+                                    <input 
+                                        type="color" 
+                                        ref={primaryInputRef}
+                                        value={localPrimary} 
+                                        onChange={(e) => setLocalPrimary(e.target.value)}
+                                        className="hidden"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => primaryInputRef.current?.click()}
+                                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-[9px] font-black text-slate-600 border border-slate-200 rounded-lg transition active:scale-95 cursor-pointer whitespace-nowrap"
+                                    >
+                                        + Custom
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Sección 2: Color Secundario (Bordes) */}
+                            <div className="flex flex-col gap-1.5">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">2. Color Secundario (Bordes/Cuello)</span>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap gap-1.5 flex-1">
+                                        {presetColors.map(color => (
+                                            <button
+                                                key={`sec-${color}`}
+                                                type="button"
+                                                onClick={() => setLocalSecondary(color)}
+                                                className={`w-6 h-6 rounded-full border shadow-sm transition hover:scale-110 active:scale-95 cursor-pointer ${
+                                                    localSecondary === color 
+                                                        ? 'border-slate-800 ring-2 ring-slate-400 ring-offset-1 scale-105' 
+                                                        : color === '#FFFFFF' ? 'border-slate-200' : 'border-transparent'
+                                                }`}
+                                                style={{ backgroundColor: color }}
+                                                title={color}
+                                            />
+                                        ))}
+                                    </div>
+                                    <input 
+                                        type="color" 
+                                        ref={secondaryInputRef}
+                                        value={localSecondary} 
+                                        onChange={(e) => setLocalSecondary(e.target.value)}
+                                        className="hidden"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => secondaryInputRef.current?.click()}
+                                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-[9px] font-black text-slate-600 border border-slate-200 rounded-lg transition active:scale-95 cursor-pointer whitespace-nowrap"
+                                    >
+                                        + Custom
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex gap-3 justify-end border-t pt-4">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-black text-slate-600 rounded-xl transition cursor-pointer uppercase tracking-wider"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirm}
+                            className="px-6 py-2 bg-slate-900 hover:bg-black text-xs font-black text-white rounded-xl transition cursor-pointer uppercase tracking-wider shadow-sm"
+                        >
+                            Confirmar Selección
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     const [uploadingSig, setUploadingSig] = useState(false);
     const [uploadingDtSig, setUploadingDtSig] = useState(false);
@@ -591,7 +951,9 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
             benchAway: data.bench_away || data.benchAway,
             servingTeam: data.serving_team || data.servingTeam,
             blockedPlayers: data.blocked_players || [],
-            sanctionsLog: data.sanctionsLog || []
+            sanctionsLog: data.sanctionsLog || [],
+            intermissionStartAt: data.intermission_start_at || data.intermissionStartAt || null,
+            teamColors: data.teamColors || undefined
         };
 
         setAllState(normalizedState);
@@ -706,11 +1068,60 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         blocked_players: blockedPlayers,
         sanctionsLog,
         staff,
+        intermission_start_at: intermissionStartAt,
+        teamColors,
         metadata: { 
             category: teamsInfo?.category || 'Voley',
             bestOfSets
         }
     });
+
+    const handleFinalizarEncuentro = () => {
+        // 1. Validar si el set actual cumple con las condiciones para cerrarse y sigue abierto
+        if (!sets[currentSetIdx].finished && canFinishSet()) {
+            alert("No se puede finalizar el partido con sets abiertos que pueden ser cerrados. Por favor, presione 'Cerrar Set' primero para guardar el resultado de este set.");
+            return;
+        }
+
+        // 2. Validar si el set actual sigue abierto pero NO se puede cerrar todavía
+        if (!sets[currentSetIdx].finished) {
+            alert("No se puede finalizar el partido porque el set actual aún está en juego y no cumple las condiciones de cierre. Si desea suspender el partido, use el botón 'Suspender'.");
+            return;
+        }
+
+        // 3. Validar si alguno de los dos equipos ha alcanzado los sets reglamentarios para ganar el partido
+        const homeSetsWon = sets.filter(s => s.finished && s.home > s.away).length;
+        const awaySetsWon = sets.filter(s => s.finished && s.away > s.home).length;
+        const targetSets = Math.ceil(bestOfSets / 2);
+
+        if (homeSetsWon < targetSets && awaySetsWon < targetSets) {
+            alert(`No se puede finalizar el partido. Se requiere que un equipo gane ${targetSets} sets (al mejor de ${bestOfSets}).\nResultado actual: Local ${homeSetsWon} - Visitante ${awaySetsWon}.`);
+            return;
+        }
+
+        // 4. Si todo está correcto, iniciar el flujo de firmas
+        setClosingFlow(true);
+    };
+
+    const handleIniciarPartido = async () => {
+        if (!preflight.isAllDone) return;
+        
+        try {
+            setMatchStatus('live');
+            const { error } = await supabase.from('matches').update({ 
+                status: 'en_curso',
+                sheet_data: allCurrentData()
+            }).eq('id', matchId);
+
+            if (error) throw error;
+            
+            setShowLiveToast(true);
+            setTimeout(() => setShowLiveToast(false), 1500);
+        } catch (err: any) {
+            console.error("Error al iniciar partido:", err);
+            alert("No se pudo iniciar el partido: " + err.message);
+        }
+    };
 
     const handleSanction = (type: 'yellow' | 'red' | 'expulsion' | 'disqualify') => {
         if (!selectedPlayer) return;
@@ -790,6 +1201,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 serving_team: servingTeam,
                 blocked_players: blockedPlayers,
                 sanctionsLog,
+                intermission_start_at: intermissionStartAt,
                 warnings: warnings || [], // Telemetry warnings for post-deploy monitoring
                 metadata: {
                     category: teamsInfo?.category || 'Voley',
@@ -817,7 +1229,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         }, 2000); // 2 second debounce
 
         return () => { clearTimeout(timeoutId); clearTimeout(watchdog); };
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase, blockedPlayers, sanctionsLog, warnings]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase, blockedPlayers, sanctionsLog, warnings, intermissionStartAt]);
 
     // Manual Refresh for Viewers
     const handleForceRefresh = () => {
@@ -1270,53 +1682,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const awayNumbers = fullRosterAway.map(p => p.number);
     const duplicateAwayNumbers = new Set(awayNumbers.filter((item, index) => awayNumbers.indexOf(item) !== index));
 
-    // --- COMPONENTE CAMISETA ---
-    const Jersey = ({ player, team, isPos1 }: { player: any, team: 'home' | 'away', isPos1?: boolean }) => {
-        if (!player) return (
-            <div className="relative flex flex-col items-center">
-                <div className="w-16 h-14 flex items-center justify-center rounded-xl border-dashed border-2 border-slate-300 bg-slate-50/50">
-                    <span className="font-bold text-[10px] text-slate-400 -rotate-12">VACANTE</span>
-                </div>
-            </div>
-        );
-        const isServing = servingTeam === team && isPos1;
-        
-        let mainColorClass = team === 'home' ? 'bg-white border-blue-600 text-blue-900' : 'bg-white border-red-600 text-red-900';
-        if (player.isLibero) {
-            mainColorClass = 'bg-purple-100 border-purple-400 text-purple-900 shadow-purple-200/50';
-        }
 
-        const teamSubHistory = subHistory.filter(s => s.team === team && !s.isLiberoAction);
-        const lastAction = teamSubHistory.filter(s => s.playerInId === player.id).pop();
-        
-        let subOutNumber = null;
-        if (lastAction) {
-            const fullRoster = team === 'home' ? fullRosterHome : fullRosterAway;
-            const subOutPlayer = fullRoster.find(p => p.id === lastAction.playerOutId);
-            if (subOutPlayer) {
-                subOutNumber = subOutPlayer.number;
-            }
-        }
-
-        return (
-            <div onClick={() => !readOnly && handleJerseyClick(player, team)} className={`relative flex flex-col items-center group ${!readOnly ? 'cursor-pointer' : ''}`}>
-                <div className={`w-16 h-14 flex items-center justify-center rounded-xl shadow-sm border-b-4 transition-transform ${!readOnly ? 'active:scale-95' : ''} ${mainColorClass}`}>
-                    <span className="font-black text-2xl">{player.number}</span>
-                </div>
-                {subOutNumber !== null && (
-                    <div className="absolute -top-2 -left-2 bg-slate-800 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white z-10">
-                        {subOutNumber}
-                    </div>
-                )}
-                {isServing && (
-                    <div className="absolute -top-3 -right-2 bg-yellow-400 text-yellow-900 rounded-full p-1.5 shadow-sm border-2 border-white animate-bounce z-10">
-                        <Volleyball size={14} className="fill-current" />
-                    </div>
-                )}
-                <span className="mt-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 rounded-full truncate max-w-[70px]">{player.name}</span>
-            </div>
-        );
-    };
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
@@ -1381,9 +1747,17 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                             <select
                                 value={matchStatus}
                                 onChange={(e) => {
-                                    if (e.target.value === 'live' && (posHome.filter(Boolean).length < 5 || posAway.filter(Boolean).length < 5)) {
-                                        alert("No se puede iniciar el encuentro. Ambos equipos deben tener al menos 5 jugadores en cancha.");
-                                        return;
+                                    if (e.target.value === 'live') {
+                                        const missing = [];
+                                        if (!preflight.refereesAssigned) missing.push("Designación de Árbitros");
+                                        if (!preflight.r5Loaded) missing.push("Formación R5 Inicial completa (6 jugadores en cancha) para ambos equipos");
+                                        if (!preflight.captainsAssigned) missing.push("Capitanes asignados en planilla para ambos equipos");
+                                        if (!preflight.numbersUnique) missing.push("Números de camisetas únicos (sin duplicados)");
+                                        
+                                        if (missing.length > 0) {
+                                            alert("No se puede iniciar el encuentro. Faltan las siguientes verificaciones previas:\n\n" + missing.map(m => `• ${m}`).join("\n"));
+                                            return;
+                                        }
                                     }
                                     handleStatusChange(e);
                                 }}
@@ -1421,7 +1795,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                 {/* LOCAL SIDEBAR */}
                 <aside className="w-full md:w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden order-2 md:order-1 h-[500px] md:h-auto">
-                    <div className="p-4 bg-blue-600 flex flex-col items-center gap-2 relative overflow-hidden shrink-0">
+                    <div 
+                        className="p-4 flex flex-col items-center gap-2 relative overflow-hidden shrink-0 transition-all duration-300"
+                        style={{ backgroundColor: localTeamColors.home[0] }}
+                    >
                         {/* Header Logo Local */}
                         <div className="w-16 h-16 bg-white rounded-full shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
                             {teamsInfo?.home.shield ? (
@@ -1433,14 +1810,39 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 />
                             ) : null}
                             <span
-                                className="font-black text-2xl text-blue-600 absolute inset-0 flex items-center justify-center"
-                                style={{ display: teamsInfo?.home.shield ? 'none' : 'flex' }}
+                                className="font-black text-2xl absolute inset-0 flex items-center justify-center"
+                                style={{ 
+                                    display: teamsInfo?.home.shield ? 'none' : 'flex',
+                                    color: localTeamColors.home[0]
+                                }}
                             >{teamsInfo?.home.name?.charAt(0) || 'L'}</span>
                         </div>
-                        <h2 className="font-black text-white text-center leading-tight z-10 relative">{teamsInfo?.home.name || 'LOCAL'}</h2>
+                        
+                        <div className="flex items-center gap-2 z-10 relative">
+                            <h2 
+                                className="font-black text-center leading-tight transition-colors"
+                                style={{ color: getContrastColor(localTeamColors.home[0]) }}
+                            >
+                                {teamsInfo?.home.name || 'LOCAL'}
+                            </h2>
+                            {!readOnly && (
+                                <button 
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setActiveColorTeam('home'); }}
+                                    className="p-1 rounded-full bg-white/20 hover:bg-white/40 transition active:scale-95 cursor-pointer"
+                                    title="Personalizar colores"
+                                    style={{ color: getContrastColor(localTeamColors.home[0]) }}
+                                >
+                                    <Palette size={14} />
+                                </button>
+                            )}
+                        </div>
 
                         {/* Decor */}
-                        <div className="absolute inset-0 bg-blue-700/50 mix-blend-multiply"></div>
+                        <div 
+                            className="absolute inset-0 opacity-40 mix-blend-multiply transition-colors"
+                            style={{ backgroundColor: localTeamColors.home[1] }}
+                        ></div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -1507,77 +1909,28 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                 {/* CENTRAL */}
                 <main className="flex-1 flex flex-col gap-4 overflow-y-visible md:overflow-y-auto custom-scrollbar order-1 md:order-2">
-                    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-2 md:p-4 flex flex-col items-center">
-                        <div className={`flex items-center justify-between w-full max-w-4xl ${isSidesSwapped ? 'flex-row-reverse' : 'flex-row'}`}>
-                            <div className="flex flex-col items-center gap-2">
-                                <div className="text-6xl font-black text-blue-600">{sets[currentSetIdx].home}</div>
-                                {!readOnly && (
-                                    <div className="flex gap-2">
-                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => handleAddPointWrapper('home')} className="bg-blue-600 outline-none text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
-                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => subtractPoint('home')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
-                                    </div>
-                                )}
-                                <div className="flex gap-1 mt-2">
-                                    <div className={`w-3 h-3 rounded-full ${timeouts.home >= 1 ? 'bg-blue-600' : 'bg-slate-200'} transition-colors`}></div>
-                                    <div className={`w-3 h-3 rounded-full ${timeouts.home >= 2 ? 'bg-blue-600' : 'bg-slate-200'} transition-colors`}></div>
-                                </div>
-                                {!readOnly && (
-                                    <button onClick={() => handleTimeout('home')} className="mt-1 text-[10px] font-bold text-slate-400 border border-slate-200 px-3 py-1 rounded-full uppercase hover:bg-blue-50 hover:text-blue-600 transition active:scale-95">Tiempo</button>
-                                )}
-                            </div>
-                            <div className="flex flex-col gap-2 w-64 text-center items-center">
-                                {readOnly && (
-                                    <Link href="/" className="mb-2 px-4 py-1 bg-slate-100/50 hover:bg-slate-200 text-slate-500 text-[10px] font-bold uppercase rounded-full flex items-center gap-1 transition">
-                                        <ArrowLeft size={10} /> Volver al Inicio
-                                    </Link>
-                                )}
-                                <h1 className="text-slate-300 font-black text-4xl uppercase tracking-widest leading-none">SETS</h1>
-                                <div className="border-2 border-slate-100 rounded-lg p-2 font-bold text-slate-600 w-full">SET {sets[currentSetIdx].number}: {sets[currentSetIdx].home} - {sets[currentSetIdx].away}</div>
-                                {!readOnly && (
-                                    <>
-                                        {!sets[currentSetIdx].finished ? (
-                                            <button onClick={() => {
-                                                if (canFinishSet()) {
-                                                    finishSet();
-                                                    if (currentSetIdx < bestOfSets - 1) {
-                                                        setTimeoutModal({ isOpen: true, team: 'set_break', timeLeft: 180 });
-                                                    }
-                                                } else {
-                                                    alert("No se puede cerrar el set. Se necesitan " + (currentSetIdx === bestOfSets - 1 ? "15" : "25") + " puntos y una diferencia de 2.");
-                                                }
-                                            }} className={`w-full py-1 text-white rounded text-xs font-bold transition ${canFinishSet() ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-400 cursor-not-allowed'}`}>Cerrar Set</button>
-                                        ) : (
-                                            currentSetIdx < bestOfSets - 1 && sets.filter(s => s.finished && s.home > s.away).length < Math.ceil(bestOfSets/2) && sets.filter(s => s.finished && s.away > s.home).length < Math.ceil(bestOfSets/2) && (
-                                                <button onClick={() => {
-                                                    startNextSet();
-                                                }} className="w-full py-1 bg-green-600 text-white rounded text-xs font-bold hover:bg-green-500 transition animate-pulse">Iniciar Set {sets.length}</button>
-                                            )
-                                        )}
-                                        <div className="flex flex-col gap-1 items-center mt-1">
-                                            <button onClick={() => setServingTeam(prev => prev === 'home' ? 'away' : 'home')} className="flex items-center justify-center gap-1 text-[10px] text-slate-400 uppercase hover:text-slate-600 transition"><ArrowRightLeft size={10} /> Saque</button>
-                                            <button onClick={() => setManualSideSwap(prev => !prev)} className="flex items-center justify-center gap-1 text-[10px] text-slate-400 uppercase hover:text-slate-600 transition"><RefreshCw size={10} /> Cambiar Lado</button>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                            <div className="flex flex-col items-center gap-2">
-                                <div className="text-6xl font-black text-red-600">{sets[currentSetIdx].away}</div>
-                                {!readOnly && (
-                                    <div className="flex gap-2">
-                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => handleAddPointWrapper('away')} className="bg-red-600 text-white w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">+</button>
-                                        <button disabled={matchStatus === 'finished' || matchStatus === 'suspended'} onClick={() => subtractPoint('away')} className="bg-slate-100 text-slate-500 hover:text-red-500 w-10 h-10 rounded-lg font-bold text-xl active:scale-95 transition border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
-                                    </div>
-                                )}
-                                <div className="flex gap-1 mt-2">
-                                    <div className={`w-3 h-3 rounded-full ${timeouts.away >= 1 ? 'bg-red-600' : 'bg-slate-200'} transition-colors`}></div>
-                                    <div className={`w-3 h-3 rounded-full ${timeouts.away >= 2 ? 'bg-red-600' : 'bg-slate-200'} transition-colors`}></div>
-                                </div>
-                                {!readOnly && (
-                                    <button onClick={() => handleTimeout('away')} className="mt-1 text-[10px] font-bold text-slate-400 border border-slate-200 px-3 py-1 rounded-full uppercase hover:bg-red-50 hover:text-red-600 transition active:scale-95">Tiempo</button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                    <ScoreControls
+                        sets={sets}
+                        currentSetIdx={currentSetIdx}
+                        bestOfSets={bestOfSets}
+                        readOnly={readOnly}
+                        matchStatus={matchStatus}
+                        isSidesSwapped={isSidesSwapped}
+                        isScoringBlocked={isScoringBlocked}
+                        timeouts={timeouts}
+                        handleAddPointWrapper={handleAddPointWrapper}
+                        subtractPoint={subtractPoint}
+                        handleTimeout={handleTimeout}
+                        canFinishSet={canFinishSet}
+                        finishSet={finishSet}
+                        startNextSet={startNextSet}
+                        setTimeoutModal={setTimeoutModal}
+                        setServingTeam={setServingTeam}
+                        setManualSideSwap={setManualSideSwap}
+                        timeLeft={timeLeft}
+                        intermissionStartAt={intermissionStartAt}
+                        teamColors={localTeamColors}
+                    />
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-2 rounded-xl border border-slate-200 flex flex-col">
@@ -1594,45 +1947,67 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-3xl shadow-lg border-4 border-slate-800 relative aspect-[1.8/1] w-full flex overflow-hidden flex-row">
-                        <div className="absolute left-1/2 top-0 bottom-0 border-l-[6px] border-dashed border-slate-800 z-10 -ml-[3px]"></div>
-                        {/* Cancha Lado Izquierdo (Red a la derecha; Ataque en col 2, Saque/P1 en Fila 3 Col 1) */}
-                        <div className={`relative flex-1 border-slate-200/50 border-r ${leftTeam === 'home' ? 'bg-blue-50/30' : 'bg-red-50/30'}`}>
-                            {leftRawPos.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
-                                <div className="absolute inset-0 flex items-center justify-center z-20">
-                                    <button onClick={() => openR5(leftTeam)} className={`${leftTeam === 'home' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'} text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:scale-105 active:scale-95 transition border-4 border-white/20`}>
-                                        R5 {leftTeam === 'home' ? 'Local' : 'Visitante'}
-                                    </button>
+                    {/* CHECKLIST VISUAL PREFLIGHT */}
+                    {matchStatus === 'scheduled' && !readOnly && (
+                        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
+                            <div className="flex items-center justify-between border-b pb-3">
+                                <h3 className="font-black text-slate-800 text-base uppercase tracking-wider">Verificaciones Previas al Partido</h3>
+                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase ${
+                                    preflight.refereesAssigned && preflight.r5Loaded && preflight.captainsAssigned && preflight.numbersUnique ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                                }`}>
+                                    {preflight.refereesAssigned && preflight.r5Loaded && preflight.captainsAssigned && preflight.numbersUnique ? 'Listo para iniciar' : 'Validación pendiente'}
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                <div className="flex items-center gap-2">
+                                    <span className={preflight.refereesAssigned ? 'text-green-600 font-bold flex items-center gap-1.5' : 'text-yellow-600 font-bold flex items-center gap-1.5'}>
+                                        <span className="text-base">{preflight.refereesAssigned ? '✓' : '⚠'}</span> Árbitros designados
+                                    </span>
                                 </div>
-                            )}
-                            <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(4) || null} team={leftTeam} /></div>
-                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(5) || null} team={leftTeam} /></div>
-                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={leftPositions.get(6) || null} team={leftTeam} /></div>
-                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(3) || null} team={leftTeam} /></div>
-                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={leftPositions.get(2) || null} team={leftTeam} /></div>
-                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={leftPositions.get(1) || null} team={leftTeam} isPos1={true} /></div>
+                                <div className="flex items-center gap-2">
+                                    <span className={preflight.r5Loaded ? 'text-green-600 font-bold flex items-center gap-1.5' : 'text-yellow-600 font-bold flex items-center gap-1.5'}>
+                                        <span className="text-base">{preflight.r5Loaded ? '✓' : '⚠'}</span> Formación R5 inicial (Local y Visita)
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={preflight.captainsAssigned ? 'text-green-600 font-bold flex items-center gap-1.5' : 'text-yellow-600 font-bold flex items-center gap-1.5'}>
+                                        <span className="text-base">{preflight.captainsAssigned ? '✓' : '⚠'}</span> Capitanes de equipo definidos
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={preflight.numbersUnique ? 'text-green-600 font-bold flex items-center gap-1.5' : 'text-yellow-600 font-bold flex items-center gap-1.5'}>
+                                        <span className="text-base">{preflight.numbersUnique ? '✓' : '⚠'}</span> Camisetas sin números duplicados
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 md:col-span-2">
+                                    <span className={preflight.dtSignatures ? 'text-green-600 font-bold flex items-center gap-1.5' : 'text-yellow-600 font-bold flex items-center gap-1.5'}>
+                                        <span className="text-base">{preflight.dtSignatures ? '✓' : '⚠'}</span> Firmas de Directores Técnicos (se solicitan al iniciar)
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="mt-2 text-center text-xs text-slate-500 font-medium bg-slate-50 py-3 px-4 rounded-xl border border-slate-100">
+                                ℹ Para iniciar el encuentro, cambie el estado de **"Programado"** a **"En Vivo 🔴"** en el selector superior derecho de la cabecera.
                             </div>
                         </div>
-                        {/* Cancha Lado Derecho (Red a la izquierda; Ataque en col 1, Saque/P1 en Fila 1 Col 2) */}
-                        <div className={`relative flex-1 ${rightTeam === 'home' ? 'bg-blue-50/30' : 'bg-red-50/30'}`}>
-                            {rightRawPos.filter(p => !!p).length === 0 && sets[currentSetIdx].home === 0 && sets[currentSetIdx].away === 0 && !readOnly && (
-                                <div className="absolute inset-0 flex items-center justify-center z-20">
-                                    <button onClick={() => openR5(rightTeam)} className={`${rightTeam === 'home' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'} text-white font-black text-sm md:text-xl uppercase px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 hover:scale-105 active:scale-95 transition border-4 border-white/20`}>
-                                        R5 {rightTeam === 'home' ? 'Local' : 'Visitante'}
-                                    </button>
-                                </div>
-                            )}
-                            <div className="absolute inset-0 grid grid-cols-2 grid-rows-3 p-4 gap-4">
-                                <div className="row-start-1 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(6) || null} team={rightTeam} /></div>
-                                <div className="row-start-2 col-start-1 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(5) || null} team={rightTeam} /></div>
-                                <div className="row-start-3 col-start-1 flex justify-center items-center"><Jersey player={rightPositions.get(4) || null} team={rightTeam} /></div>
-                                <div className="row-start-1 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(1) || null} team={rightTeam} isPos1={true} /></div>
-                                <div className="row-start-2 col-start-2 flex justify-center items-center border-b border-dashed border-slate-300"><Jersey player={rightPositions.get(2) || null} team={rightTeam} /></div>
-                                <div className="row-start-3 col-start-2 flex justify-center items-center"><Jersey player={rightPositions.get(3) || null} team={rightTeam} /></div>
-                            </div>
-                        </div>
-                    </div>
+                    )}
+
+                    <CourtView
+                        readOnly={readOnly}
+                        currentSetIdx={currentSetIdx}
+                        sets={sets}
+                        servingTeam={servingTeam}
+                        subHistory={subHistory}
+                        fullRosterHome={fullRosterHome}
+                        fullRosterAway={fullRosterAway}
+                        posHome={posHome}
+                        posAway={posAway}
+                        courtPositionsHome={courtPositionsHome}
+                        courtPositionsAway={courtPositionsAway}
+                        isSidesSwapped={isSidesSwapped}
+                        openR5={openR5}
+                        handleJerseyClick={handleJerseyClick}
+                        teamColors={localTeamColors}
+                    />
 
                     <div className="flex flex-col items-center pt-8 pb-10 gap-4 w-full px-2">
                         {!readOnly && (
@@ -1683,7 +2058,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 
                                 {/* Botón Finalizar Encuentro (Debajo de los otros, centrado) */}
                                 <button 
-                                    onClick={() => setClosingFlow(true)} 
+                                    onClick={handleFinalizarEncuentro} 
                                     className="bg-slate-900 text-white px-8 py-4 mt-2 rounded-full font-black text-sm flex items-center justify-center gap-2 shadow-lg hover:bg-black transition w-64 active:scale-95 uppercase tracking-wide"
                                 >
                                     <Check size={18} /> Finalizar Encuentro
@@ -1695,7 +2070,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
                 {/* VISITA SIDEBAR */}
                 <aside className="w-full md:w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden order-3 md:order-3 h-[500px] md:h-auto">
-                    <div className="p-4 bg-red-600 flex flex-col items-center gap-2 relative overflow-hidden shrink-0">
+                    <div 
+                        className="p-4 flex flex-col items-center gap-2 relative overflow-hidden shrink-0 transition-all duration-300"
+                        style={{ backgroundColor: localTeamColors.away[0] }}
+                    >
                         {/* Header Logo Visita */}
                         <div className="w-16 h-16 bg-white rounded-full shadow-lg z-10 flex items-center justify-center relative overflow-hidden">
                             {teamsInfo?.away.shield ? (
@@ -1707,14 +2085,39 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                                 />
                             ) : null}
                             <span
-                                className="font-black text-2xl text-red-600 absolute inset-0 flex items-center justify-center"
-                                style={{ display: teamsInfo?.away.shield ? 'none' : 'flex' }}
+                                className="font-black text-2xl absolute inset-0 flex items-center justify-center"
+                                style={{ 
+                                    display: teamsInfo?.away.shield ? 'none' : 'flex',
+                                    color: localTeamColors.away[0]
+                                }}
                             >{teamsInfo?.away.name?.charAt(0) || 'V'}</span>
                         </div>
-                        <h2 className="font-black text-white text-center leading-tight z-10 relative">{teamsInfo?.away.name || 'VISITA'}</h2>
+                        
+                        <div className="flex items-center gap-2 z-10 relative">
+                            <h2 
+                                className="font-black text-center leading-tight transition-colors"
+                                style={{ color: getContrastColor(localTeamColors.away[0]) }}
+                            >
+                                {teamsInfo?.away.name || 'VISITA'}
+                            </h2>
+                            {!readOnly && (
+                                <button 
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setActiveColorTeam('away'); }}
+                                    className="p-1 rounded-full bg-white/20 hover:bg-white/40 transition active:scale-95 cursor-pointer"
+                                    title="Personalizar colores"
+                                    style={{ color: getContrastColor(localTeamColors.away[0]) }}
+                                >
+                                    <Palette size={14} />
+                                </button>
+                            )}
+                        </div>
 
                         {/* Decor */}
-                        <div className="absolute inset-0 bg-red-700/50 mix-blend-multiply"></div>
+                        <div 
+                            className="absolute inset-0 opacity-40 mix-blend-multiply transition-colors"
+                            style={{ backgroundColor: localTeamColors.away[1] }}
+                        ></div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -1780,194 +2183,26 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 </aside>
             </div>
 
-            {/* --- MODAL R5 --- */}
-            {(showR5ModalHome || showR5ModalAway) && (() => {
-                const team = showR5ModalHome ? 'home' : 'away';
-                const teamName = team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name;
-                const teamColor = team === 'home' ? 'blue' : 'red';
-                const bench = team === 'home' ? benchHome : benchAway;
-                
-                const availablePlayers = bench.filter(p => !r5Form.find(r => r?.id === p.id) && r5Libero?.id !== p.id && r5Libero2?.id !== p.id);
-                
-                const formationNumbers = [...r5Form, r5Libero, r5Libero2].filter(p => !!p).map(p => p.number);
-                const availableNumbers = availablePlayers.map(p => p.number);
-                const duplicateAvailableNumbers = availableNumbers.filter((item, index) => availableNumbers.indexOf(item) !== index);
-                const blinkingNumbers = new Set([...formationNumbers, ...duplicateAvailableNumbers]);
-                
-                const handleSelectPlayer = (player: any) => {
-                    if (activeR5Box === 6) {
-                        setR5Libero(player);
-                    } else if (activeR5Box === 7) {
-                        setR5Libero2(player);
-                    } else {
-                        const newForm = [...r5Form];
-                        newForm[activeR5Box] = player;
-                        setR5Form(newForm);
-                        const nextEmpty = newForm.findIndex((p, idx) => idx > activeR5Box && p === null);
-                        if (nextEmpty !== -1) setActiveR5Box(nextEmpty);
-                        else if (newForm.every(p => p !== null)) setActiveR5Box(6);
-                    }
-                };
-
-                const isComplete = r5Form.every(p => p !== null);
-
-                return (
-                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex flex-col items-center justify-center p-2 md:p-6 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-full md:max-h-[85vh]">
-                        <div className={`bg-${teamColor}-600 p-4 text-white flex justify-between items-center relative shrink-0`}>
-                            <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-md p-1 overflow-hidden shrink-0">
-                                    {teamsInfo?.[team]?.shield ? (
-                                        <img src={teamsInfo[team].shield} alt={teamName || 'Club'} className="w-full h-full object-contain" onError={e => e.currentTarget.src=`https://ui-avatars.com/api/?name=${teamName || 'C'}&background=fff&color=000`} />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-slate-800 font-black text-xl">
-                                            {teamName ? teamName.substring(0,2).toUpperCase() : 'C'}
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
-                                    <div className="text-xl md:text-3xl font-black tracking-widest leading-none">R5 DIGITAL - SET {sets[currentSetIdx].number}</div>
-                                    <div className="text-xs md:text-sm font-bold opacity-90 uppercase mt-1 text-yellow-300">EQUIPO {team === 'home' ? 'LOCAL' : 'VISITANTE'}: <span className="text-white">{teamName || ''}</span></div>
-                                </div>
-                            </div>
-                            <button onClick={() => { setShowR5ModalHome(false); setShowR5ModalAway(false); }} className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition">
-                                <X size={24} />
-                            </button>
-                        </div>
-                        
-                        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-[500px] bg-slate-50">
-                            {/* COLUMNA IZQUIERDA: BANCA */}
-                            <div className="w-full md:w-5/12 p-4 md:p-6 flex flex-col bg-white border-b md:border-b-0 md:border-r border-slate-200">
-                                <h3 className="font-black text-slate-500 uppercase tracking-widest text-[10px] md:text-xs mb-3">Plantel Disponible {activeR5Box === 6 ? '(Líbero)' : '(Formación)'}</h3>
-                                <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                                    {availablePlayers.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
-                                            <p className="font-bold">Plantel vacío</p>
-                                        </div>
-                                    ) : (
-                                        availablePlayers.map(p => {
-                                            const isLibSuggestion = p.isLibero && activeR5Box === 6;
-                                            const isDuplicated = blinkingNumbers.has(p.number);
-                                            return (
-                                                <div key={p.id} onClick={() => handleSelectPlayer(p)} className={`bg-white border md:text-lg border-slate-100 p-2.5 md:p-3 flex items-center gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all group rounded-2xl ${isLibSuggestion ? 'ring-2 ring-purple-300 bg-purple-50/20' : ''} ${isDuplicated ? 'animate-pulse ring-2 ring-yellow-400 bg-yellow-50' : ''}`}>
-                                                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg bg-slate-50 text-slate-500 group-hover:bg-${teamColor}-600 group-hover:text-white transition-colors ${isLibSuggestion ? 'bg-purple-600 text-white' : ''} ${isDuplicated ? 'bg-yellow-200 text-yellow-800' : ''}`}>{p.number}</span>
-                                                    <span className="font-bold text-slate-700 flex-1 truncate">{p.name}</span>
-                                                    {isDuplicated && <span className="bg-yellow-400 text-yellow-900 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block animate-pulse">N° Repetido</span>}
-                                                    {p.isLibero && <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block">Líbero</span>}
-                                                    {p.isCaptain && <span className="bg-yellow-100 text-yellow-700 text-[10px] font-black px-2 py-0.5 rounded-md uppercase hidden md:inline-block">Capitán</span>}
-                                                </div>
-                                            )
-                                        })
-                                    )}
-                                </div>
-                            </div>
-                            
-                            {/* COLUMNA DERECHA: EL PAPEL R5 PREMIUM */}
-                            <div className="w-full md:w-7/12 p-4 md:p-8 flex flex-col items-center justify-center overflow-y-auto">
-                                <div className="flex items-center justify-center gap-2 mb-4">
-                                     <h3 className="font-black text-slate-400 uppercase tracking-widest text-[10px] md:text-xs">Formación Oficial</h3>
-                                     <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md text-[10px] font-black uppercase">Obligatorio</span>
-                                </div>
-                                
-                                {/* LA "HOJA" PREMIUM */}
-                                <div className="bg-white p-4 md:p-6 shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-200 w-full max-w-[360px] md:max-w-[400px] rounded-[2rem] relative flex flex-col items-center">
-                                    {/* Grid de Cancha */}
-                                    <div className="w-full relative bg-slate-50/50 rounded-2xl border border-slate-100 p-3 mb-4 grid grid-cols-3 gap-2 md:gap-3">
-                                        <div className="absolute top-0 inset-x-4 h-[3px] bg-red-400 rounded-full shadow-sm"></div>
-                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[9px] font-black bg-red-50 text-red-500 px-3 py-1 rounded-full uppercase tracking-widest ring-1 ring-red-100">RED</div>
-                                        
-                                        {[
-                                            { rIdx: 3, label: 'IV' },
-                                            { rIdx: 2, label: 'III' },
-                                            { rIdx: 1, label: 'II' },
-                                            { rIdx: 4, label: 'V' },
-                                            { rIdx: 5, label: 'VI' },
-                                            { rIdx: 0, label: 'I' },
-                                        ].map(({ rIdx, label }) => {
-                                            const isLocked = rIdx > 0 && r5Form[rIdx-1] === null;
-                                            const isActive = activeR5Box === rIdx;
-                                            const player = r5Form[rIdx];
-
-                                            return (
-                                                <div key={rIdx} onClick={() => !isLocked && setActiveR5Box(rIdx)}
-                                                    className={`aspect-[4/3] rounded-xl border-2 flex flex-col items-center justify-center p-1 cursor-pointer transition-all relative ${isActive ? 'border-blue-500 bg-blue-50 shadow-md ring-4 ring-blue-50 z-10 scale-105' : (isLocked ? 'border-dashed border-slate-200 bg-slate-50/50 cursor-not-allowed opacity-50' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')} ${player && !isActive ? 'bg-white border-slate-200' : ''}`}>
-                                                    
-                                                    {player && isActive && (
-                                                        <button onClick={(e) => { e.stopPropagation(); const n = [...r5Form]; n[rIdx] = null; setR5Form(n); setActiveR5Box(rIdx); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:scale-110 transition-transform"><X size={12}/></button>
-                                                    )}
-
-                                                    {!player ? (
-                                                        <div className="flex flex-col items-center justify-center opacity-40">
-                                                            <span className="text-xl md:text-2xl font-black">{label}</span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex flex-col items-center justify-center w-full h-full gap-1 p-1">
-                                                            <span className="text-[10px] font-black text-slate-300 mb-[-2px]">{label}</span>
-                                                            <div className="bg-blue-100 text-blue-700 w-full rounded-lg py-1.5 flex flex-col items-center justify-center px-1">
-                                                                 <span className="font-black text-sm md:text-base leading-none">#{player.number}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-
-                                    {/* SECCIÓN LÍBERO PREM */}
-                                    <div className="w-full flex flex-col gap-2">
-                                        {/* Líbero 1 */}
-                                        <div className={`w-full flex items-center justify-between border-2 rounded-2xl p-3 cursor-pointer transition-all ${activeR5Box === 6 ? 'border-purple-500 bg-purple-50 shadow-md ring-4 ring-purple-50 scale-105' : (!isComplete ? 'border-dashed border-slate-200 opacity-50 cursor-not-allowed' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')}`} onClick={() => isComplete && setActiveR5Box(6)}>
-                                            <div className="flex items-center gap-3 md:gap-4">
-                                                <div className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-lg md:text-xl rounded-xl transition-colors ${activeR5Box === 6 || r5Libero ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                                                    L
-                                                </div>
-                                                <div className="flex flex-col justify-center">
-                                                    <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-0.5">Líbero 1</div>
-                                                    <div className="font-bold text-sm md:text-base text-slate-700">
-                                                        {r5Libero ? <span className="text-purple-700">#{r5Libero.number} {r5Libero.name}</span> : <span className="text-slate-400 font-medium text-xs md:text-sm">Asignar Líbero 1...</span>}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {r5Libero && activeR5Box === 6 && (
-                                                <button onClick={(e) => { e.stopPropagation(); setR5Libero(null); setActiveR5Box(6); }} className="bg-red-500 text-white rounded-full p-1.5 shadow-md hover:scale-110 mr-1"><X size={14}/></button>
-                                            )}
-                                        </div>
-
-                                        {/* Líbero 2 */}
-                                        <div className={`w-full flex items-center justify-between border-2 rounded-2xl p-3 cursor-pointer transition-all ${activeR5Box === 7 ? 'border-purple-500 bg-purple-50 shadow-md ring-4 ring-purple-50 scale-105' : (!isComplete ? 'border-dashed border-slate-200 opacity-50 cursor-not-allowed' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm')}`} onClick={() => isComplete && setActiveR5Box(7)}>
-                                            <div className="flex items-center gap-3 md:gap-4">
-                                                <div className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-lg md:text-xl rounded-xl transition-colors ${activeR5Box === 7 || r5Libero2 ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                                                    L2
-                                                </div>
-                                                <div className="flex flex-col justify-center">
-                                                    <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-0.5">Líbero 2 <span className="text-slate-300 ml-1">(Opcional)</span></div>
-                                                    <div className="font-bold text-sm md:text-base text-slate-700">
-                                                        {r5Libero2 ? <span className="text-purple-700">#{r5Libero2.number} {r5Libero2.name}</span> : <span className="text-slate-400 font-medium text-xs md:text-sm">Asignar Líbero 2...</span>}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {r5Libero2 && activeR5Box === 7 && (
-                                                <button onClick={(e) => { e.stopPropagation(); setR5Libero2(null); setActiveR5Box(7); }} className="bg-red-500 text-white rounded-full p-1.5 shadow-md hover:scale-110 mr-1"><X size={14}/></button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="mt-6 w-full max-w-[360px] md:max-w-[400px]">
-                                    <button 
-                                        disabled={!isComplete} 
-                                        onClick={() => confirmR5(team)}
-                                        className={`w-full py-4 rounded-2xl font-black text-sm md:text-base shadow-xl uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isComplete ? 'bg-green-500 hover:bg-green-400 text-white hover:scale-[1.02] active:scale-95 hover:shadow-2xl hover:shadow-green-500/20' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                                    >
-                                        <Check size={20} /> Guardar Formación
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                );
-            })()}
+            <R5Modal
+                team="home"
+                isOpen={showR5ModalHome}
+                onClose={() => setShowR5ModalHome(false)}
+                bench={benchHome}
+                teamsInfo={teamsInfo}
+                currentSetNumber={sets[currentSetIdx].number}
+                confirmR5Lineup={confirmR5Lineup}
+                teamColors={localTeamColors}
+            />
+            <R5Modal
+                team="away"
+                isOpen={showR5ModalAway}
+                onClose={() => setShowR5ModalAway(false)}
+                bench={benchAway}
+                teamsInfo={teamsInfo}
+                currentSetNumber={sets[currentSetIdx].number}
+                confirmR5Lineup={confirmR5Lineup}
+                teamColors={localTeamColors}
+            />
 
             {/* --- MODALES ANTIGUOS --- */}
             {modalActionOpen && selectedPlayer && (
@@ -2156,43 +2391,72 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     </div>
                 </div>
             )}
-            {/* --- MODAL TIMEOUT --- */}
-            {timeoutModal.isOpen && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-[2rem] w-full max-w-md overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 animate-in fade-in zoom-in duration-200">
-                        <div className={`p-6 text-center text-white ${timeoutModal.team === 'set_break' ? 'bg-gradient-to-r from-indigo-500 to-purple-600' : timeoutModal.team === 'home' ? 'bg-gradient-to-r from-blue-500 to-blue-700' : 'bg-gradient-to-r from-red-500 to-red-700'}`}>
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-black uppercase text-xl tracking-wider">
-                                    {timeoutModal.team === 'set_break' ? 'DESCANSO ENTRE SETS' : 'TIEMPO MUERTO'}
-                                </h3>
-                                <button onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 0 })} className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition">
-                                    <X size={20} />
-                                </button>
+            {/* --- MODAL DESCANSO ENTRE SETS --- */}
+            <IntermissionModal
+                isOpen={timeoutModal.isOpen && timeoutModal.team === 'set_break'}
+                team={timeoutModal.team}
+                timeLeft={timeoutModal.timeLeft}
+                audioBlockedWarning={audioBlockedWarning}
+                isIntermissionMinimized={isIntermissionMinimized}
+                setIsIntermissionMinimized={setIsIntermissionMinimized}
+                onClose={() => {
+                    setTimeoutModal({ isOpen: false, team: null, timeLeft: 0 });
+                    setIntermissionStartAt(null);
+                    clearAlarm();
+                }}
+                currentSetNumber={sets[currentSetIdx].number}
+            />
+
+            {/* --- MODAL TIEMPO MUERTO SIMPLE --- */}
+            {timeoutModal.isOpen && timeoutModal.team !== 'set_break' && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 pointer-events-auto transition-all duration-300">
+                    <div className="bg-white rounded-[2rem] w-full max-w-md overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 pointer-events-auto flex flex-col animate-in zoom-in duration-300">
+                        <div className={`p-6 flex justify-between items-center text-white bg-gradient-to-r ${
+                            timeoutModal.team === 'home' ? 'from-blue-500 to-blue-700' : 'from-red-500 to-red-700'
+                        }`}>
+                            <div className="flex flex-col text-left">
+                                <h3 className="font-black uppercase tracking-wider text-xl">TIEMPO MUERTO</h3>
+                                <div className="text-xs font-bold text-white/90 uppercase tracking-widest mt-1">
+                                    {`Equipo ${timeoutModal.team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name}`}
+                                </div>
                             </div>
-                            <div className="text-sm font-bold text-white/90 uppercase tracking-widest">
-                                {timeoutModal.team === 'set_break' ? 'Cambio de Lado / Descanso' : `Equipo ${timeoutModal.team === 'home' ? teamsInfo?.home.name : teamsInfo?.away.name}`}
-                            </div>
+                            <button 
+                                onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 0 })} 
+                                className="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition"
+                            >
+                                <X size={20} />
+                            </button>
                         </div>
-                        <div className="p-8 text-center bg-slate-50 relative overflow-hidden">
+                        <div className="text-center bg-slate-50 relative overflow-hidden transition-all duration-300 p-8">
                             <div className="absolute top-0 left-0 w-full h-1 bg-slate-200">
-                                <div className={`h-full ${timeoutModal.team === 'set_break' ? 'bg-indigo-500' : timeoutModal.team === 'home' ? 'bg-blue-500' : 'bg-red-500'} transition-all duration-1000 ease-linear`} style={{ width: `${(timeoutModal.timeLeft / (timeoutModal.team === 'set_break' ? 180 : 30)) * 100}%` }}></div>
-                            </div>
-                            
-                            <div className={`text-8xl md:text-9xl font-black tabular-nums tracking-tighter drop-shadow-lg mb-4 ${timeoutModal.timeLeft === 0 ? 'text-red-600 animate-pulse' : 'text-slate-800'}`}>
-                                {Math.floor(timeoutModal.timeLeft / 60).toString().padStart(2, '0')}:{(timeoutModal.timeLeft % 60).toString().padStart(2, '0')}
+                                <div className={`h-full ${
+                                    timeoutModal.team === 'home' ? 'bg-blue-500' : 'bg-red-500'
+                                } transition-all duration-500 ease-linear`} style={{ width: `${(timeoutModal.timeLeft / 30) * 100}%` }}></div>
                             </div>
                             
                             {timeoutModal.timeLeft === 0 ? (
-                                <div className="animate-bounce mt-4 mb-2">
-                                    <p className="text-xl font-black text-red-600 uppercase tracking-widest mb-1">¡TIEMPO FINALIZADO!</p>
-                                    <p className="text-sm text-slate-500 font-bold uppercase">Llamar a los equipos a la cancha</p>
+                                <div className="animate-pulse flex flex-col items-center justify-center rounded-xl p-3 mt-2 mb-2 text-red-600">
+                                    <p className="font-black uppercase tracking-widest text-xl mb-1">¡TIEMPO CUMPLIDO!</p>
+                                    <p className="font-bold uppercase text-sm text-slate-500">DEBE REANUDARSE EL PARTIDO</p>
                                 </div>
                             ) : (
-                                <p className="text-slate-400 font-bold uppercase tracking-widest text-sm mt-4">Cronómetro en marcha</p>
+                                <div className="flex items-center justify-center gap-3">
+                                    <div className="font-black tabular-nums tracking-tighter drop-shadow-sm text-8xl md:text-9xl text-slate-800 mb-2">
+                                        00:{timeoutModal.timeLeft.toString().padStart(2, '0')}
+                                    </div>
+                                </div>
+                            )}
+                            {timeoutModal.timeLeft > 0 && (
+                                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-4">Cronómetro en marcha</p>
                             )}
                         </div>
-                        <div className="p-4 bg-white border-t border-slate-100">
-                            <button onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 0 })} className={`w-full py-4 rounded-xl font-black text-white text-lg uppercase tracking-wider transition active:scale-[0.98] ${timeoutModal.timeLeft === 0 ? 'bg-slate-800 hover:bg-slate-900 shadow-lg' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}>
+                        <div className="p-4 bg-white border-t border-slate-100 flex gap-2">
+                            <button 
+                                onClick={() => setTimeoutModal({ isOpen: false, team: null, timeLeft: 0 })} 
+                                className={`w-full py-4 rounded-xl font-black text-white text-lg uppercase tracking-wider transition active:scale-[0.98] ${
+                                    timeoutModal.timeLeft === 0 ? 'bg-slate-800 hover:bg-slate-900 shadow-lg' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'
+                                }`}
+                            >
                                 {timeoutModal.timeLeft === 0 ? 'Cerrar y Continuar' : 'Cancelar Tiempo'}
                             </button>
                         </div>
@@ -2804,6 +3068,14 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl z-[100] font-bold border-2 border-red-400 flex items-center gap-2 animate-bounce">
                     <AlertTriangle size={20} /> {duplicateNumberWarning}
                 </div>
+            )}
+
+            {/* Modal de Selección de Color Centrado */}
+            {activeColorTeam && (
+                <ColorPickerModal 
+                    team={activeColorTeam} 
+                    onClose={() => setActiveColorTeam(null)} 
+                />
             )}
         </div>
     );
