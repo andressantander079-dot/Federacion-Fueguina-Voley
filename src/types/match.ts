@@ -49,3 +49,81 @@ export interface MatchEvent {
     detail?: string;
     timestamp: number;
 }
+
+// --- CONTRATOS ADICIONALES PARA LA REFACTORIZACIÓN MODULAR ---
+export type TeamSide = 'home' | 'away';
+
+export interface Player {
+    id: string;
+    name: string;
+    number: number;
+    posicion_cancha?: number; // 1-6
+    isLibero?: boolean;
+    isCaptain?: boolean;
+}
+
+export interface SetData {
+    number: number;
+    home: number;
+    away: number;
+    finished: boolean;
+}
+
+export interface SanctionEvent {
+    id: string;
+    playerId: string;
+    playerName: string;
+    team: TeamSide;
+    type: 'yellow' | 'red' | 'expulsion' | 'disqualify';
+    setNum: number;
+    homeScore: number;
+    awayScore: number;
+    timestamp: number;
+}
+
+export interface SheetDataColors {
+    home: string[]; // [primaryColor, secondaryColor]
+    away: string[]; // [primaryColor, secondaryColor]
+}
+
+export interface SheetData {
+    teamColors?: SheetDataColors;
+    sets_history?: any[];
+    current_set_idx?: number;
+    pos_home?: any[];
+    pos_away?: any[];
+    bench_home?: any[];
+    bench_away?: any[];
+    serving_team?: string | null;
+    blocked_players?: any[];
+    sanctionsLog?: any[];
+    staff?: any;
+    signatures?: any;
+    observations?: string;
+    intermission_start_at?: number | null;
+    metadata?: any;
+}
+
+export interface MatchState {
+    bestOfSets?: number;
+    sets: SetData[];
+    currentSetIdx: number;
+    posHome: (Player | null)[];
+    posAway: (Player | null)[];
+    benchHome: Player[];
+    benchAway: Player[];
+    servingTeam: TeamSide | null;
+    subsCount: { home: number; away: number };
+    subHistory: { team: TeamSide; playerOutId: string; playerInId: string; isLiberoAction?: boolean }[];
+    timeouts: { home: number; away: number };
+    blockedPlayers: { id: string; type: 'set' | 'match' }[];
+    sanctionsLog: SanctionEvent[];
+    intermissionStartAt: number | null;
+    teamColors?: SheetDataColors;
+}
+
+export interface TimerState {
+    isOpen: boolean;
+    team: 'home' | 'away' | 'set_break' | null;
+    timeLeft: number;
+}

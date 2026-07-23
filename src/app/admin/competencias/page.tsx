@@ -3,14 +3,21 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { Trophy, Plus, Users, Calendar, Filter, CheckCircle, XCircle, Trash2, Archive, RefreshCcw, MapPin } from 'lucide-react';
+import { Trophy, Plus, Users, Calendar, Filter, CheckCircle, XCircle, Trash2, Archive, RefreshCcw, MapPin, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTournaments } from '@/hooks/useTournaments';
 
 export default function AdminCompetenciasList() {
     const [torneos, setTorneos] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [viewFilter, setViewFilter] = useState('Todas');
+
+    // --- ESTADOS SEGURIDAD MÓDULO 1004 ---
+    const [tournamentToDelete, setTournamentToDelete] = useState<string | null>(null);
+    const [confirmCode, setConfirmCode] = useState('');
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const { deleteTournament, isPending: isDeletePending } = useTournaments();
 
     // --- DATOS PARA EL FORMULARIO ---
     const [categorias, setCategorias] = useState<any[]>([]);
@@ -196,16 +203,28 @@ export default function AdminCompetenciasList() {
         });
         fetchTorneos();
     };
+    function handleDelete(id: string) {
+        setTournamentToDelete(id);
+        setConfirmCode('');
+        setShowDeleteModal(true);
+    }
 
-    async function handleDelete(id: string) {
-        if (!confirm("⚠️ ¿Estás seguro de ELIMINAR este torneo?\nEsto borrará todos los partidos, tablas y estadísticas asociadas.\nNo se puede deshacer.")) return;
+    async function confirmDeleteTournament() {
+        if (!tournamentToDelete) return;
+        if (confirmCode.trim() !== '1004') {
+            toast.error("Código de seguridad incorrecto.");
+            return;
+        }
 
-        const { error } = await supabase.from('tournaments').delete().eq('id', id);
-        if (error) {
-            toast.error("Error al eliminar: " + error.message);
+        const result = await deleteTournament(tournamentToDelete, confirmCode.trim());
+        if (!result.success) {
+            toast.error(result.error || "Error al eliminar el torneo");
         } else {
-            setTorneos(prev => prev.filter(t => t.id !== id));
+            setTorneos(prev => prev.filter(t => t.id !== tournamentToDelete));
             toast.success("Torneo eliminado correctamente.");
+            setShowDeleteModal(false);
+            setTournamentToDelete(null);
+            setConfirmCode('');
         }
     }
 
@@ -490,6 +509,67 @@ export default function AdminCompetenciasList() {
                             </button>
                         </div>
 
+                    </div>
+                </div>
+            )}
+
+            {/* --- MODAL DE SEGURIDAD 1004 --- */}
+            {showDeleteModal && tournamentToDelete && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 pointer-events-auto">
+                    <div 
+                        className="bg-zinc-900 rounded-3xl p-6 shadow-2xl max-w-md w-full border border-zinc-800 flex flex-col gap-6 text-zinc-100 text-left animate-in fade-in zoom-in duration-200 pointer-events-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Cabecera del Modal */}
+                        <div className="flex items-center gap-3 text-red-500">
+                            <AlertTriangle size={28} className="shrink-0" />
+                            <h3 className="font-black text-lg uppercase tracking-wide">¿Eliminar Competencia?</h3>
+                        </div>
+                        
+                        {/* Mensaje */}
+                        <div className="text-sm text-zinc-400 space-y-2">
+                            <p>Esta acción es <strong>permanente</strong> y eliminará todos los partidos, planillas, y métricas vinculadas a este torneo de forma definitiva.</p>
+                            <p className="bg-red-500/10 text-red-400 p-3 rounded-xl border border-red-500/20 text-xs font-medium">
+                                ⚠️ Advertencia: No se puede deshacer. Escribe el código de seguridad <strong className="text-sm font-black text-red-300">1004</strong> a continuación para proceder.
+                            </p>
+                        </div>
+
+                        {/* Input */}
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">Código de Seguridad</label>
+                            <input 
+                                type="text"
+                                value={confirmCode}
+                                onChange={(e) => setConfirmCode(e.target.value)}
+                                placeholder="Escribe 1004..."
+                                className="w-full bg-zinc-950 border border-zinc-800 focus:border-red-500 focus:bg-zinc-900 rounded-xl px-4 py-3 text-sm font-black outline-none tracking-widest text-center text-white transition-all disabled:opacity-50"
+                                disabled={isDeletePending}
+                            />
+                        </div>
+
+                        {/* Acciones */}
+                        <div className="flex gap-3 justify-end border-t border-zinc-800 pt-4 mt-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowDeleteModal(false);
+                                    setTournamentToDelete(null);
+                                    setConfirmCode('');
+                                }}
+                                className="px-5 py-2.5 border-2 border-zinc-800 hover:bg-zinc-800 text-xs font-black text-zinc-400 rounded-xl transition cursor-pointer uppercase tracking-wider disabled:opacity-50"
+                                disabled={isDeletePending}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmDeleteTournament}
+                                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-xs font-black text-white rounded-xl transition cursor-pointer uppercase tracking-wider shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                                disabled={confirmCode.trim() !== '1004' || isDeletePending}
+                            >
+                                {isDeletePending ? 'Eliminando...' : 'Eliminar Torneo'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
