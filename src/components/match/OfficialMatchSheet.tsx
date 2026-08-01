@@ -890,9 +890,19 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         if (readOnly) {
             // ... (Existing readOnly logic)
             const fetchState = async () => {
-                const { data } = await supabase.from('matches').select('sheet_data').eq('id', matchId).single();
+                const { data } = await supabase.from('matches').select(`
+                    sheet_data,
+                    tournament:tournaments!tournament_id(best_of_sets)
+                `).eq('id', matchId).single();
                 if (data?.sheet_data) {
-                    hydrateMatchState(data.sheet_data);
+                    const getJoinData = (itemData: any) => {
+                        if (!itemData) return null;
+                        if (Array.isArray(itemData)) return itemData[0];
+                        return itemData;
+                    };
+                    const tournInfo = getJoinData(data.tournament);
+                    const fetchedBestOfSets = tournInfo?.best_of_sets || 3;
+                    hydrateMatchState(data.sheet_data, fetchedBestOfSets);
                 }
             };
             fetchState();
@@ -1229,7 +1239,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         }, 2000); // 2 second debounce
 
         return () => { clearTimeout(timeoutId); clearTimeout(watchdog); };
-    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase, blockedPlayers, sanctionsLog, warnings, intermissionStartAt]);
+    }, [sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, signatures, observations, servingTeam, readOnly, matchId, teamsInfo, supabase, blockedPlayers, sanctionsLog, warnings, intermissionStartAt, bestOfSets]);
 
     // Manual Refresh for Viewers
     const handleForceRefresh = () => {
