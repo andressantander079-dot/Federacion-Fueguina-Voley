@@ -650,6 +650,9 @@ export function useVolleyMatch(initialState?: Partial<MatchState>) {
 
         // Acciones
         setAllState: (state: Partial<MatchState>) => {
+            if (state.bestOfSets !== undefined) {
+                setBestOfSets(state.bestOfSets);
+            }
             setMatchState(prev => {
                 const next = { ...prev };
                 
