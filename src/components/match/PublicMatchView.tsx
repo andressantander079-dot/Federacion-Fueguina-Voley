@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { ArrowLeft, User } from 'lucide-react';
+import { ArrowLeft, Radio, User, Trophy, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
+import { resolveTeamColors, getContrastColor } from '@/lib/colorUtils';
 
 export default function PublicMatchView() {
     const params = useParams();
@@ -15,6 +16,28 @@ export default function PublicMatchView() {
     const [matchData, setMatchData] = useState<any>(null);
     const [sponsors, setSponsors] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
+    const prevScoreHomeRef = useRef<number | null>(null);
+    const prevScoreAwayRef = useRef<number | null>(null);
+
+    const triggerConfetti = async (xRatio: number, primaryColor: string, isMatchPoint: boolean = false) => {
+        if (typeof window === 'undefined') return;
+        try {
+            const confetti = (await import('canvas-confetti')).default;
+            const colors = isMatchPoint 
+                ? ['#FFD700', '#FFA500', '#FFFFFF', primaryColor]
+                : [primaryColor, '#ffffff'];
+
+            confetti({
+                particleCount: isMatchPoint ? 50 : 20,
+                spread: isMatchPoint ? 90 : 55,
+                origin: { x: xRatio, y: 0.35 },
+                colors
+            });
+        } catch (err) {
+            console.error("Error al disparar confeti:", err);
+        }
+    };
 
     useEffect(() => {
         if (!matchId) return;
@@ -31,37 +54,60 @@ export default function PublicMatchView() {
                     *,
                     home_team:teams!home_team_id(name, shield_url),
                     away_team:teams!away_team_id(name, shield_url),
-                    category:categories(name)
+                    category:categories(name),
+                    tournament:tournaments!tournament_id(name, gender)
                 `)
                 .eq('id', matchId)
                 .single();
 
             if (data) {
                 const sheet = data.sheet_data || {};
+                const sets = sheet.sets_history || sheet.sets || [];
+                const currentIdx = sheet.current_set_idx || 0;
+                const currentSet = sets[currentIdx] || { home: 0, away: 0, number: 1 };
+
+                const currentHomePts = currentSet.home ?? currentSet.homeScore ?? currentSet.score_home ?? 0;
+                const currentAwayPts = currentSet.away ?? currentSet.awayScore ?? currentSet.score_away ?? 0;
+
+                const homeColors = resolveTeamColors(data.home_team?.name, data.home_team, sheet.teamColors?.home, true);
+                const awayColors = resolveTeamColors(data.away_team?.name, data.away_team, sheet.teamColors?.away, false, homeColors.primary);
+
+                // Detección de Delta de Puntos (Confeti Reactivo SSR-Safe)
+                if (prevScoreHomeRef.current !== null && currentHomePts > prevScoreHomeRef.current) {
+                    const isFinalMatch = (data.round || '').toLowerCase().includes('final') || (data.tournament?.name || '').toLowerCase().includes('final');
+                    triggerConfetti(0.25, homeColors.primary, isFinalMatch);
+                } else if (prevScoreAwayRef.current !== null && currentAwayPts > prevScoreAwayRef.current) {
+                    const isFinalMatch = (data.round || '').toLowerCase().includes('final') || (data.tournament?.name || '').toLowerCase().includes('final');
+                    triggerConfetti(0.75, awayColors.primary, isFinalMatch);
+                }
+
+                prevScoreHomeRef.current = currentHomePts;
+                prevScoreAwayRef.current = currentAwayPts;
+
                 setMatchData({
-                    // Hydrate basic score data
-                    sets: sheet.sets_history || [],
-                    currentSetIdx: sheet.current_set_idx || 0,
-                    // Hydrate rosters
+                    sets,
+                    currentSetIdx: currentIdx,
+                    currentSetHomePts: currentHomePts,
+                    currentSetAwayPts: currentAwayPts,
                     posHome: sheet.pos_home || [],
                     posAway: sheet.pos_away || [],
                     benchHome: sheet.bench_home || [],
                     benchAway: sheet.bench_away || [],
-                    // Hydrate Staff
                     staff: sheet.staff || { referee1: '', referee2: '', scorer: '' },
-                    // Metadata
                     homeName: data.home_team?.name || 'Local',
                     homeShield: data.home_team?.shield_url,
-                    // Default colors if not present
-                    homeColor: data.home_team?.main_color || 'blue',
+                    homeColors,
                     awayName: data.away_team?.name || 'Visita',
                     awayShield: data.away_team?.shield_url,
-                    awayColor: data.away_team?.main_color || 'red',
-                    categoryName: data.category?.name,
+                    awayColors,
+                    categoryName: data.category?.name || 'Sub-14',
+                    tournamentName: data.tournament?.name || 'Oficial',
+                    round: data.round || 'Fecha 1',
                     date: data.scheduled_time ? formatArgentinaDateLiteral(data.scheduled_time).split(',').slice(0, 2).join(',').trim() : 'HOY',
                     time: data.scheduled_time ? formatArgentinaTimeLiteral(data.scheduled_time) : 'A CONFIRMAR',
-                    phase: data.phase,
-                    gym: data.location
+                    status: data.status,
+                    homeScore: data.home_score,
+                    awayScore: data.away_score
                 });
             }
             setLoading(false);
@@ -70,12 +116,11 @@ export default function PublicMatchView() {
         fetchSponsors();
         fetchMatchInfo();
 
-        // Polling Fallback (Every 1 second) to guarantee real-time UX
         const intervalId = setInterval(fetchMatchInfo, 1000);
 
         const channel = supabase
             .channel(`public_match:${matchId}`)
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, (payload) => {
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${matchId}` }, () => {
                 fetchMatchInfo();
             })
             .subscribe();
@@ -86,22 +131,31 @@ export default function PublicMatchView() {
         };
     }, [matchId, supabase]);
 
-    if (loading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold animate-pulse">Cargando...</div>;
+    if (loading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold animate-pulse">Cargando Seguimiento en Vivo...</div>;
     if (!matchData) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold">Partido no encontrado.</div>;
 
-    const { sets, currentSetIdx, posHome, posAway, benchHome, benchAway, staff, homeName, awayName, homeShield, awayShield, categoryName, date, time, phase } = matchData;
-    const currentSet = sets[currentSetIdx] || { home: 0, away: 0, number: 1 };
+    const { sets, currentSetIdx, currentSetHomePts, currentSetAwayPts, posHome, posAway, benchHome, benchAway, staff, homeColors, awayColors, homeName, awayName, homeShield, awayShield, categoryName, tournamentName, round, date, time, status, homeScore, awayScore } = matchData;
+    const currentSetNumber = sets[currentSetIdx]?.number || (currentSetIdx + 1);
 
-    // @ts-ignore
-    const renderPlayerList = (posArr, benchArr) => {
-        // @ts-ignore
+    const isFinished = status === 'finalizado' || status === 'finished' || status === 'completado';
+    const isSuspended = status === 'suspendido' || status === 'suspended';
+
+    const calculatedSetsHome = sets.filter((s: any) => s.finished && (s.home > s.away || s.score_home > s.score_away)).length;
+    const calculatedSetsAway = sets.filter((s: any) => s.finished && (s.away > s.home || s.score_away > s.score_home)).length;
+
+    const setsWonHome = homeScore ?? calculatedSetsHome;
+    const setsWonAway = awayScore ?? calculatedSetsAway;
+
+    const winnerName = setsWonHome > setsWonAway ? homeName : setsWonAway > setsWonHome ? awayName : null;
+
+    const renderPlayerList = (posArr: any[], benchArr: any[]) => {
         const all = [...(posArr || []), ...(benchArr || [])]
-            .filter(p => p && p.number !== undefined) // Filter nulls and missing numbers
+            .filter(p => p && p.number !== undefined)
             .sort((a, b) => (a.number || 0) - (b.number || 0));
 
         return all.map((p: any) => (
             <div key={p.id || p.number} className="flex items-center gap-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 px-4 transition">
-                <span className="font-black text-xl w-8 text-right text-zinc-500">{p.number}</span>
+                <span className="font-black text-xl w-8 text-right text-zinc-500">#{p.number}</span>
                 <span className="font-bold text-base text-zinc-200 uppercase truncate flex-1">{p.name}</span>
                 {p.isLibero && <span className="bg-purple-900/50 text-purple-400 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-purple-500/20">Líbero</span>}
                 {p.isCaptain && <span className="bg-yellow-900/50 text-yellow-400 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-yellow-500/20">Capitán</span>}
@@ -112,18 +166,34 @@ export default function PublicMatchView() {
     return (
         <div className="min-h-screen bg-zinc-950 text-white font-sans overflow-hidden flex flex-col items-center py-6">
 
-            {/* 1. HEADER & SCOREBOARD (Top Section) */}
+            {/* 1. HEADER & SCOREBOARD */}
             <header className="w-full max-w-7xl px-4 mb-8 flex flex-col items-center">
 
-                {/* Back & Title */}
-                <div className="absolute top-6 left-6 flex items-center gap-3">
+                {/* Back & Status */}
+                <div className="w-full flex items-center justify-between mb-6">
                     <Link href="/" className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition text-xs font-bold uppercase tracking-wider">
                         <ArrowLeft size={14} /> Volver al Inicio
                     </Link>
+                    {isFinished ? (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/40 rounded-full">
+                            <Trophy size={14} className="text-yellow-400" />
+                            <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">Finalizado</span>
+                        </div>
+                    ) : isSuspended ? (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-orange-500/10 border border-orange-500/40 rounded-full">
+                            <AlertTriangle size={14} className="text-orange-400" />
+                            <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Suspendido</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-full animate-pulse">
+                            <Radio size={14} className="text-red-500" />
+                            <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">En Vivo</span>
+                        </div>
+                    )}
                 </div>
 
-                {/* METADATA ROW */}
-                <div className="flex gap-6 mt-12 mb-2 md:mt-0 md:mb-0 items-center justify-center">
+                {/* Metadata Row */}
+                <div className="flex flex-wrap gap-3 mb-6 items-center justify-center">
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-400 uppercase">
                         📅 {date || 'HOY'}
                     </div>
@@ -131,45 +201,101 @@ export default function PublicMatchView() {
                         ⏰ {time || 'A CONFIRMAR'}
                     </div>
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/20 border border-blue-500/20 text-xs font-bold text-blue-400 uppercase">
-                        🏆 {phase || categoryName || 'Liga'}
+                        🏆 {tournamentName} • {categoryName} • {round}
                     </div>
                 </div>
 
-                <div className="absolute top-6 right-6">
-                    <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-full animate-pulse">
-                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                        <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">En Vivo</span>
+                {/* ANUNCIO DORADO DE GANADOR SI ESTÁ FINALIZADO */}
+                {isFinished && (
+                    <div className="w-full max-w-4xl bg-gradient-to-r from-amber-500/20 via-yellow-500/30 to-amber-500/20 border-2 border-amber-500/50 rounded-2xl p-5 mb-8 flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left shadow-2xl shadow-yellow-500/10 animate-in fade-in zoom-in-95">
+                        <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center text-zinc-950 font-black shadow-lg shrink-0">
+                                <Trophy size={28} />
+                            </div>
+                            <div>
+                                <span className="text-xs font-black text-yellow-400 uppercase tracking-widest block">Partido Finalizado</span>
+                                <h3 className="text-xl md:text-2xl font-black text-white leading-tight">
+                                    {winnerName ? <>¡Ganador: <span className="text-yellow-400">{winnerName}</span>!</> : 'Resultado Registrado'}
+                                </h3>
+                            </div>
+                        </div>
+                        <div className="px-5 py-2.5 bg-zinc-900/80 border border-yellow-500/30 rounded-xl font-mono font-black text-xl text-yellow-400">
+                            {setsWonHome} - {setsWonAway} SETS
+                        </div>
                     </div>
+                )}
+
+                {/* SCOREBOARD PRINCIPAL PREMIUM EN DARK MODE (WITH AMBIENT GLOW & SCORE BOXES) */}
+                <div className="w-full grid grid-cols-2 gap-4 md:gap-8 max-w-4xl">
+                    
+                    {/* TARJETA LOCAL */}
+                    <div 
+                        className="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-6 md:p-8 flex flex-col items-center justify-between relative overflow-hidden transition-all duration-500"
+                        style={{ boxShadow: `0 0 35px ${homeColors.primary}22` }}
+                    >
+                        <div className="absolute top-0 left-0 right-0 h-1.5" style={{ backgroundColor: homeColors.primary }} />
+
+                        <div className="flex flex-col items-center text-center">
+                            {homeShield ? (
+                                <img src={homeShield} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-xl" alt="" />
+                            ) : (
+                                <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mb-4 text-zinc-500 font-bold">LOC</div>
+                            )}
+                            <h2 className="text-base md:text-xl font-black text-white uppercase tracking-tight leading-tight min-h-[48px] flex items-center justify-center">
+                                {homeName}
+                            </h2>
+                        </div>
+
+                        {/* SCORE BOX PRIMARIO */}
+                        <div 
+                            className="w-full mt-6 py-4 md:py-6 rounded-2xl flex items-center justify-center shadow-inner font-mono font-black text-5xl md:text-8xl tabular-nums border border-white/10"
+                            style={{ 
+                                backgroundColor: homeColors.primary, 
+                                color: getContrastColor(homeColors.primary)
+                            }}
+                        >
+                            {currentSetHomePts}
+                        </div>
+                    </div>
+
+                    {/* TARJETA VISITANTE */}
+                    <div 
+                        className="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-6 md:p-8 flex flex-col items-center justify-between relative overflow-hidden transition-all duration-500"
+                        style={{ boxShadow: `0 0 35px ${awayColors.primary}22` }}
+                    >
+                        <div className="absolute top-0 left-0 right-0 h-1.5" style={{ backgroundColor: awayColors.primary }} />
+
+                        <div className="flex flex-col items-center text-center">
+                            {awayShield ? (
+                                <img src={awayShield} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-xl" alt="" />
+                            ) : (
+                                <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mb-4 text-zinc-500 font-bold">VIS</div>
+                            )}
+                            <h2 className="text-base md:text-xl font-black text-white uppercase tracking-tight leading-tight min-h-[48px] flex items-center justify-center">
+                                {awayName}
+                            </h2>
+                        </div>
+
+                        {/* SCORE BOX PRIMARIO */}
+                        <div 
+                            className="w-full mt-6 py-4 md:py-6 rounded-2xl flex items-center justify-center shadow-inner font-mono font-black text-5xl md:text-8xl tabular-nums border border-white/10"
+                            style={{ 
+                                backgroundColor: awayColors.primary, 
+                                color: getContrastColor(awayColors.primary)
+                            }}
+                        >
+                            {currentSetAwayPts}
+                        </div>
+                    </div>
+
                 </div>
 
-                {/* Main Scoreboard */}
-                <div className="bg-zinc-900/80 border border-white/10 rounded-3xl p-6 shadow-2xl backdrop-blur-xl flex items-center gap-12 mt-8 md:mt-4">
-
-                    {/* Home Score */}
-                    <div className="flex flex-col items-center">
-                        <div className="text-6xl font-black text-white leading-none">{currentSet.home}</div>
-                        <div className="w-12 h-1 bg-blue-500 rounded-full mt-2"></div>
+                {/* Badge Set Actual */}
+                <div className="mt-6 flex flex-col items-center">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Set Actual</span>
+                    <div className="text-2xl font-black text-white bg-zinc-900 px-6 py-1.5 rounded-xl border border-zinc-800">
+                        Set {currentSetNumber}
                     </div>
-
-                    {/* Badge */}
-                    <div className="flex flex-col items-center px-6">
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Set Actual</span>
-                        <div className="text-4xl font-black text-white bg-zinc-800 px-6 py-2 rounded-xl border border-white/5">
-                            {currentSet.number}
-                        </div>
-                        <div className="flex gap-1 mt-3">
-                            {sets.map((s: any, i: number) => (
-                                <div key={i} className={`w-2 h-2 rounded-full ${s.finished ? 'bg-zinc-500' : 'bg-zinc-800'}`}></div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Away Score */}
-                    <div className="flex flex-col items-center">
-                        <div className="text-6xl font-black text-white leading-none">{currentSet.away}</div>
-                        <div className="w-12 h-1 bg-red-500 rounded-full mt-2"></div>
-                    </div>
-
                 </div>
 
                 {/* Historial de Sets Terminados */}
@@ -205,7 +331,7 @@ export default function PublicMatchView() {
                 )}
 
                 {/* Referees Row */}
-                <div className="flex gap-4 mt-6 text-xs text-zinc-500 font-medium">
+                <div className="flex flex-wrap justify-center gap-4 mt-6 text-xs text-zinc-500 font-medium">
                     {staff.referee1 && (
                         <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800">
                             <User size={12} /> <span className="uppercase">1º: {staff.referee1}</span>
@@ -213,7 +339,7 @@ export default function PublicMatchView() {
                     )}
                     {staff.scorer && (
                         <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800">
-                            <User size={12} /> <span className="uppercase">Planillera/o: {staff.scorer}</span>
+                            <User size={12} /> <span className="uppercase">Planillero: {staff.scorer}</span>
                         </div>
                     )}
                     {staff.referee2 && (
@@ -225,13 +351,16 @@ export default function PublicMatchView() {
 
             </header>
 
-            {/* 2. ROSTERS (Two Columns Layout) */}
+            {/* 2. ROSTERS */}
             <main className="flex-1 w-full max-w-7xl px-4 grid grid-cols-1 md:grid-cols-2 gap-8 items-start overflow-hidden">
 
                 {/* HOME CARD */}
                 <div className="bg-zinc-900 border border-white/5 rounded-3xl overflow-hidden shadow-2xl flex flex-col h-full max-h-[600px]">
-                    <div className="bg-blue-600/90 p-6 flex items-center justify-between backdrop-blur-sm">
-                        <h2 className="text-2xl font-black text-white uppercase tracking-tight">{homeName}</h2>
+                    <div 
+                        className="p-6 flex items-center justify-between backdrop-blur-sm border-b border-white/10"
+                        style={{ backgroundColor: homeColors.primary, color: getContrastColor(homeColors.primary) }}
+                    >
+                        <h2 className="text-2xl font-black uppercase tracking-tight">{homeName}</h2>
                         {homeShield && <img src={homeShield} className="w-12 h-12 object-contain drop-shadow-md" />}
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-zinc-900/50 p-2">
@@ -242,9 +371,12 @@ export default function PublicMatchView() {
 
                 {/* AWAY CARD */}
                 <div className="bg-zinc-900 border border-white/5 rounded-3xl overflow-hidden shadow-2xl flex flex-col h-full max-h-[600px]">
-                    <div className="bg-red-600/90 p-6 flex items-center justify-between backdrop-blur-sm">
+                    <div 
+                        className="p-6 flex items-center justify-between backdrop-blur-sm border-b border-white/10"
+                        style={{ backgroundColor: awayColors.primary, color: getContrastColor(awayColors.primary) }}
+                    >
                         {awayShield && <img src={awayShield} className="w-12 h-12 object-contain drop-shadow-md" />}
-                        <h2 className="text-2xl font-black text-white uppercase tracking-tight text-right">{awayName}</h2>
+                        <h2 className="text-2xl font-black uppercase tracking-tight text-right">{awayName}</h2>
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-zinc-900/50 p-2">
                         {renderPlayerList(posAway, benchAway)}

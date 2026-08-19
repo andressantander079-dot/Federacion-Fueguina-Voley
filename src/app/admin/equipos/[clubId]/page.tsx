@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, Users, Plus, Edit, Shield, Save, X, Pencil, Camera, CheckCircle } from 'lucide-react'
+import { ChevronLeft, Users, Plus, Edit, Shield, Save, X, Pencil, Camera, CheckCircle, Palette } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ProfileCropperModal } from '@/components/ui/ProfileCropperModal'
+import { getContrastColor } from '@/lib/colorUtils'
 
 type Squad = {
     id: string
@@ -21,6 +22,8 @@ type Club = {
     name: string
     city: string
     shield_url: string | null
+    primary_color?: string | null
+    secondary_color?: string | null
     has_paid_inscription?: boolean
 }
 
@@ -291,11 +294,46 @@ export default function ClubDetailsPage() {
         }
     }
 
+    const saveClubColors = async (primary: string, secondary: string) => {
+        if (!club) return;
+        try {
+            const { error } = await supabase.from('teams').update({
+                primary_color: primary,
+                secondary_color: secondary
+            }).eq('id', club.id);
+
+            if (error) {
+                console.warn("Could not save team colors to DB (columns may not exist yet):", error.message);
+                alert("⚠️ Los colores se configuraron localmente. (Nota: active la migración DB si no persisten)");
+            } else {
+                alert('✅ Colores institucionales del club actualizados correctamente.');
+            }
+            setClub(prev => prev ? { ...prev, primary_color: primary, secondary_color: secondary } : prev);
+        } catch (error: any) {
+            console.error("Error al guardar colores del club:", error);
+            alert('Error guardando colores del club: ' + error.message);
+        }
+    };
+
+    const FAST_VOLEY_COLORS = [
+        { name: 'Celeste', hex: '#0284c7' },
+        { name: 'Azul Marino', hex: '#1e3a8a' },
+        { name: 'Azul Real', hex: '#2563eb' },
+        { name: 'Rojo', hex: '#dc2626' },
+        { name: 'Verde', hex: '#15803d' },
+        { name: 'Amarillo', hex: '#eab308' },
+        { name: 'Naranja', hex: '#f97316' },
+        { name: 'Violeta', hex: '#7c3aed' },
+        { name: 'Rosa / Magenta', hex: '#ec4899' },
+        { name: 'Blanco', hex: '#ffffff' },
+        { name: 'Negro', hex: '#000000' }
+    ];
+
     if (loading) return <div className="p-12 text-center text-gray-500">Cargando club...</div>
     if (!club) return <div className="p-12 text-center text-red-500">Club no encontrado</div>
 
     return (
-        <div className="p-8 min-h-screen">
+        <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-8">
             {/* Header */}
             <div className="mb-8">
                 <Link href="/admin/equipos" className="inline-flex items-center text-sm text-gray-500 hover:text-tdf-orange mb-4 transition-colors">
@@ -382,6 +420,85 @@ export default function ClubDetailsPage() {
                     </div>
                 </div>
             </div>
+
+            {/* SECCIÓN DE IDENTIDAD CROMÁTICA INSTITUCIONAL (ADMIN CLUB KITS) */}
+            {club && (
+                <div className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-white/5 rounded-2xl p-6 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between border-b border-gray-100 dark:border-zinc-800 pb-3">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
+                            <Palette size={20} className="text-tdf-blue" />
+                            Identidad Cromática del Club
+                        </h3>
+                        <span className="text-xs text-gray-400 font-medium">Configuración oficial para partidos en vivo</span>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                        {/* Selector Primario */}
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Color Principal (Camiseta)</label>
+                            <div className="flex items-center gap-3 mb-3">
+                                <input 
+                                    type="color" 
+                                    value={club.primary_color || '#0284c7'} 
+                                    onChange={(e) => saveClubColors(e.target.value, club.secondary_color || '#ffffff')}
+                                    className="w-10 h-10 rounded cursor-pointer bg-transparent border-0"
+                                />
+                                <input 
+                                    type="text" 
+                                    value={club.primary_color || ''} 
+                                    onChange={(e) => saveClubColors(e.target.value, club.secondary_color || '#ffffff')}
+                                    placeholder="#HEX"
+                                    className="px-3 py-2 bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded text-xs font-mono text-gray-900 dark:text-white w-28 uppercase"
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {FAST_VOLEY_COLORS.map(c => (
+                                    <button
+                                        key={c.hex}
+                                        type="button"
+                                        onClick={() => saveClubColors(c.hex, club.secondary_color || '#ffffff')}
+                                        className="w-6 h-6 rounded-full border border-gray-300 dark:border-white/20 shadow-sm transition-transform hover:scale-110"
+                                        style={{ backgroundColor: c.hex }}
+                                        title={c.name}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Selector Secundario */}
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase mb-2">Color Secundario (Acentos)</label>
+                            <div className="flex items-center gap-3 mb-3">
+                                <input 
+                                    type="color" 
+                                    value={club.secondary_color || '#ffffff'} 
+                                    onChange={(e) => saveClubColors(club.primary_color || '#0284c7', e.target.value)}
+                                    className="w-10 h-10 rounded cursor-pointer bg-transparent border-0"
+                                />
+                                <input 
+                                    type="text" 
+                                    value={club.secondary_color || ''} 
+                                    onChange={(e) => saveClubColors(club.primary_color || '#0284c7', e.target.value)}
+                                    placeholder="#HEX"
+                                    className="px-3 py-2 bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded text-xs font-mono text-gray-900 dark:text-white w-28 uppercase"
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {FAST_VOLEY_COLORS.map(c => (
+                                    <button
+                                        key={c.hex}
+                                        type="button"
+                                        onClick={() => saveClubColors(club.primary_color || '#0284c7', c.hex)}
+                                        className="w-6 h-6 rounded-full border border-gray-300 dark:border-white/20 shadow-sm transition-transform hover:scale-110"
+                                        style={{ backgroundColor: c.hex }}
+                                        title={c.name}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Squads Grid */}
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import SponsorsBanner from '@/components/home/SponsorsBanner';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
+import { resolveTeamColors } from '@/lib/colorUtils';
 
 export default function PublicMatchPage() {
     const { id } = useParams();
@@ -198,57 +199,64 @@ export default function PublicMatchPage() {
                     </div>
 
                     {/* SCOREBOARD */}
-                    <div className="flex items-center justify-between gap-4 md:gap-12">
-                        {/* HOME */}
-                        <div className="flex-1 flex flex-col items-center text-center">
-                            {match.home_team.shield_url && (
-                                <img src={match.home_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
-                            )}
-                            <h2 className="text-xl md:text-3xl font-black mb-1 text-white leading-tight">{match.home_team.name}</h2>
-                            {match.sheet_data?.staff?.coachHome && (
-                                <div className="text-xs text-zinc-400 font-bold mb-2 uppercase tracking-wide">DT: {match.sheet_data.staff.coachHome}</div>
-                            )}
-                            <div className="text-6xl md:text-8xl font-black text-blue-500 tabular-nums tracking-tighter">
-                                {match.current_set_points_home || 0}
-                            </div>
-                        </div>
+                    {(() => {
+                        const homeColors = resolveTeamColors(match.home_team?.name, match.home_team, match.sheet_data?.teamColors?.home, true);
+                        const awayColors = resolveTeamColors(match.away_team?.name, match.away_team, match.sheet_data?.teamColors?.away, false, homeColors.primary);
 
-                        {/* SETS INFO */}
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="text-zinc-500 font-bold text-xs uppercase tracking-widest">SET {match.current_set}</div>
-
-                            <div className="flex items-center gap-4 text-2xl md:text-4xl font-black text-zinc-700">
-                                <span>{match.home_score || 0}</span>
-                                <span className="w-1 h-8 bg-zinc-800 rounded-full"></span>
-                                <span>{match.away_score || 0}</span>
-                            </div>
-
-                            {/* Sets History */}
-                            {match.sets_results && match.sets_results.length > 0 && (
-                                <div className="flex gap-1">
-                                    {match.sets_results.map((res: string, i: number) => (
-                                        <div key={i} className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
-                                            {res}
-                                        </div>
-                                    ))}
+                        return (
+                            <div className="flex items-center justify-between gap-4 md:gap-12">
+                                {/* HOME */}
+                                <div className="flex-1 flex flex-col items-center text-center">
+                                    {match.home_team.shield_url && (
+                                        <img src={match.home_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
+                                    )}
+                                    <h2 className="text-xl md:text-3xl font-black mb-1 text-white leading-tight">{match.home_team.name}</h2>
+                                    {match.sheet_data?.staff?.coachHome && (
+                                        <div className="text-xs text-zinc-400 font-bold mb-2 uppercase tracking-wide">DT: {match.sheet_data.staff.coachHome}</div>
+                                    )}
+                                    <div className="text-6xl md:text-8xl font-black tabular-nums tracking-tighter" style={{ color: homeColors.primary }}>
+                                        {match.current_set_points_home || 0}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
 
-                        {/* AWAY */}
-                        <div className="flex-1 flex flex-col items-center text-center">
-                            {match.away_team.shield_url && (
-                                <img src={match.away_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
-                            )}
-                            <h2 className="text-xl md:text-3xl font-black mb-1 text-white leading-tight">{match.away_team.name}</h2>
-                            {match.sheet_data?.staff?.coachAway && (
-                                <div className="text-xs text-zinc-400 font-bold mb-2 uppercase tracking-wide">DT: {match.sheet_data.staff.coachAway}</div>
-                            )}
-                            <div className="text-6xl md:text-8xl font-black text-orange-500 tabular-nums tracking-tighter">
-                                {match.current_set_points_away || 0}
+                                {/* SETS INFO */}
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="text-zinc-500 font-bold text-xs uppercase tracking-widest">SET {match.current_set}</div>
+
+                                    <div className="flex items-center gap-4 text-2xl md:text-4xl font-black text-zinc-700">
+                                        <span>{match.home_score || 0}</span>
+                                        <span className="w-1 h-8 bg-zinc-800 rounded-full"></span>
+                                        <span>{match.away_score || 0}</span>
+                                    </div>
+
+                                    {/* Sets History */}
+                                    {match.sets_results && match.sets_results.length > 0 && (
+                                        <div className="flex gap-1">
+                                            {match.sets_results.map((res: string, i: number) => (
+                                                <div key={i} className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
+                                                    {res}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* AWAY */}
+                                <div className="flex-1 flex flex-col items-center text-center">
+                                    {match.away_team.shield_url && (
+                                        <img src={match.away_team.shield_url} className="w-16 h-16 md:w-24 md:h-24 object-contain mb-4 drop-shadow-lg" alt="" />
+                                    )}
+                                    <h2 className="text-xl md:text-3xl font-black mb-1 text-white leading-tight">{match.away_team.name}</h2>
+                                    {match.sheet_data?.staff?.coachAway && (
+                                        <div className="text-xs text-zinc-400 font-bold mb-2 uppercase tracking-wide">DT: {match.sheet_data.staff.coachAway}</div>
+                                    )}
+                                    <div className="text-6xl md:text-8xl font-black tabular-nums tracking-tighter" style={{ color: awayColors.primary }}>
+                                        {match.current_set_points_away || 0}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
+                        );
+                    })()}
                 </div>
             </div>
 

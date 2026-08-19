@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
-import { hexToRgb, getContrastColor } from '@/lib/colorUtils';
+import { hexToRgb, getContrastColor, resolveTeamColors } from '@/lib/colorUtils';
+import { finishLiveMatchAction } from '@/app/admin/actions/liveMatchActions';
 
 interface OfficialMatchSheetProps {
     redirectAfterSubmit: string;
@@ -1079,7 +1080,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         sanctionsLog,
         staff,
         intermission_start_at: intermissionStartAt,
-        teamColors,
+        teamColors: localTeamColors,
         metadata: { 
             category: teamsInfo?.category || 'Voley',
             bestOfSets
@@ -1212,6 +1213,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 blocked_players: blockedPlayers,
                 sanctionsLog,
                 intermission_start_at: intermissionStartAt,
+                teamColors: localTeamColors,
                 warnings: warnings || [], // Telemetry warnings for post-deploy monitoring
                 metadata: {
                     category: teamsInfo?.category || 'Voley',
@@ -1643,25 +1645,20 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 }
             };
 
-            // Si tenemos ID, guardamos en Supabase
+            // Si tenemos ID, guardamos en Supabase mediante Server Action aislada
             if (matchId) {
-                const { error } = await supabase
-                    .from('matches')
-                    .update({
-                        // @ts-ignore
-                        home_score: setsWonHome,
-                        // @ts-ignore
-                        away_score: setsWonAway,
-                        sheet_data: {
-                            ...finalSheetData,
-                            final_score: { home: setsWonHome, away: setsWonAway }
-                        },
-                        sheet_status: matchStatus === 'suspended' ? 'suspended' : 'submitted',
-                        status: matchStatus === 'suspended' ? 'suspendido' : 'finalizado'
-                    })
-                    .eq('id', matchId);
+                const res = await finishLiveMatchAction(
+                    matchId,
+                    {
+                        ...finalSheetData,
+                        final_score: { home: setsWonHome, away: setsWonAway }
+                    },
+                    setsWonHome,
+                    setsWonAway,
+                    matchStatus === 'suspended' ? 'suspendido' : 'finalizado'
+                );
 
-                if (error) throw error;
+                if (!res.success) throw new Error(res.error || "Error al cerrar partido");
             }
 
             alert("¡Planilla enviada correctamente a la Federación!");
