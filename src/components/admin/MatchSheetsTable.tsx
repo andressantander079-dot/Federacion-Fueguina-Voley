@@ -253,7 +253,7 @@ export default function MatchSheetsTable({ tournamentId, categoryId, gender }: M
                                                 ) : (
                                                     isAdmin ? (
                                                         <button
-                                                            onClick={() => handleOpenSecurityModal(match.id)}
+                                                            onClick={() => router.push(`/referee/partido/${match.id}?override=true`)}
                                                             className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-sm"
                                                         >
                                                             <ShieldCheck size={14} /> Completar Cierre
