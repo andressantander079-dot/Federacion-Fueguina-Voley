@@ -35,6 +35,56 @@ const MONTH_NAMES = [
 
 const YEARS_LIST = [2025, 2026, 2027, 2028, 2029];
 
+// Helper unificado para resolver la información de autoridades (match_officials, referee_id y sheet_data.staff)
+function getMatchOfficialsInfo(match: any, refereesList: any[]) {
+    const officials = match.match_officials || [];
+    
+    // 1. Buscar en match_officials (Tabla oficial de asignación)
+    let ref1Name = officials.find((mo: any) => mo.role === '1st_referee')?.profile?.full_name;
+    let ref2Name = officials.find((mo: any) => mo.role === '2nd_referee')?.profile?.full_name;
+    let scorerName = officials.find((mo: any) => mo.role === 'scorer')?.profile?.full_name;
+
+    // 2. Buscar en matches.referee (Directo via referee_id)
+    if (!ref1Name) {
+        if (match.referee) {
+            ref1Name = match.referee.profile?.full_name || `${match.referee.first_name || ''} ${match.referee.last_name || ''}`.trim();
+        } else if (match.referee_id) {
+            const refObj = refereesList.find(r => r.id === match.referee_id || r.profile?.id === match.referee_id);
+            if (refObj) {
+                ref1Name = refObj.profile?.full_name || `${refObj.first_name || ''} ${refObj.last_name || ''}`.trim();
+            }
+        }
+    }
+
+    // 3. Buscar en sheet_data.staff (Cargado en planilla digital de cancha)
+    const staff = match.sheet_data?.staff;
+    if (staff) {
+        if (!ref1Name && staff.ref1) {
+            const refObj = refereesList.find(r => r.id === staff.ref1 || r.profile?.id === staff.ref1);
+            ref1Name = refObj?.profile?.full_name || refObj?.last_name || (typeof staff.ref1 === 'string' && !staff.ref1.includes('-') ? staff.ref1 : null);
+        }
+        if (!ref2Name && staff.ref2) {
+            const refObj = refereesList.find(r => r.id === staff.ref2 || r.profile?.id === staff.ref2);
+            ref2Name = refObj?.profile?.full_name || refObj?.last_name || (typeof staff.ref2 === 'string' && !staff.ref2.includes('-') ? staff.ref2 : null);
+        }
+        if (!scorerName && staff.scorer) {
+            const refObj = refereesList.find(r => r.id === staff.scorer || r.profile?.id === staff.scorer);
+            scorerName = refObj?.profile?.full_name || refObj?.last_name || (typeof staff.scorer === 'string' && !staff.scorer.includes('-') ? staff.scorer : null);
+        }
+    }
+
+    const hasRef = Boolean(ref1Name || ref2Name || scorerName);
+    const isFullyAssigned = Boolean(ref1Name && (scorerName || ref2Name));
+
+    return {
+        ref1Name,
+        ref2Name,
+        scorerName,
+        hasRef,
+        isFullyAssigned
+    };
+}
+
 export default function DesignationsPage() {
     const supabase = createClient();
     const [matches, setMatches] = useState<any[]>([]);
@@ -86,6 +136,8 @@ export default function DesignationsPage() {
                     supabase.from('teams').select('id, name').order('name'),
                     supabase.from('referees').select(`
                         id,
+                        first_name,
+                        last_name,
                         category,
                         profile:profiles(id, full_name),
                         referee_restrictions(restricted_team_id)
@@ -129,6 +181,7 @@ export default function DesignationsPage() {
                 home_team:teams!home_team_id(id, name, shield_url),
                 away_team:teams!away_team_id(id, name, shield_url),
                 category:categories(id, name),
+                referee:referees!referee_id(id, first_name, last_name, profile:profiles(full_name)),
                 ${tournamentSelect},
                 ${officialsSelect}
             `, { count: 'exact' });
@@ -157,7 +210,7 @@ export default function DesignationsPage() {
 
         // 5. Filtro por Árbitro / Oficial
         if (selectedReferee) {
-            query = query.eq('match_officials.user_id', selectedReferee);
+            query = query.or(`referee_id.eq.${selectedReferee},match_officials.user_id.eq.${selectedReferee}`);
         }
 
         // 6. Rango de Fechas con Huso Horario Seguro (ART UTC-3)
@@ -191,27 +244,19 @@ export default function DesignationsPage() {
 
     // Filtrado secundario rápido por Cobertura Arbitral en cliente sobre la página actual
     const displayedMatches = matches.filter(match => {
-        const has1stRef = match.match_officials?.some((mo: any) => mo.role === '1st_referee');
-        if (assignmentStatus === 'unassigned') return !has1stRef;
-        if (assignmentStatus === 'assigned') return has1stRef;
+        const { hasRef } = getMatchOfficialsInfo(match, referees);
+        if (assignmentStatus === 'unassigned') return !hasRef;
+        if (assignmentStatus === 'assigned') return hasRef;
         return true;
     });
 
     // Métricas de cobertura en vivo sobre la lista recibida
-    const fullyAssignedCount = matches.filter(m => {
-        const roles = m.match_officials?.map((mo: any) => mo.role) || [];
-        return roles.includes('1st_referee') && (roles.includes('scorer') || roles.includes('2nd_referee'));
-    }).length;
-
+    const fullyAssignedCount = matches.filter(m => getMatchOfficialsInfo(m, referees).isFullyAssigned).length;
     const partiallyAssignedCount = matches.filter(m => {
-        const roles = m.match_officials?.map((mo: any) => mo.role) || [];
-        return roles.includes('1st_referee') && !roles.includes('scorer') && !roles.includes('2nd_referee');
+        const info = getMatchOfficialsInfo(m, referees);
+        return info.hasRef && !info.isFullyAssigned;
     }).length;
-
-    const unassignedCount = matches.filter(m => {
-        const roles = m.match_officials?.map((mo: any) => mo.role) || [];
-        return !roles.includes('1st_referee');
-    }).length;
+    const unassignedCount = matches.filter(m => !getMatchOfficialsInfo(m, referees).hasRef).length;
 
     // Incompatibilidades para el modal de asignación
     function getAvailableReferees(match: any) {
@@ -226,9 +271,9 @@ export default function DesignationsPage() {
     function openAssignmentModal(match: any) {
         setSelectedMatch(match);
         setAssignments({
-            '1st_referee': match.match_officials?.find((m: any) => m.role === '1st_referee')?.user_id || '',
-            '2nd_referee': match.match_officials?.find((m: any) => m.role === '2nd_referee')?.user_id || '',
-            'scorer': match.match_officials?.find((m: any) => m.role === 'scorer')?.user_id || '',
+            '1st_referee': match.match_officials?.find((m: any) => m.role === '1st_referee')?.user_id || match.referee_id || match.sheet_data?.staff?.ref1 || '',
+            '2nd_referee': match.match_officials?.find((m: any) => m.role === '2nd_referee')?.user_id || match.sheet_data?.staff?.ref2 || '',
+            'scorer': match.match_officials?.find((m: any) => m.role === 'scorer')?.user_id || match.sheet_data?.staff?.scorer || '',
             'line_judge': match.match_officials?.find((m: any) => m.role === 'line_judge')?.user_id || '',
         });
     }
@@ -256,6 +301,11 @@ export default function DesignationsPage() {
             } else if (existing) {
                 await supabase.from('match_officials').delete().eq('id', existing.id);
             }
+        }
+
+        // Si se asignó 1st_referee, actualizamos también referee_id en la tabla matches
+        if (assignments['1st_referee']) {
+            await supabase.from('matches').update({ referee_id: assignments['1st_referee'] }).eq('id', selectedMatch.id);
         }
 
         setSelectedMatch(null);
@@ -420,7 +470,7 @@ export default function DesignationsPage() {
                             <option value="">Todos los árbitros</option>
                             {referees.map(r => (
                                 <option key={r.id} value={r.profile?.id || r.id}>
-                                    {r.profile?.full_name || `Árbitro #${r.id.slice(0, 4)}`}
+                                    {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim() || `Árbitro #${r.id.slice(0, 4)}`}
                                 </option>
                             ))}
                         </select>
@@ -490,11 +540,7 @@ export default function DesignationsPage() {
             ) : (
                 <div className="grid grid-cols-1 gap-4">
                     {displayedMatches.map(match => {
-                        const officials = match.match_officials || [];
-                        const ref1 = officials.find((mo: any) => mo.role === '1st_referee');
-                        const ref2 = officials.find((mo: any) => mo.role === '2nd_referee');
-                        const scorer = officials.find((mo: any) => mo.role === 'scorer');
-
+                        const info = getMatchOfficialsInfo(match, referees);
                         const genderName = match.tournament?.gender ? match.tournament.gender.toUpperCase() : null;
 
                         return (
@@ -543,17 +589,24 @@ export default function DesignationsPage() {
                                     </div>
                                 </div>
 
-                                {/* Preview de Designación Arbitral */}
+                                {/* Preview de Designación Arbitral (Consolidando match_officials, referee_id y sheet_data.staff) */}
                                 <div className="flex items-center gap-3 shrink-0">
-                                    {ref1 ? (
+                                    {info.hasRef ? (
                                         <div className="flex flex-col gap-1 text-right">
-                                            <div className="text-xs font-bold text-slate-700 dark:text-zinc-200 flex items-center justify-end gap-1.5">
-                                                <User size={13} className="text-emerald-500" />
-                                                <span>1° {ref1.profile?.full_name || 'Designado'}</span>
-                                            </div>
-                                            {scorer && (
+                                            {info.ref1Name && (
+                                                <div className="text-xs font-bold text-slate-700 dark:text-zinc-200 flex items-center justify-end gap-1.5">
+                                                    <User size={13} className="text-emerald-500" />
+                                                    <span>1° {info.ref1Name}</span>
+                                                </div>
+                                            )}
+                                            {info.ref2Name && (
                                                 <div className="text-[11px] font-semibold text-slate-400 flex items-center justify-end gap-1">
-                                                    <span>Anotador: {scorer.profile?.full_name}</span>
+                                                    <span>2° {info.ref2Name}</span>
+                                                </div>
+                                            )}
+                                            {info.scorerName && (
+                                                <div className="text-[11px] font-semibold text-slate-400 flex items-center justify-end gap-1">
+                                                    <span>Anotador: {info.scorerName}</span>
                                                 </div>
                                             )}
                                         </div>
@@ -671,7 +724,7 @@ export default function DesignationsPage() {
                                     <option value="">Seleccionar 1° Árbitro...</option>
                                     {availableReferees.map(r => (
                                         <option key={r.id} value={r.profile?.id}>
-                                            {r.profile?.full_name} ({r.category || 'Oficial'})
+                                            {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
                                 </select>
@@ -688,7 +741,7 @@ export default function DesignationsPage() {
                                     <option value="">Seleccionar 2° Árbitro (Opcional)...</option>
                                     {availableReferees.map(r => (
                                         <option key={r.id} value={r.profile?.id}>
-                                            {r.profile?.full_name} ({r.category || 'Oficial'})
+                                            {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
                                 </select>
@@ -705,7 +758,7 @@ export default function DesignationsPage() {
                                     <option value="">Seleccionar Apuntador...</option>
                                     {availableReferees.map(r => (
                                         <option key={r.id} value={r.profile?.id}>
-                                            {r.profile?.full_name} ({r.category || 'Oficial'})
+                                            {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
                                 </select>
@@ -722,7 +775,7 @@ export default function DesignationsPage() {
                                     <option value="">Seleccionar Juez de Línea (Opcional)...</option>
                                     {availableReferees.map(r => (
                                         <option key={r.id} value={r.profile?.id}>
-                                            {r.profile?.full_name} ({r.category || 'Oficial'})
+                                            {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
                                 </select>
