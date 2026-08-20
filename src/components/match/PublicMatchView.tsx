@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { ArrowLeft, Radio, User, Trophy, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Radio, User, Trophy, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 import { resolveTeamColors, getContrastColor } from '@/lib/colorUtils';
@@ -20,6 +20,10 @@ export default function PublicMatchView() {
     const prevScoreHomeRef = useRef<number | null>(null);
     const prevScoreAwayRef = useRef<number | null>(null);
 
+    // Estado del temporizador de redirección de 30 segundos
+    const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
+    const confettiFiredRef = useRef<boolean>(false);
+
     const triggerConfetti = async (xRatio: number, primaryColor: string, isMatchPoint: boolean = false) => {
         if (typeof window === 'undefined') return;
         try {
@@ -29,8 +33,8 @@ export default function PublicMatchView() {
                 : [primaryColor, '#ffffff'];
 
             confetti({
-                particleCount: isMatchPoint ? 50 : 20,
-                spread: isMatchPoint ? 90 : 55,
+                particleCount: isMatchPoint ? 60 : 25,
+                spread: isMatchPoint ? 100 : 55,
                 origin: { x: xRatio, y: 0.35 },
                 colors
             });
@@ -55,7 +59,7 @@ export default function PublicMatchView() {
                     home_team:teams!home_team_id(name, shield_url),
                     away_team:teams!away_team_id(name, shield_url),
                     category:categories(name),
-                    tournament:tournaments!tournament_id(name, gender)
+                    tournament:tournaments!tournament_id(name, gender, best_of_sets)
                 `)
                 .eq('id', matchId)
                 .single();
@@ -102,6 +106,7 @@ export default function PublicMatchView() {
                     awayColors,
                     categoryName: data.category?.name || 'Sub-14',
                     tournamentName: data.tournament?.name || 'Oficial',
+                    bestOfSets: data.tournament?.best_of_sets || sheet.metadata?.bestOfSets || 5,
                     round: data.round || 'Fecha 1',
                     date: data.scheduled_time ? formatArgentinaDateLiteral(data.scheduled_time).split(',').slice(0, 2).join(',').trim() : 'HOY',
                     time: data.scheduled_time ? formatArgentinaTimeLiteral(data.scheduled_time) : 'A CONFIRMAR',
@@ -131,20 +136,72 @@ export default function PublicMatchView() {
         };
     }, [matchId, supabase]);
 
+    // Detección de Partido Finalizado e Inserción de Confeti + Temporizador de Redirección (30s)
+    useEffect(() => {
+        if (!matchData) return;
+
+        const { sets, status, homeScore, awayScore, bestOfSets, homeColors, awayColors } = matchData;
+        const bestOf = bestOfSets || 5;
+        const targetSets = Math.ceil(bestOf / 2);
+
+        const calculatedSetsHome = sets.filter((s: any) => s.finished && ((s.home ?? s.score_home ?? 0) > (s.away ?? s.score_away ?? 0))).length;
+        const calculatedSetsAway = sets.filter((s: any) => s.finished && ((s.away ?? s.score_away ?? 0) > (s.home ?? s.score_home ?? 0))).length;
+
+        const setsWonHome = homeScore ?? calculatedSetsHome;
+        const setsWonAway = awayScore ?? calculatedSetsAway;
+
+        const isMatchFinishedByScore = setsWonHome >= targetSets || setsWonAway >= targetSets;
+        const isFinishedMatch = status === 'finalizado' || status === 'finished' || status === 'completado' || isMatchFinishedByScore;
+
+        if (isFinishedMatch && !confettiFiredRef.current) {
+            confettiFiredRef.current = true;
+            
+            const winningColor = setsWonHome > setsWonAway ? homeColors?.primary : awayColors?.primary;
+            const primaryHex = winningColor || '#FFD700';
+
+            // Ráfaga múltiple de confeti celebratorio
+            triggerConfetti(0.5, primaryHex, true);
+            setTimeout(() => triggerConfetti(0.2, primaryHex, true), 350);
+            setTimeout(() => triggerConfetti(0.8, primaryHex, true), 700);
+
+            // Iniciar temporizador de redirección de 30 segundos
+            setRedirectCountdown(30);
+        }
+    }, [matchData]);
+
+    // Contador regresivo de 30 segundos para redirigir al Inicio
+    useEffect(() => {
+        if (redirectCountdown === null) return;
+        if (redirectCountdown <= 0) {
+            window.location.href = '/';
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setRedirectCountdown(prev => (prev !== null && prev > 0 ? prev - 1 : 0));
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [redirectCountdown]);
+
     if (loading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold animate-pulse">Cargando Seguimiento en Vivo...</div>;
     if (!matchData) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold">Partido no encontrado.</div>;
 
-    const { sets, currentSetIdx, currentSetHomePts, currentSetAwayPts, posHome, posAway, benchHome, benchAway, staff, homeColors, awayColors, homeName, awayName, homeShield, awayShield, categoryName, tournamentName, round, date, time, status, homeScore, awayScore } = matchData;
+    const { sets, currentSetIdx, currentSetHomePts, currentSetAwayPts, posHome, posAway, benchHome, benchAway, staff, homeColors, awayColors, homeName, awayName, homeShield, awayShield, categoryName, tournamentName, bestOfSets, round, date, time, status, homeScore, awayScore } = matchData;
     const currentSetNumber = sets[currentSetIdx]?.number || (currentSetIdx + 1);
 
-    const isFinished = status === 'finalizado' || status === 'finished' || status === 'completado';
-    const isSuspended = status === 'suspendido' || status === 'suspended';
+    const bestOf = bestOfSets || 5;
+    const targetSets = Math.ceil(bestOf / 2);
 
-    const calculatedSetsHome = sets.filter((s: any) => s.finished && (s.home > s.away || s.score_home > s.score_away)).length;
-    const calculatedSetsAway = sets.filter((s: any) => s.finished && (s.away > s.home || s.score_away > s.score_home)).length;
+    const calculatedSetsHome = sets.filter((s: any) => s.finished && ((s.home ?? s.score_home ?? 0) > (s.away ?? s.score_away ?? 0))).length;
+    const calculatedSetsAway = sets.filter((s: any) => s.finished && ((s.away ?? s.score_away ?? 0) > (s.home ?? s.score_home ?? 0))).length;
 
     const setsWonHome = homeScore ?? calculatedSetsHome;
     const setsWonAway = awayScore ?? calculatedSetsAway;
+
+    const isMatchFinishedByScore = setsWonHome >= targetSets || setsWonAway >= targetSets;
+    const isFinished = status === 'finalizado' || status === 'finished' || status === 'completado' || isMatchFinishedByScore;
+    const isSuspended = status === 'suspendido' || status === 'suspended';
 
     const winnerName = setsWonHome > setsWonAway ? homeName : setsWonAway > setsWonHome ? awayName : null;
 
@@ -205,27 +262,45 @@ export default function PublicMatchView() {
                     </div>
                 </div>
 
-                {/* ANUNCIO DORADO DE GANADOR SI ESTÁ FINALIZADO */}
+                {/* ANUNCIO DORADO DE GANADOR Y CONTEO REGRESIVO DE 30 SEGUNDOS */}
                 {isFinished && (
-                    <div className="w-full max-w-4xl bg-gradient-to-r from-amber-500/20 via-yellow-500/30 to-amber-500/20 border-2 border-amber-500/50 rounded-2xl p-5 mb-8 flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left shadow-2xl shadow-yellow-500/10 animate-in fade-in zoom-in-95">
-                        <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center text-zinc-950 font-black shadow-lg shrink-0">
-                                <Trophy size={28} />
+                    <div className="w-full max-w-4xl bg-gradient-to-r from-amber-500/20 via-yellow-500/30 to-amber-500/20 border-2 border-amber-500/60 rounded-3xl p-6 mb-8 flex flex-col items-center gap-4 text-center shadow-2xl shadow-yellow-500/20 animate-in fade-in zoom-in-95">
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-6 w-full">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center text-zinc-950 font-black shadow-lg shrink-0 animate-bounce">
+                                    <Trophy size={32} />
+                                </div>
+                                <div className="text-left">
+                                    <span className="text-xs font-black text-yellow-400 uppercase tracking-widest block">¡PARTIDO FINALIZADO!</span>
+                                    <h3 className="text-2xl md:text-3xl font-black text-white leading-tight">
+                                        {winnerName ? <>¡Ganador: <span className="text-yellow-400">{winnerName}</span>!</> : 'Resultado Registrado'}
+                                    </h3>
+                                </div>
                             </div>
-                            <div>
-                                <span className="text-xs font-black text-yellow-400 uppercase tracking-widest block">Partido Finalizado</span>
-                                <h3 className="text-xl md:text-2xl font-black text-white leading-tight">
-                                    {winnerName ? <>¡Ganador: <span className="text-yellow-400">{winnerName}</span>!</> : 'Resultado Registrado'}
-                                </h3>
+                            <div className="px-6 py-3 bg-zinc-900/90 border border-yellow-500/40 rounded-2xl font-mono font-black text-2xl text-yellow-400 shadow-inner">
+                                {setsWonHome} - {setsWonAway} SETS
                             </div>
                         </div>
-                        <div className="px-5 py-2.5 bg-zinc-900/80 border border-yellow-500/30 rounded-xl font-mono font-black text-xl text-yellow-400">
-                            {setsWonHome} - {setsWonAway} SETS
-                        </div>
+
+                        {/* Banner de aviso de 30 segundos para cerrar pestaña / redirigir al inicio */}
+                        {redirectCountdown !== null && (
+                            <div className="w-full mt-2 pt-4 border-t border-yellow-500/20 flex flex-col sm:flex-row items-center justify-between gap-3 px-2">
+                                <div className="flex items-center gap-2 text-yellow-200 text-xs font-bold">
+                                    <Clock size={16} className="text-yellow-400 animate-spin" />
+                                    <span>Esta pestaña se cerrará automáticamente en <strong className="text-yellow-400 font-mono text-sm">{redirectCountdown}s</strong> al finalizar el partido.</span>
+                                </div>
+                                <button
+                                    onClick={() => window.location.href = '/'}
+                                    className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-md flex items-center gap-1.5"
+                                >
+                                    <ArrowLeft size={14} /> Volver al Inicio Ahora
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* SCOREBOARD PRINCIPAL PREMIUM EN DARK MODE (WITH AMBIENT GLOW & SCORE BOXES) */}
+                {/* SCOREBOARD PRINCIPAL PREMIUM EN DARK MODE */}
                 <div className="w-full grid grid-cols-2 gap-4 md:gap-8 max-w-4xl">
                     
                     {/* TARJETA LOCAL */}
