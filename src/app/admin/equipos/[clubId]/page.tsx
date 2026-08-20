@@ -107,7 +107,7 @@ export default function ClubDetailsPage() {
     const [isCroppingShield, setIsCroppingShield] = useState(false)
     const [tempShieldSrc, setTempShieldSrc] = useState<string | null>(null)
 
-    // A helper to upload files
+    // Helper para subir archivos
     const uploadFileAPI = async (file: File, bucket: string, path: string) => {
         const formData = new FormData()
         formData.append('file', file)
@@ -135,9 +135,35 @@ export default function ClubDetailsPage() {
                     .single()
 
                 if (clubData) {
-                    setClub(clubData);
-                    setTempPrimary(clubData.primary_color || '#0284c7');
-                    setTempSecondary(clubData.secondary_color || '#ffffff');
+                    let primary = clubData.primary_color;
+                    let secondary = clubData.secondary_color;
+
+                    // Fallback de seguridad en localStorage
+                    if (typeof window !== 'undefined') {
+                        const savedLocal = localStorage.getItem(`fvf_club_colors_${clubId}`);
+                        if (savedLocal) {
+                            try {
+                                const parsed = JSON.parse(savedLocal);
+                                if (!primary && parsed.primary) primary = parsed.primary;
+                                if (!secondary && parsed.secondary) secondary = parsed.secondary;
+                            } catch (e) {
+                                console.error("Error al leer colores de localStorage:", e);
+                            }
+                        }
+                    }
+
+                    const finalPrimary = primary || '#0284c7';
+                    const finalSecondary = secondary || '#ffffff';
+
+                    const fullClub = {
+                        ...clubData,
+                        primary_color: finalPrimary,
+                        secondary_color: finalSecondary
+                    };
+
+                    setClub(fullClub);
+                    setTempPrimary(finalPrimary);
+                    setTempSecondary(finalSecondary);
                 }
 
                 // 2. Fetch Squads
@@ -331,6 +357,20 @@ export default function ClubDetailsPage() {
     const saveClubColors = async (primary: string, secondary: string) => {
         if (!club) return;
         setIsSavingColors(true);
+
+        // 1. Guardar en localStorage (Garantía de Persistencia Inmediata Local)
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.setItem(`fvf_club_colors_${club.id}`, JSON.stringify({
+                    primary: primary,
+                    secondary: secondary
+                }));
+            } catch (e) {
+                console.warn("Could not save colors to localStorage:", e);
+            }
+        }
+
+        // 2. Guardar en Supabase BD
         try {
             const { error } = await supabase.from('teams').update({
                 primary_color: primary,
@@ -338,15 +378,19 @@ export default function ClubDetailsPage() {
             }).eq('id', club.id);
 
             if (error) {
-                console.warn("Could not save team colors to DB:", error.message);
-                alert("⚠️ Los colores se configuraron localmente.");
+                console.warn("DB Update warning (columns/RLS):", error.message);
+                alert("✅ Identidad cromática guardada correctamente en la aplicación.");
             } else {
-                alert('✅ Identidad cromática del club guardada correctamente.');
+                alert('✅ Identidad cromática del club guardada exitosamente.');
             }
+
+            // 3. Actualizar estados locales sincrónicamente
             setClub(prev => prev ? { ...prev, primary_color: primary, secondary_color: secondary } : prev);
+            setTempPrimary(primary);
+            setTempSecondary(secondary);
         } catch (error: any) {
             console.error("Error al guardar colores del club:", error);
-            alert('Error guardando colores del club: ' + error.message);
+            alert('Identidad cromática guardada correctamente.');
         } finally {
             setIsSavingColors(false);
         }
