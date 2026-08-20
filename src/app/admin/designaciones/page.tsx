@@ -85,6 +85,70 @@ function getMatchOfficialsInfo(match: any, refereesList: any[]) {
     };
 }
 
+// Verificación exhaustiva e infalible de si un árbitro en particular intervino en el partido
+function isRefereeInMatch(match: any, refereeTarget: string, refereesList: any[]) {
+    if (!refereeTarget) return true;
+
+    // Encontrar el objeto árbitro en la lista completa de árbitros
+    const refObj = refereesList.find(r => 
+        r.id === refereeTarget || 
+        r.profile?.id === refereeTarget || 
+        r.profile?.full_name === refereeTarget ||
+        `${r.first_name || ''} ${r.last_name || ''}`.trim() === refereeTarget
+    );
+
+    const possibleIds = new Set<string>();
+    const possibleNames = new Set<string>();
+
+    possibleIds.add(refereeTarget);
+    if (refObj) {
+        if (refObj.id) possibleIds.add(refObj.id);
+        if (refObj.profile?.id) possibleIds.add(refObj.profile.id);
+        if (refObj.profile?.full_name) possibleNames.add(refObj.profile.full_name.toLowerCase().trim());
+        const fullName = `${refObj.first_name || ''} ${refObj.last_name || ''}`.trim();
+        if (fullName) possibleNames.add(fullName.toLowerCase().trim());
+    }
+
+    // 1. Chequear match_officials
+    const officials = match.match_officials || [];
+    const isOfficial = officials.some((mo: any) => {
+        if (mo.user_id && possibleIds.has(mo.user_id)) return true;
+        if (mo.profile?.full_name && possibleNames.has(mo.profile.full_name.toLowerCase().trim())) return true;
+        return false;
+    });
+    if (isOfficial) return true;
+
+    // 2. Chequear matches.referee_id y matches.referee
+    if (match.referee_id && possibleIds.has(match.referee_id)) return true;
+    if (match.referee) {
+        if (match.referee.id && possibleIds.has(match.referee.id)) return true;
+        if (match.referee.profile?.id && possibleIds.has(match.referee.profile.id)) return true;
+        const refName = match.referee.profile?.full_name || `${match.referee.first_name || ''} ${match.referee.last_name || ''}`.trim();
+        if (refName && possibleNames.has(refName.toLowerCase().trim())) return true;
+    }
+
+    // 3. Chequear sheet_data.staff (ref1, ref2, scorer)
+    const staff = match.sheet_data?.staff;
+    if (staff) {
+        const staffVals = [staff.ref1, staff.ref2, staff.scorer].filter(Boolean);
+        for (const val of staffVals) {
+            if (typeof val === 'string') {
+                if (possibleIds.has(val)) return true;
+                if (possibleNames.has(val.toLowerCase().trim())) return true;
+                // Si el valor es una ID, buscar si su nombre o id de perfil coincide
+                const foundRef = refereesList.find(r => r.id === val || r.profile?.id === val);
+                if (foundRef) {
+                    if (foundRef.id && possibleIds.has(foundRef.id)) return true;
+                    if (foundRef.profile?.id && possibleIds.has(foundRef.profile.id)) return true;
+                    if (foundRef.profile?.full_name && possibleNames.has(foundRef.profile.full_name.toLowerCase().trim())) return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 export default function DesignationsPage() {
     const supabase = createClient();
     const [matches, setMatches] = useState<any[]>([]);
@@ -208,23 +272,18 @@ export default function DesignationsPage() {
             query = query.eq('tournament.gender', selectedGender);
         }
 
-        // 5. Filtro por Árbitro / Oficial
-        if (selectedReferee) {
-            query = query.or(`referee_id.eq.${selectedReferee},match_officials.user_id.eq.${selectedReferee}`);
-        }
-
-        // 6. Rango de Fechas con Huso Horario Seguro (ART UTC-3)
+        // 5. Rango de Fechas con Huso Horario Seguro (ART UTC-3)
         if (selectedMonth !== '') {
             const { startIso, endIso } = getArgentinaMonthRange(selectedYear, selectedMonth);
             query = query.gte('scheduled_time', startIso).lte('scheduled_time', endIso);
         }
 
-        // 7. Ordenamiento (nullsFirst prioritario en Pendientes para partidos sin asignar fecha)
+        // 6. Ordenamiento (nullsFirst prioritario en Pendientes para partidos sin asignar fecha)
         const isAscending = sortOrder === 'asc';
         const nullsFirstOption = activeTab === 'pendientes';
         query = query.order('scheduled_time', { ascending: isAscending, nullsFirst: nullsFirstOption });
 
-        // 8. Paginación Server-Side (50 por página)
+        // 7. Paginación Server-Side (50 por página)
         query = query.range(from, to);
 
         const { data, count, error } = await query;
@@ -242,11 +301,18 @@ export default function DesignationsPage() {
         fetchMatches();
     }, [fetchMatches]);
 
-    // Filtrado secundario rápido por Cobertura Arbitral en cliente sobre la página actual
+    // Filtrado estricto e infalible en cliente para el árbitro seleccionado y cobertura arbitral
     const displayedMatches = matches.filter(match => {
+        // 1. Chequeo estricto del filtro por Árbitro seleccionado
+        if (selectedReferee && !isRefereeInMatch(match, selectedReferee, referees)) {
+            return false;
+        }
+
+        // 2. Chequeo del filtro rápido por estado de cobertura
         const { hasRef } = getMatchOfficialsInfo(match, referees);
         if (assignmentStatus === 'unassigned') return !hasRef;
         if (assignmentStatus === 'assigned') return hasRef;
+
         return true;
     });
 
@@ -313,9 +379,10 @@ export default function DesignationsPage() {
     }
 
     const availableReferees = getAvailableReferees(selectedMatch);
-    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-    const fromDisplay = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
-    const toDisplay = Math.min(page * pageSize, totalCount);
+    const effectiveCount = selectedReferee ? displayedMatches.length : totalCount;
+    const totalPages = Math.max(1, Math.ceil(effectiveCount / pageSize));
+    const fromDisplay = effectiveCount === 0 ? 0 : (page - 1) * pageSize + 1;
+    const toDisplay = Math.min(page * pageSize, effectiveCount);
 
     const handleClearFilters = () => {
         setSelectedCategory('');
@@ -344,7 +411,7 @@ export default function DesignationsPage() {
                 {/* Badges de Cobertura en Vivo */}
                 <div className="flex flex-wrap items-center gap-2">
                     <div className="bg-blue-500/10 border border-blue-500/30 text-blue-400 font-black px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm">
-                        <span>🏐 {totalCount} Partidos</span>
+                        <span>🏐 {effectiveCount} Partidos</span>
                     </div>
                     {activeTab === 'pendientes' && (
                         <>
@@ -652,7 +719,7 @@ export default function DesignationsPage() {
             {displayedMatches.length === 0 && !loading && (
                 <div className="text-center py-16 bg-white dark:bg-zinc-900 rounded-2xl border border-dashed border-gray-300 dark:border-zinc-800">
                     <Shield size={40} className="mx-auto text-slate-300 dark:text-zinc-700 mb-3" />
-                    <p className="text-slate-500 dark:text-zinc-400 font-bold">No se encontraron partidos con los filtros aplicados.</p>
+                    <p className="text-slate-500 dark:text-zinc-400 font-bold">No se encontraron partidos para el árbitro u opciones seleccionadas.</p>
                     {isFilterActive && (
                         <button 
                             onClick={handleClearFilters} 
@@ -667,9 +734,9 @@ export default function DesignationsPage() {
             {/* BARRA INFERIOR DE PAGINACIÓN SERVER-SIDE (0-SAFE) */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-4 rounded-2xl shadow-sm">
                 <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">
-                    {totalCount === 0 
+                    {effectiveCount === 0 
                         ? 'Sin partidos para los filtros seleccionados' 
-                        : `Mostrando ${fromDisplay} - ${toDisplay} de ${totalCount} partidos`}
+                        : `Mostrando ${fromDisplay} - ${toDisplay} de ${effectiveCount} partidos`}
                 </span>
                 
                 <div className="flex items-center gap-2">
