@@ -2,33 +2,84 @@
 import { useState, useEffect } from 'react';
 import OfficialMatchSheet from '@/components/match/OfficialMatchSheet';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { Lock, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function RefereeMatchPage() {
     const supabase = createClient();
     const router = useRouter();
+    const params = useParams();
+    const searchParams = useSearchParams();
+
+    const matchId = params.id as string;
+    const isOverrideParam = searchParams.get('override') === 'true';
+
+    const [loadingAuth, setLoadingAuth] = useState(true);
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [isMatchSubmitted, setIsMatchSubmitted] = useState(false);
     const [isVerified, setIsVerified] = useState(false);
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loadingVerify, setLoadingVerify] = useState(false);
 
-    // Check if we already verified recently? (Optional, user asked for "nuevamente preguntarte")
-    // Let's enforce it every time this page loads.
+    useEffect(() => {
+        const initPage = async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) {
+                    router.push('/login');
+                    return;
+                }
+
+                // Check profile role
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('role')
+                    .eq('id', user.id)
+                    .single();
+
+                const userIsAdmin = profile?.role === 'admin';
+                setIsAdmin(userIsAdmin);
+
+                // Check match status
+                if (matchId) {
+                    const { data: match } = await supabase
+                        .from('matches')
+                        .select('sheet_status, status')
+                        .eq('id', matchId)
+                        .single();
+
+                    if (match?.sheet_status === 'submitted' || match?.status === 'finalizado') {
+                        setIsMatchSubmitted(true);
+                    }
+                }
+
+                // Si es Admin y viene por override, o si el partido ya está cerrado (read-only), auto-verificamos
+                if (userIsAdmin || isOverrideParam) {
+                    setIsVerified(true);
+                }
+            } catch (err) {
+                console.error("Error al inicializar página de partido:", err);
+            } finally {
+                setLoadingAuth(false);
+            }
+        };
+
+        initPage();
+    }, [matchId, isOverrideParam, router, supabase]);
 
     const handleVerify = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
+        setLoadingVerify(true);
         setError(null);
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || !user.email) {
             setError("No se pudo identificar al usuario.");
-            setLoading(false);
+            setLoadingVerify(false);
             return;
         }
 
-        // Re-authenticate
         const { error: authError } = await supabase.auth.signInWithPassword({
             email: user.email,
             password: password
@@ -36,12 +87,20 @@ export default function RefereeMatchPage() {
 
         if (authError) {
             setError("Contraseña incorrecta.");
-            setLoading(false);
+            setLoadingVerify(false);
         } else {
             setIsVerified(true);
-            setLoading(false);
+            setLoadingVerify(false);
         }
     };
+
+    if (loadingAuth) {
+        return (
+            <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white font-bold animate-pulse">
+                Cargando Planilla...
+            </div>
+        );
+    }
 
     if (!isVerified) {
         return (
@@ -76,8 +135,8 @@ export default function RefereeMatchPage() {
 
                         <div className="flex gap-3 pt-2">
                             <button type="button" onClick={() => router.back()} className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold transition text-sm">Cancelar</button>
-                            <button type="submit" disabled={loading} className="flex-1 py-3 bg-tdf-orange hover:bg-orange-600 text-white rounded-xl font-bold transition shadow-lg shadow-orange-900/20 text-sm flex justify-center items-center gap-2">
-                                {loading && <Loader2 size={16} className="animate-spin" />}
+                            <button type="submit" disabled={loadingVerify} className="flex-1 py-3 bg-tdf-orange hover:bg-orange-600 text-white rounded-xl font-bold transition shadow-lg shadow-orange-900/20 text-sm flex justify-center items-center gap-2">
+                                {loadingVerify && <Loader2 size={16} className="animate-spin" />}
                                 Ingresar
                             </button>
                         </div>
@@ -87,5 +146,15 @@ export default function RefereeMatchPage() {
         );
     }
 
-    return <OfficialMatchSheet redirectAfterSubmit="/referee" />;
+    // Si el partido ya fue homologado/cerrado, forzamos ReadOnly estricto
+    const forceReadOnly = isMatchSubmitted;
+    const redirectPath = isAdmin ? '/admin/competencias' : '/referee';
+
+    return (
+        <OfficialMatchSheet
+            redirectAfterSubmit={redirectPath}
+            isAdminOverride={isAdmin && !forceReadOnly}
+            initialReadOnly={forceReadOnly}
+        />
+    );
 }

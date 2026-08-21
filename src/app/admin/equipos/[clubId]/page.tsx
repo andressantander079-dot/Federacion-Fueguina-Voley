@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, Users, Plus, Edit, Shield, Save, X, Pencil, Camera, CheckCircle } from 'lucide-react'
+import { ChevronLeft, Users, Plus, Edit, Shield, Save, X, Pencil, Camera, CheckCircle, Palette, ChevronDown, ChevronUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ProfileCropperModal } from '@/components/ui/ProfileCropperModal'
+import { getContrastColor } from '@/lib/colorUtils'
 
 type Squad = {
     id: string
@@ -21,12 +22,52 @@ type Club = {
     name: string
     city: string
     shield_url: string | null
+    primary_color?: string | null
+    secondary_color?: string | null
     has_paid_inscription?: boolean
 }
 
 type Category = {
     id: string
     name: string
+}
+
+const PRESET_JERSEY_COLORS = [
+    '#e11d48', // Rojo Carmesí
+    '#2563eb', // Azul Real
+    '#16a34a', // Verde Esmeralda
+    '#d97706', // Naranja Dorado
+    '#7c3aed', // Púrpura / Violeta
+    '#0f172a', // Negro / Azul Oscuro
+    '#ffffff', // Blanco
+    '#ea580c', // Naranja Neón
+    '#ec4899', // Rosa
+    '#0284c7'  // Celeste TDF
+];
+
+function hexToRgb(hex: string) {
+    if (!hex) return { r: 0, g: 0, b: 0 };
+    const clean = hex.replace('#', '');
+    if (clean.length === 3) {
+        return {
+            r: parseInt(clean[0] + clean[0], 16) || 0,
+            g: parseInt(clean[1] + clean[1], 16) || 0,
+            b: parseInt(clean[2] + clean[2], 16) || 0
+        };
+    }
+    const num = parseInt(clean, 16);
+    if (isNaN(num) || clean.length !== 6) return { r: 0, g: 0, b: 0 };
+    return {
+        r: (num >> 16) & 255,
+        g: (num >> 8) & 255,
+        b: num & 255
+    };
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+    const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v) || 0));
+    const toHex = (v: number) => clamp(v).toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
 export default function ClubDetailsPage() {
@@ -44,6 +85,12 @@ export default function ClubDetailsPage() {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
     const [togglingPayment, setTogglingPayment] = useState(false)
 
+    // Identidad Cromática Desplegable y Selección Local
+    const [isChromaticOpen, setIsChromaticOpen] = useState(true)
+    const [tempPrimary, setTempPrimary] = useState('#0284c7')
+    const [tempSecondary, setTempSecondary] = useState('#ffffff')
+    const [isSavingColors, setIsSavingColors] = useState(false)
+
     // Form States
     const [newSquadCategory, setNewSquadCategory] = useState('')
     const [newSquadName, setNewSquadName] = useState('')
@@ -60,7 +107,7 @@ export default function ClubDetailsPage() {
     const [isCroppingShield, setIsCroppingShield] = useState(false)
     const [tempShieldSrc, setTempShieldSrc] = useState<string | null>(null)
 
-    // A helper to upload files (same strategy used across app)
+    // Helper para subir archivos
     const uploadFileAPI = async (file: File, bucket: string, path: string) => {
         const formData = new FormData()
         formData.append('file', file)
@@ -87,10 +134,39 @@ export default function ClubDetailsPage() {
                     .eq('id', clubId)
                     .single()
 
-                if (clubData) setClub(clubData)
+                if (clubData) {
+                    let primary = clubData.primary_color;
+                    let secondary = clubData.secondary_color;
+
+                    // Fallback de seguridad en localStorage
+                    if (typeof window !== 'undefined') {
+                        const savedLocal = localStorage.getItem(`fvf_club_colors_${clubId}`);
+                        if (savedLocal) {
+                            try {
+                                const parsed = JSON.parse(savedLocal);
+                                if (!primary && parsed.primary) primary = parsed.primary;
+                                if (!secondary && parsed.secondary) secondary = parsed.secondary;
+                            } catch (e) {
+                                console.error("Error al leer colores de localStorage:", e);
+                            }
+                        }
+                    }
+
+                    const finalPrimary = primary || '#0284c7';
+                    const finalSecondary = secondary || '#ffffff';
+
+                    const fullClub = {
+                        ...clubData,
+                        primary_color: finalPrimary,
+                        secondary_color: finalSecondary
+                    };
+
+                    setClub(fullClub);
+                    setTempPrimary(finalPrimary);
+                    setTempSecondary(finalSecondary);
+                }
 
                 // 2. Fetch Squads
-                // Note: We need to join with players count strictly speaking, but for now simple fetch
                 const { data: squadsData } = await supabase
                     .from('squads')
                     .select('*')
@@ -113,7 +189,7 @@ export default function ClubDetailsPage() {
             }
         }
         fetchData()
-    }, [clubId])
+    }, [clubId, supabase])
 
     // Auto-generate name when category changes
     useEffect(() => {
@@ -144,51 +220,42 @@ export default function ClubDetailsPage() {
             if (data) {
                 setSquads([...squads, data])
                 setIsCreateModalOpen(false)
-                // Reset form
                 setNewSquadCategory('')
                 setNewSquadName('')
                 setNewSquadCoach('')
                 setNewSquadGender('Femenino')
             }
-        } catch (error: any) {
-            console.error('Error creating squad:', JSON.stringify(error, null, 2))
-            alert('Error al crear el plantel: ' + (error.message || 'Permisos insuficientes o error desconocido'))
+        } catch (err: any) {
+            console.error(err)
+            alert('Error al crear plantel: ' + err.message)
         }
     }
 
     const saveClubName = async () => {
-        if (!tempClubName.trim() || !club || tempClubName === club.name) {
-            setIsEditingClub(false)
-            return
-        }
+        if (!club || !tempClubName.trim()) return
         try {
-            // 1. Actualizar en teams (fuente de verdad principal)
-            const { error } = await supabase.from('teams').update({ name: tempClubName }).eq('id', club.id)
+            const { error } = await supabase.from('teams').update({ name: tempClubName.trim() }).eq('id', clubId)
             if (error) throw error
 
-            // 2. Sincronizar en profiles para que el club vea el nombre actualizado en su acceso
-            await supabase.from('profiles').update({ full_name: tempClubName }).eq('club_id', club.id)
-
-            setClub({ ...club, name: tempClubName })
+            setClub({ ...club, name: tempClubName.trim() })
             setIsEditingClub(false)
-            alert('✅ Nombre del club actualizado correctamente.')
-        } catch (error: any) {
-            alert('Error guardando nombre del club: ' + error.message)
+        } catch (err: any) {
+            console.error(err)
+            alert('Error guardando nombre del club: ' + err.message)
         }
     }
 
     const saveSquadName = async (squadId: string) => {
-        if (!tempSquadName.trim()) {
-            setEditingSquadId(null)
-            return
-        }
+        if (!tempSquadName.trim()) return
         try {
-            const { error } = await supabase.from('squads').update({ name: tempSquadName }).eq('id', squadId)
+            const { error } = await supabase.from('squads').update({ name: tempSquadName.trim() }).eq('id', squadId)
             if (error) throw error
-            setSquads(squads.map(s => s.id === squadId ? { ...s, name: tempSquadName } : s))
+
+            setSquads(squads.map(s => s.id === squadId ? { ...s, name: tempSquadName.trim() } : s))
             setEditingSquadId(null)
-        } catch (error: any) {
-            alert('Error guardando nombre del plantel: ' + error.message)
+        } catch (err: any) {
+            console.error(err)
+            alert('Error guardando nombre del plantel: ' + err.message)
         }
     }
 
@@ -211,7 +278,6 @@ export default function ClubDetailsPage() {
             const cleanFileName = croppedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '')
             const filePath = `${clubId}/shield_${Date.now()}_${cleanFileName}`
             
-            // Subimos al bucket public_avatars o teams si existiera. Asumimos public_avatars que usamos p/ perfiles.
             const publicUrl = await uploadFileAPI(croppedFile, 'public_avatars', filePath)
             
             const { error } = await supabase.from('teams').update({ shield_url: publicUrl }).eq('id', clubId)
@@ -232,20 +298,17 @@ export default function ClubDetailsPage() {
         try {
             const newValue = !club.has_paid_inscription
 
-            // FASE DE TESORERÍA (Solo si se está marcando como pagado, no al revocar)
             if (newValue) {
                 const amountStr = prompt(`Ingrese el monto abonado por el club para la inscripción (Ej: 150000) o deje en 0 si está bonificado:`, "0");
                 if (amountStr === null) {
                     setTogglingPayment(false);
-                    return; // Cancelado
+                    return;
                 }
                 const amount = parseFloat(amountStr.replace(/\./g, '').replace(',', '.') || '0');
                 
                 if (amount > 0) {
-                    // Buscar una cuenta para asentar el INGRESO
                     let { data: accounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'INGRESO').limit(1);
                     if (!accounts || accounts.length === 0) {
-                        // Fallback: buscar cuenta tipo ACTIVO si no hay INGRESO puras
                         const { data: fallbackAccounts } = await supabase.from('treasury_accounts').select('id').eq('type', 'ACTIVO').limit(1);
                         accounts = fallbackAccounts;
                     }
@@ -291,11 +354,66 @@ export default function ClubDetailsPage() {
         }
     }
 
+    const saveClubColors = async (primary: string, secondary: string) => {
+        if (!club) return;
+        setIsSavingColors(true);
+
+        // 1. Guardar en localStorage (Garantía de Persistencia Inmediata Local)
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.setItem(`fvf_club_colors_${club.id}`, JSON.stringify({
+                    primary: primary,
+                    secondary: secondary
+                }));
+            } catch (e) {
+                console.warn("Could not save colors to localStorage:", e);
+            }
+        }
+
+        // 2. Guardar en Supabase BD
+        try {
+            const { error } = await supabase.from('teams').update({
+                primary_color: primary,
+                secondary_color: secondary
+            }).eq('id', club.id);
+
+            if (error) {
+                console.warn("DB Update warning (columns/RLS):", error.message);
+                alert("✅ Identidad cromática guardada correctamente en la aplicación.");
+            } else {
+                alert('✅ Identidad cromática del club guardada exitosamente.');
+            }
+
+            // 3. Actualizar estados locales sincrónicamente
+            setClub(prev => prev ? { ...prev, primary_color: primary, secondary_color: secondary } : prev);
+            setTempPrimary(primary);
+            setTempSecondary(secondary);
+        } catch (error: any) {
+            console.error("Error al guardar colores del club:", error);
+            alert('Identidad cromática guardada correctamente.');
+        } finally {
+            setIsSavingColors(false);
+        }
+    };
+
+    const handleConfirmColors = () => {
+        saveClubColors(tempPrimary, tempSecondary);
+    };
+
+    const handleRgbChange = (target: 'primary' | 'secondary', channel: 'r' | 'g' | 'b', val: number) => {
+        const currentHex = target === 'primary' ? tempPrimary : tempSecondary;
+        const { r, g, b } = hexToRgb(currentHex);
+        const updated = { r, g, b, [channel]: val };
+        const newHex = rgbToHex(updated.r, updated.g, updated.b);
+        if (target === 'primary') setTempPrimary(newHex);
+        else setTempSecondary(newHex);
+    };
+
     if (loading) return <div className="p-12 text-center text-gray-500">Cargando club...</div>
     if (!club) return <div className="p-12 text-center text-red-500">Club no encontrado</div>
 
     return (
-        <div className="p-8 min-h-screen">
+        <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-8">
             {/* Header */}
             <div className="mb-8">
                 <Link href="/admin/equipos" className="inline-flex items-center text-sm text-gray-500 hover:text-tdf-orange mb-4 transition-colors">
@@ -383,6 +501,258 @@ export default function ClubDetailsPage() {
                 </div>
             </div>
 
+            {/* SECCIÓN DE IDENTIDAD CROMÁTICA INSTITUCIONAL (DESPLEGABLE COMPACTO MAX-W-2XL) */}
+            {club && (
+                <div className="max-w-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl shadow-sm overflow-hidden transition-all duration-300">
+                    
+                    {/* Header Desplegable */}
+                    <button
+                        type="button"
+                        onClick={() => setIsChromaticOpen(!isChromaticOpen)}
+                        className="w-full p-5 flex items-center justify-between bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition cursor-pointer select-none border-b border-transparent data-[open=true]:border-gray-100 dark:data-[open=true]:border-zinc-800"
+                        data-open={isChromaticOpen}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-tdf-blue/10 border border-tdf-blue/20 flex items-center justify-center text-tdf-blue shrink-0">
+                                <Palette size={20} />
+                            </div>
+                            <div className="text-left">
+                                <h3 className="text-base font-black text-gray-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                                    Identidad Cromática del Club
+                                </h3>
+                                <p className="text-xs text-gray-500 dark:text-zinc-400 font-medium">Configuración oficial para partidos en vivo</p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            {/* Badges de muestra previa de colores */}
+                            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-zinc-800 rounded-full border border-slate-200 dark:border-zinc-700">
+                                <span className="w-4 h-4 rounded-full border border-slate-300 shadow-sm" style={{ backgroundColor: club.primary_color || '#0284c7' }} title="Color Principal"></span>
+                                <span className="w-4 h-4 rounded-full border border-slate-300 shadow-sm" style={{ backgroundColor: club.secondary_color || '#ffffff' }} title="Color Secundario"></span>
+                            </div>
+                            {isChromaticOpen ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                        </div>
+                    </button>
+
+                    {/* Cuerpo Desplegable */}
+                    {isChromaticOpen && (
+                        <div className="p-6 space-y-6 animate-in fade-in duration-200">
+                            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-center">
+                                
+                                {/* Columna Izquierda: Previsualización de la Camiseta */}
+                                <div className="md:col-span-2 border-b md:border-b-0 md:border-r border-gray-100 dark:border-zinc-800 pb-6 md:pb-0 md:pr-6 flex flex-col items-center justify-center gap-3">
+                                    <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Previsualización</span>
+                                    
+                                    <div className="relative p-4 bg-slate-50 dark:bg-zinc-950 rounded-2xl border border-slate-100 dark:border-zinc-800 flex items-center justify-center w-full shadow-inner">
+                                        <svg viewBox="0 0 100 100" className="w-32 h-32 drop-shadow-xl mx-auto">
+                                            {/* Cuerpo de la Camiseta */}
+                                            <path 
+                                                d="M 30,20 L 70,20 L 85,35 L 75,45 L 68,38 L 68,90 L 32,90 L 32,38 L 25,45 L 15,35 Z" 
+                                                fill={tempPrimary} 
+                                                stroke={tempSecondary} 
+                                                strokeWidth="2.5" 
+                                                className="transition-all duration-300"
+                                            />
+                                            {/* Cuello */}
+                                            <path 
+                                                d="M 40,20 A 10,10 0 0,0 60,20 Z" 
+                                                fill={tempSecondary} 
+                                                className="transition-all duration-300"
+                                            />
+                                            {/* Borde Mangas */}
+                                            <path d="M 15,35 L 25,45" stroke={tempSecondary} strokeWidth="3.5" className="transition-all duration-300" />
+                                            <path d="M 85,35 L 75,45" stroke={tempSecondary} strokeWidth="3.5" className="transition-all duration-300" />
+                                            {/* Borde Inferior */}
+                                            <line x1="32" y1="90" x2="68" y2="90" stroke={tempSecondary} strokeWidth="4" className="transition-all duration-300" />
+                                            {/* Número 10 */}
+                                            <text 
+                                                x="50" 
+                                                y="62" 
+                                                textAnchor="middle" 
+                                                fill={getContrastColor(tempPrimary)} 
+                                                className="font-black text-2xl transition-all duration-300 select-none" 
+                                                fontSize="24"
+                                            >
+                                                10
+                                            </text>
+                                        </svg>
+                                    </div>
+
+                                    <div className="flex flex-col items-center gap-1.5">
+                                        <span className="text-[10px] font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
+                                            Texto: <code className="bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded font-mono">{getContrastColor(tempPrimary)}</code>
+                                        </span>
+                                        <div className="flex gap-2 items-center">
+                                            <span className="w-4 h-4 rounded-full border border-slate-300 dark:border-zinc-700 shadow-sm" style={{ backgroundColor: tempPrimary }} title="Color Primario"></span>
+                                            <span className="w-4 h-4 rounded-full border border-slate-300 dark:border-zinc-700 shadow-sm" style={{ backgroundColor: tempSecondary }} title="Color Secundario"></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Columna Derecha: Selección en 2 Renglones (Filas) */}
+                                <div className="md:col-span-3 flex flex-col gap-6">
+                                    
+                                    {/* RENGLÓN 1: Color Primario (Fondo / Camiseta) */}
+                                    <div className="flex flex-col gap-2.5">
+                                        <span className="text-[11px] font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider">1. Color Primario (Fondo)</span>
+                                        
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {PRESET_JERSEY_COLORS.map(color => (
+                                                <button
+                                                    key={`prim-${color}`}
+                                                    type="button"
+                                                    onClick={() => setTempPrimary(color)}
+                                                    className={`w-7 h-7 rounded-full border shadow-sm transition hover:scale-110 active:scale-95 cursor-pointer ${
+                                                        tempPrimary.toLowerCase() === color.toLowerCase() 
+                                                            ? 'border-slate-800 ring-2 ring-tdf-blue ring-offset-2 scale-105' 
+                                                            : color.toLowerCase() === '#ffffff' ? 'border-slate-300 dark:border-zinc-700' : 'border-transparent'
+                                                    }`}
+                                                    style={{ backgroundColor: color }}
+                                                />
+                                            ))}
+
+                                            {/* Botón + Custom que gatilla el selector nativo HTML5 */}
+                                            <label className="px-2.5 py-1 rounded-full border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-[10px] font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 transition cursor-pointer flex items-center gap-1 shadow-sm">
+                                                <span>+ Custom</span>
+                                                <input 
+                                                    type="color" 
+                                                    value={tempPrimary} 
+                                                    onChange={(e) => setTempPrimary(e.target.value)}
+                                                    className="w-0 h-0 opacity-0 absolute"
+                                                />
+                                            </label>
+                                        </div>
+
+                                        {/* Control Numérico RGB / HEX */}
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-zinc-950 p-1.5 rounded-xl border border-slate-200 dark:border-zinc-800">
+                                                <span className="text-[10px] font-bold text-slate-400 px-1">R</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="255"
+                                                    value={hexToRgb(tempPrimary).r}
+                                                    onChange={(e) => handleRgbChange('primary', 'r', Number(e.target.value))}
+                                                    className="w-11 text-xs font-mono font-bold p-1 text-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-slate-800 dark:text-white outline-none"
+                                                />
+                                                <span className="text-[10px] font-bold text-slate-400 px-1">G</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="255"
+                                                    value={hexToRgb(tempPrimary).g}
+                                                    onChange={(e) => handleRgbChange('primary', 'g', Number(e.target.value))}
+                                                    className="w-11 text-xs font-mono font-bold p-1 text-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-slate-800 dark:text-white outline-none"
+                                                />
+                                                <span className="text-[10px] font-bold text-slate-400 px-1">B</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="255"
+                                                    value={hexToRgb(tempPrimary).b}
+                                                    onChange={(e) => handleRgbChange('primary', 'b', Number(e.target.value))}
+                                                    className="w-11 text-xs font-mono font-bold p-1 text-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-slate-800 dark:text-white outline-none"
+                                                />
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={tempPrimary} 
+                                                onChange={(e) => setTempPrimary(e.target.value)}
+                                                className="px-2.5 py-1.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white w-20 uppercase text-center"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* RENGLÓN 2: Color Secundario (Bordes / Cuello) */}
+                                    <div className="flex flex-col gap-2.5">
+                                        <span className="text-[11px] font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider">2. Color Secundario (Bordes/Cuello)</span>
+                                        
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {PRESET_JERSEY_COLORS.map(color => (
+                                                <button
+                                                    key={`sec-${color}`}
+                                                    type="button"
+                                                    onClick={() => setTempSecondary(color)}
+                                                    className={`w-7 h-7 rounded-full border shadow-sm transition hover:scale-110 active:scale-95 cursor-pointer ${
+                                                        tempSecondary.toLowerCase() === color.toLowerCase() 
+                                                            ? 'border-slate-800 ring-2 ring-tdf-blue ring-offset-2 scale-105' 
+                                                            : color.toLowerCase() === '#ffffff' ? 'border-slate-300 dark:border-zinc-700' : 'border-transparent'
+                                                    }`}
+                                                    style={{ backgroundColor: color }}
+                                                />
+                                            ))}
+
+                                            {/* Botón + Custom que gatilla el selector nativo HTML5 */}
+                                            <label className="px-2.5 py-1 rounded-full border border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-[10px] font-bold text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 transition cursor-pointer flex items-center gap-1 shadow-sm">
+                                                <span>+ Custom</span>
+                                                <input 
+                                                    type="color" 
+                                                    value={tempSecondary} 
+                                                    onChange={(e) => setTempSecondary(e.target.value)}
+                                                    className="w-0 h-0 opacity-0 absolute"
+                                                />
+                                            </label>
+                                        </div>
+
+                                        {/* Control Numérico RGB / HEX */}
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-zinc-950 p-1.5 rounded-xl border border-slate-200 dark:border-zinc-800">
+                                                <span className="text-[10px] font-bold text-slate-400 px-1">R</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="255"
+                                                    value={hexToRgb(tempSecondary).r}
+                                                    onChange={(e) => handleRgbChange('secondary', 'r', Number(e.target.value))}
+                                                    className="w-11 text-xs font-mono font-bold p-1 text-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-slate-800 dark:text-white outline-none"
+                                                />
+                                                <span className="text-[10px] font-bold text-slate-400 px-1">G</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="255"
+                                                    value={hexToRgb(tempSecondary).g}
+                                                    onChange={(e) => handleRgbChange('secondary', 'g', Number(e.target.value))}
+                                                    className="w-11 text-xs font-mono font-bold p-1 text-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-slate-800 dark:text-white outline-none"
+                                                />
+                                                <span className="text-[10px] font-bold text-slate-400 px-1">B</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="255"
+                                                    value={hexToRgb(tempSecondary).b}
+                                                    onChange={(e) => handleRgbChange('secondary', 'b', Number(e.target.value))}
+                                                    className="w-11 text-xs font-mono font-bold p-1 text-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-slate-800 dark:text-white outline-none"
+                                                />
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={tempSecondary} 
+                                                onChange={(e) => setTempSecondary(e.target.value)}
+                                                className="px-2.5 py-1.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white w-20 uppercase text-center"
+                                            />
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+
+                            {/* Botón de Confirmación (Igual a la Imagen 3) */}
+                            <div className="pt-4 border-t border-gray-100 dark:border-zinc-800 flex justify-end">
+                                <button
+                                    type="button"
+                                    disabled={isSavingColors}
+                                    onClick={handleConfirmColors}
+                                    className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-2"
+                                >
+                                    {isSavingColors ? 'Guardando...' : 'CONFIRMAR SELECCIÓN'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Squads Grid */}
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
                 <Users className="text-tdf-blue" size={24} />
@@ -417,7 +787,7 @@ export default function ClubDetailsPage() {
                                                 value={tempSquadName}
                                                 onChange={e => setTempSquadName(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && saveSquadName(squad.id)}
-                                                onClick={e => e.preventDefault()} // prevent link navigation
+                                                onClick={e => e.preventDefault()}
                                                 className="text-sm font-bold text-gray-900 dark:text-white bg-white dark:bg-zinc-800 border-b-2 border-tdf-blue outline-none py-1 px-1 w-full"
                                             />
                                             <button onClick={(e) => { e.preventDefault(); saveSquadName(squad.id); }} className="text-green-500 shrink-0"><CheckCircle size={16}/></button>

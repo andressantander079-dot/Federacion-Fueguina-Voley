@@ -5,30 +5,31 @@ import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { X } from 'lucide-react';
 
+const MAX_INACTIVE_LIVE_MS = 40 * 60 * 1000; // 40 minutos
+
 export default function LiveMatchFloater() {
     const [liveMatches, setLiveMatches] = useState<any[]>([]);
     const [isVisible, setIsVisible] = useState(true);
     const [supabase] = useState(() => createClient());
 
+    const fetchLiveMatches = async () => {
+        const { data } = await supabase
+            .from('matches')
+            .select('id, created_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
+            .in('status', ['live', 'en_curso']);
+
+        if (data) {
+            setLiveMatches(data);
+        }
+    };
+
     useEffect(() => {
-        const fetchLiveMatches = async () => {
-            const { data } = await supabase
-                .from('matches')
-                .select('id, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
-                .in('status', ['live', 'en_curso']);
-
-            if (data) setLiveMatches(data);
-        };
-
         fetchLiveMatches();
 
         const channel = supabase
             .channel('live_matches_floater')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
-                const newData = payload.new as any;
-                if (newData.status === 'live' || newData.status === 'en_curso' || newData.status === 'finalizado') {
-                    fetchLiveMatches();
-                }
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
+                fetchLiveMatches();
             })
             .subscribe();
 

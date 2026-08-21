@@ -158,10 +158,25 @@ export default function PosicionesPage() {
 
             let pfHome = 0;
             let pcHome = 0;
-            if (m.sheet_data && m.sheet_data.sets_history) {
+            if (m.sheet_data?.sets_history && Array.isArray(m.sheet_data.sets_history)) {
               m.sheet_data.sets_history.forEach((set: any) => {
-                pfHome += set.home || 0;
-                pcHome += set.away || 0;
+                if (set.finished !== false) {
+                  pfHome += parseInt(set.home ?? set.score_home ?? set.homeScore ?? 0, 10);
+                  pcHome += parseInt(set.away ?? set.score_away ?? set.awayScore ?? 0, 10);
+                }
+              });
+            } else if (m.sheet_data?.sets && Array.isArray(m.sheet_data.sets)) {
+              m.sheet_data.sets.forEach((set: any) => {
+                pfHome += parseInt(set.homeScore ?? set.home_score ?? set.scoreA ?? 0, 10);
+                pcHome += parseInt(set.awayScore ?? set.away_score ?? set.scoreB ?? 0, 10);
+              });
+            } else if (m.set_scores && Array.isArray(m.set_scores)) {
+              m.set_scores.forEach((s: any) => {
+                const parts = String(s).split('-');
+                if (parts.length === 2) {
+                  pfHome += parseInt(parts[0], 10) || 0;
+                  pcHome += parseInt(parts[1], 10) || 0;
+                }
               });
             }
 
@@ -178,7 +193,6 @@ export default function PosicionesPage() {
             if (setsHome > setsAway) {
               home.pg++;
               away.pp++;
-              // Puntos universales (FIVB) independientemente de si es al mejor de 3 o 5 sets
               if (setsHome - setsAway === 1) { // Tie-break (3-2 ó 2-1)
                 home.pts += 2;
                 away.pts += 1;
@@ -199,22 +213,20 @@ export default function PosicionesPage() {
         });
       }
 
-      // Convertir a Array y Ordenar
+      // Convertir a Array y Ordenar bajo Jerarquía Estricta FIVB
       const sortedTable = Array.from(table.values()).sort((a, b) => {
-        // 1. Puntos
+        // 1. Partidos Ganados (PG)
+        if (b.pg !== a.pg) return b.pg - a.pg;
+        // 2. Puntos (PTS)
         if (b.pts !== a.pts) return b.pts - a.pts;
-        // 2. Diferencia de Puntos (PF - PC) — DESEMPATE PRINCIPAL
+        // 3. Cociente de Sets
+        const setRatioA = a.sc === 0 ? a.sf : a.sf / a.sc;
+        const setRatioB = b.sc === 0 ? b.sf : b.sf / b.sc;
+        if (setRatioB !== setRatioA) return setRatioB - setRatioA;
+        // 4. Cociente de Tantos / Diferencia de Puntos
         const difA = a.pf - a.pc;
         const difB = b.pf - b.pc;
-        if (difB !== difA) return difB - difA;
-        // 3. Diferencia de Sets (backup)
-        const setDiffA = a.sf - a.sc;
-        const setDiffB = b.sf - b.sc;
-        if (setDiffB !== setDiffA) return setDiffB - setDiffA;
-        // 4. Ratio Sets (último recurso)
-        const ratioA = a.sc === 0 ? a.sf : a.sf / a.sc;
-        const ratioB = b.sc === 0 ? b.sf : b.sf / b.sc;
-        return ratioB - ratioA;
+        return difB - difA;
       });
 
       setStandings(sortedTable);

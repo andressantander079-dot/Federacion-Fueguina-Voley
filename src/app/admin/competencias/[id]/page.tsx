@@ -296,7 +296,16 @@ export default function DetalleTorneoPage() {
                                     <td className="px-2 py-3 md:p-4 text-center font-black text-sm md:text-lg bg-zinc-950/30 text-white">{fila.pts}</td>
                                     <td className="px-2 py-3 md:p-4 text-center text-green-500 font-bold text-xs md:text-sm">{fila.pg}</td>
                                     <td className="px-2 py-3 md:p-4 text-center text-red-500 font-bold text-xs md:text-sm">{fila.pp}</td>
-                                    <td className="px-2 py-3 md:p-4 text-center font-mono text-zinc-400 text-[10px] md:text-xs">{fila.pL === 0 ? fila.pW : (fila.pL === 0 ? 0 : (fila.pW / fila.pL).toFixed(3))}</td>
+                                     <td className="px-2 py-3 md:p-4 text-center font-mono text-[10px] md:text-xs">
+                                        {(() => {
+                                           const dif = fila.pW - fila.pL;
+                                           return (
+                                              <span className={dif > 0 ? 'text-amber-400 font-bold' : dif < 0 ? 'text-red-400 font-bold' : 'text-zinc-500'}>
+                                                 {dif > 0 ? `+${dif}` : dif}
+                                              </span>
+                                           );
+                                        })()}
+                                     </td>
                                     {showMetrics && <><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.setsW}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.setsL}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.pW}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.pL}</td></>}
                                  </tr>
                               ))}
@@ -420,7 +429,7 @@ export default function DetalleTorneoPage() {
                      <h2 className="text-xl font-black text-white">Control de Planillas</h2>
                      <p className="text-sm text-zinc-500">Visualiza y descarga las planillas oficiales de los encuentros.</p>
                   </div>
-                  <MatchSheetsTable categoryId={torneo?.category_id} gender={torneo?.gender} />
+                  <MatchSheetsTable tournamentId={id} categoryId={torneo?.category_id} gender={torneo?.gender} />
                </div>
             )}
 

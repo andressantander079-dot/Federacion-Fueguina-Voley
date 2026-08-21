@@ -5,37 +5,32 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { Radio } from 'lucide-react'
 
+const MAX_INACTIVE_LIVE_MS = 40 * 60 * 1000; // 40 minutos
+
 export default function LiveMatchesBanner() {
     const [liveMatches, setLiveMatches] = useState<any[]>([])
     const [supabase] = useState(() => createClient())
 
-    useEffect(() => {
-        const fetchLiveMatches = async () => {
-            console.log("Fetching live matches...");
-            const { data, error } = await supabase
-                .from('matches')
-                .select('id, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
-                .in('status', ['live', 'en_curso'])
+    const fetchLiveMatches = async () => {
+        const { data, error } = await supabase
+            .from('matches')
+            .select('id, created_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
+            .in('status', ['live', 'en_curso'])
 
-            if (error) console.error("Error fetching live matches:", error);
-            console.log("Live matches data:", data);
+        if (error) console.error("Error fetching live matches:", error);
 
-            if (data) setLiveMatches(data)
+        if (data) {
+            setLiveMatches(data);
         }
+    }
 
+    useEffect(() => {
         fetchLiveMatches()
 
-        // Realtime subscription for new live matches
         const channel = supabase
             .channel('live_matches_banner')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, (payload) => {
-                const newData = payload.new as any
-                if (newData.status === 'live' || newData.status === 'en_curso') {
-                    fetchLiveMatches() // Refresh list
-                } else {
-                    // If match finished, refresh to remove it
-                    fetchLiveMatches()
-                }
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
+                fetchLiveMatches();
             })
             .subscribe()
 
@@ -61,10 +56,10 @@ export default function LiveMatchesBanner() {
 
                     <div className="flex-1 flex gap-4 overflow-x-auto pb-2 md:pb-0 custom-scrollbar w-full">
                         {liveMatches.map((match) => {
-                            // Calculate current set score for preview
-                            // @ts-ignore
-                            const sets = match.sheet_data?.sets_history || [];
+                            const sets = match.sheet_data?.sets_history || match.sheet_data?.sets || [];
                             const currentSet = sets.find((s: any) => !s.finished) || sets[sets.length - 1] || { home: 0, away: 0 };
+                            const homePts = currentSet.home ?? currentSet.homeScore ?? currentSet.score_home ?? 0;
+                            const awayPts = currentSet.away ?? currentSet.awayScore ?? currentSet.score_away ?? 0;
 
                             return (
                                 <Link
@@ -72,11 +67,11 @@ export default function LiveMatchesBanner() {
                                     href={`/vivo/${match.id}`}
                                     className="flex items-center gap-4 bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2 hover:bg-zinc-800 transition min-w-max group"
                                 >
-                                    <span className="text-xs font-bold text-white uppercase group-hover:text-tdf-orange transition">{match.home_team.name}</span>
+                                    <span className="text-xs font-bold text-white uppercase group-hover:text-tdf-orange transition">{match.home_team?.name}</span>
                                     <div className="bg-black px-3 py-1 rounded text-red-500 font-mono font-black text-xs border border-zinc-800">
-                                        {currentSet.home} - {currentSet.away}
+                                        {homePts} - {awayPts}
                                     </div>
-                                    <span className="text-xs font-bold text-white uppercase group-hover:text-tdf-orange transition">{match.away_team.name}</span>
+                                    <span className="text-xs font-bold text-white uppercase group-hover:text-tdf-orange transition">{match.away_team?.name}</span>
                                     <Radio size={14} className="text-red-500 animate-pulse ml-2" />
                                 </Link>
                             )
