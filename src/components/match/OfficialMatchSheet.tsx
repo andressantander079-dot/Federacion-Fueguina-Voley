@@ -740,10 +740,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 scheduled_time,
                 round,
                 court_name,
-                home_team:teams!home_team_id(id, name, shield_url, primary_color, secondary_color),
-                away_team:teams!away_team_id(id, name, shield_url, primary_color, secondary_color),
+                home_team:teams!home_team_id(id, name, shield_url),
+                away_team:teams!away_team_id(id, name, shield_url),
                 category:categories(id, name),
-                tournament:tournaments!tournament_id(gender, best_of_sets)
+                tournament:tournaments!tournament_id(gender)
             `).eq('id', matchId).single();
 
             if (error) {

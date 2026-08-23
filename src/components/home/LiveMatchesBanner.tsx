@@ -37,16 +37,12 @@ export default function LiveMatchesBanner() {
                     return false; // El encuentro ya concluyó
                 }
 
-                // 2. Filtrar partidos congelados por más de 40 minutos de inactividad
-                const lastPointTimestamp = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
-                const lastUpdatedTimestamp = match.updated_at ? new Date(match.updated_at).getTime() : null;
-                const createdTimestamp = match.created_at ? new Date(match.created_at).getTime() : now;
-
-                const mostRecentActivity = lastPointTimestamp || lastUpdatedTimestamp || createdTimestamp;
-                const elapsedMs = now - mostRecentActivity;
-
-                if (elapsedMs > MAX_INACTIVE_LIVE_MS) {
-                    return false; // Descartar partidos colgados/congelados por más de 40 minutos
+                // 2. Solo descartar por inactividad si hay timestamp explícito de último punto registrado superior a 40 min
+                if (sheet.last_point_at) {
+                    const lastPointTime = new Date(sheet.last_point_at).getTime();
+                    if (!isNaN(lastPointTime) && (now - lastPointTime > MAX_INACTIVE_LIVE_MS)) {
+                        return false; // Descartar si pasaron más de 40 minutos desde el último punto anotado
+                    }
                 }
 
                 return true;

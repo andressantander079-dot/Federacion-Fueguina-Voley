@@ -36,16 +36,12 @@ export default function LiveMatchFloater() {
                     return false;
                 }
 
-                // 2. Filtrar partidos congelados por más de 40 minutos de inactividad
-                const lastPointTimestamp = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
-                const lastUpdatedTimestamp = match.updated_at ? new Date(match.updated_at).getTime() : null;
-                const createdTimestamp = match.created_at ? new Date(match.created_at).getTime() : now;
-
-                const mostRecentActivity = lastPointTimestamp || lastUpdatedTimestamp || createdTimestamp;
-                const elapsedMs = now - mostRecentActivity;
-
-                if (elapsedMs > MAX_INACTIVE_LIVE_MS) {
-                    return false;
+                // 2. Solo descartar por inactividad si hay timestamp explícito de último punto registrado superior a 40 min
+                if (sheet.last_point_at) {
+                    const lastPointTime = new Date(sheet.last_point_at).getTime();
+                    if (!isNaN(lastPointTime) && (now - lastPointTime > MAX_INACTIVE_LIVE_MS)) {
+                        return false;
+                    }
                 }
 
                 return true;
@@ -74,7 +70,7 @@ export default function LiveMatchFloater() {
     const match = liveMatches[0];
     const sets = match.sheet_data?.sets_history || match.sheet_data?.sets || [];
     const currentSet = sets.find((s: any) => !s.finished) || sets[sets.length - 1] || { home: 0, away: 0 };
-    const homePts = currentSet.home ?? currentSet.homeScore ?? currentSet.score_home ?? 0;
+    const homePts = currentSet.home ?? currentSet.homeScore ?? currentSet.score_away ?? 0;
     const awayPts = currentSet.away ?? currentSet.awayScore ?? currentSet.score_away ?? 0;
 
     return (

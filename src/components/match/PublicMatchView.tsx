@@ -56,10 +56,10 @@ export default function PublicMatchView() {
                 .from('matches')
                 .select(`
                     *,
-                    home_team:teams!home_team_id(id, name, shield_url, primary_color, secondary_color),
-                    away_team:teams!away_team_id(id, name, shield_url, primary_color, secondary_color),
+                    home_team:teams!home_team_id(id, name, shield_url),
+                    away_team:teams!away_team_id(id, name, shield_url),
                     category:categories(name),
-                    tournament:tournaments!tournament_id(name, gender, best_of_sets)
+                    tournament:tournaments!tournament_id(name, gender)
                 `)
                 .eq('id', matchId)
                 .single();
@@ -106,7 +106,7 @@ export default function PublicMatchView() {
                     awayColors,
                     categoryName: data.category?.name || 'Sub-14',
                     tournamentName: data.tournament?.name || 'Oficial',
-                    bestOfSets: data.tournament?.best_of_sets || sheet.metadata?.bestOfSets || 5,
+                    bestOfSets: sheet.metadata?.bestOfSets || 5,
                     round: data.round || 'Fecha 1',
                     date: data.scheduled_time ? formatArgentinaDateLiteral(data.scheduled_time).split(',').slice(0, 2).join(',').trim() : 'HOY',
                     time: data.scheduled_time ? formatArgentinaTimeLiteral(data.scheduled_time) : 'A CONFIRMAR',
@@ -436,7 +436,7 @@ export default function PublicMatchView() {
                         style={{ backgroundColor: homeColors.primary, color: getContrastColor(homeColors.primary) }}
                     >
                         <h2 className="text-2xl font-black uppercase tracking-tight">{homeName}</h2>
-                        {homeShield && <img src={homeShield} className="w-12 h-12 object-contain drop-shadow-md" />}
+                        {homeShield && <img src={homeShield} className="w-12 h-12 object-contain drop-shadow-md" alt="" />}
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-zinc-900/50 p-2">
                         {renderPlayerList(posHome, benchHome)}
@@ -450,7 +450,7 @@ export default function PublicMatchView() {
                         className="p-6 flex items-center justify-between backdrop-blur-sm border-b border-white/10"
                         style={{ backgroundColor: awayColors.primary, color: getContrastColor(awayColors.primary) }}
                     >
-                        {awayShield && <img src={awayShield} className="w-12 h-12 object-contain drop-shadow-md" />}
+                        {awayShield && <img src={awayShield} className="w-12 h-12 object-contain drop-shadow-md" alt="" />}
                         <h2 className="text-2xl font-black uppercase tracking-tight text-right">{awayName}</h2>
                     </div>
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-zinc-900/50 p-2">
