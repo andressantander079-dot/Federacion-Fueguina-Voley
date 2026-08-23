@@ -14,13 +14,45 @@ export default function LiveMatchesBanner() {
     const fetchLiveMatches = async () => {
         const { data, error } = await supabase
             .from('matches')
-            .select('id, created_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
+            .select('id, created_at, updated_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
             .in('status', ['live', 'en_curso'])
 
         if (error) console.error("Error fetching live matches:", error);
 
         if (data) {
-            setLiveMatches(data);
+            const now = Date.now();
+
+            const activeOnly = data.filter((match) => {
+                const sheet = match.sheet_data || {};
+                const sets = sheet.sets_history || sheet.sets || [];
+
+                // 1. Filtrar partidos cuyo score final indique que un equipo ya ganó el partido
+                const bestOf = sheet.metadata?.bestOfSets || 5;
+                const targetSets = Math.ceil(bestOf / 2);
+                
+                const setsWonHome = sets.filter((s: any) => s.finished && ((s.home ?? s.score_home ?? 0) > (s.away ?? s.score_away ?? 0))).length;
+                const setsWonAway = sets.filter((s: any) => s.finished && ((s.away ?? s.score_away ?? 0) > (s.home ?? s.score_home ?? 0))).length;
+
+                if (setsWonHome >= targetSets || setsWonAway >= targetSets) {
+                    return false; // El encuentro ya concluyó
+                }
+
+                // 2. Filtrar partidos congelados por más de 40 minutos de inactividad
+                const lastPointTimestamp = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
+                const lastUpdatedTimestamp = match.updated_at ? new Date(match.updated_at).getTime() : null;
+                const createdTimestamp = match.created_at ? new Date(match.created_at).getTime() : now;
+
+                const mostRecentActivity = lastPointTimestamp || lastUpdatedTimestamp || createdTimestamp;
+                const elapsedMs = now - mostRecentActivity;
+
+                if (elapsedMs > MAX_INACTIVE_LIVE_MS) {
+                    return false; // Descartar partidos colgados/congelados por más de 40 minutos
+                }
+
+                return true;
+            });
+
+            setLiveMatches(activeOnly);
         }
     }
 
@@ -35,7 +67,7 @@ export default function LiveMatchesBanner() {
             .subscribe()
 
         return () => { supabase.removeChannel(channel) }
-    }, [])
+    }, [supabase])
 
     if (liveMatches.length === 0) return null
 

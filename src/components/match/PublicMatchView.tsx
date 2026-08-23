@@ -56,8 +56,8 @@ export default function PublicMatchView() {
                 .from('matches')
                 .select(`
                     *,
-                    home_team:teams!home_team_id(name, shield_url),
-                    away_team:teams!away_team_id(name, shield_url),
+                    home_team:teams!home_team_id(id, name, shield_url, primary_color, secondary_color),
+                    away_team:teams!away_team_id(id, name, shield_url, primary_color, secondary_color),
                     category:categories(name),
                     tournament:tournaments!tournament_id(name, gender, best_of_sets)
                 `)

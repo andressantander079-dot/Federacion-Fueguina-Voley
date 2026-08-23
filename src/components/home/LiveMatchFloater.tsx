@@ -15,11 +15,43 @@ export default function LiveMatchFloater() {
     const fetchLiveMatches = async () => {
         const { data } = await supabase
             .from('matches')
-            .select('id, created_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
+            .select('id, created_at, updated_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
             .in('status', ['live', 'en_curso']);
 
         if (data) {
-            setLiveMatches(data);
+            const now = Date.now();
+
+            const activeOnly = data.filter((match) => {
+                const sheet = match.sheet_data || {};
+                const sets = sheet.sets_history || sheet.sets || [];
+
+                // 1. Filtrar partidos cuyo score final indique que un equipo ya ganó el partido
+                const bestOf = sheet.metadata?.bestOfSets || 5;
+                const targetSets = Math.ceil(bestOf / 2);
+                
+                const setsWonHome = sets.filter((s: any) => s.finished && ((s.home ?? s.score_home ?? 0) > (s.away ?? s.score_away ?? 0))).length;
+                const setsWonAway = sets.filter((s: any) => s.finished && ((s.away ?? s.score_away ?? 0) > (s.home ?? s.score_home ?? 0))).length;
+
+                if (setsWonHome >= targetSets || setsWonAway >= targetSets) {
+                    return false;
+                }
+
+                // 2. Filtrar partidos congelados por más de 40 minutos de inactividad
+                const lastPointTimestamp = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
+                const lastUpdatedTimestamp = match.updated_at ? new Date(match.updated_at).getTime() : null;
+                const createdTimestamp = match.created_at ? new Date(match.created_at).getTime() : now;
+
+                const mostRecentActivity = lastPointTimestamp || lastUpdatedTimestamp || createdTimestamp;
+                const elapsedMs = now - mostRecentActivity;
+
+                if (elapsedMs > MAX_INACTIVE_LIVE_MS) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            setLiveMatches(activeOnly);
         }
     };
 
@@ -34,15 +66,16 @@ export default function LiveMatchFloater() {
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
-    }, []);
+    }, [supabase]);
 
     if (liveMatches.length === 0 || !isVisible) return null;
 
-    // Show first live match found
+    // Show first active live match found
     const match = liveMatches[0];
-    // @ts-ignore
-    const sets = match.sheet_data?.sets_history || [];
+    const sets = match.sheet_data?.sets_history || match.sheet_data?.sets || [];
     const currentSet = sets.find((s: any) => !s.finished) || sets[sets.length - 1] || { home: 0, away: 0 };
+    const homePts = currentSet.home ?? currentSet.homeScore ?? currentSet.score_home ?? 0;
+    const awayPts = currentSet.away ?? currentSet.awayScore ?? currentSet.score_away ?? 0;
 
     return (
         <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-700">
@@ -77,34 +110,24 @@ export default function LiveMatchFloater() {
                             <span className="text-[10px] font-black uppercase text-white/70 tracking-widest mb-0.5">En Vivo</span>
                             <div className="flex items-center gap-2">
                                 <div className="flex flex-col items-end">
-                                    {match.home_team.shield_url && <img src={match.home_team.shield_url} className="w-5 h-5 object-contain" />}
-                                    <span className="text-[10px] font-bold text-white uppercase truncate max-w-[60px]">{match.home_team.name}</span>
+                                    {match.home_team?.shield_url && <img src={match.home_team.shield_url} className="w-5 h-5 object-contain" alt="" />}
+                                    <span className="text-[10px] font-bold text-white uppercase truncate max-w-[60px]">{match.home_team?.name}</span>
                                 </div>
 
                                 <div className="bg-black/50 px-2 py-0.5 rounded text-white font-mono font-black text-sm border border-white/10 shadow-inner">
-                                    {currentSet.home}-{currentSet.away}
+                                    {homePts}-{awayPts}
                                 </div>
 
                                 <div className="flex flex-col items-start">
-                                    {match.away_team.shield_url && <img src={match.away_team.shield_url} className="w-5 h-5 object-contain" />}
-                                    <span className="text-[10px] font-bold text-white uppercase truncate max-w-[60px]">{match.away_team.name}</span>
+                                    {match.away_team?.shield_url && <img src={match.away_team.shield_url} className="w-5 h-5 object-contain" alt="" />}
+                                    <span className="text-[10px] font-bold text-white uppercase truncate max-w-[60px]">{match.away_team?.name}</span>
                                 </div>
                             </div>
-                            <span className="text-[10px] text-white/50 font-medium">Set {sets.length}</span>
+                            <span className="text-[10px] text-white/50 font-medium">Set {sets.length || 1}</span>
                         </div>
                     </div>
                 </Link>
             </div>
-
-            <style jsx>{`
-                @keyframes bounce-slow {
-                    0%, 100% { transform: translateY(0); }
-                    50% { transform: translateY(-10px); }
-                }
-                .animate-bounce-slow {
-                    animation: bounce-slow 2s infinite ease-in-out;
-                }
-            `}</style>
         </div>
     );
 }

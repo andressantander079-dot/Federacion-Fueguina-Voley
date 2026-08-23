@@ -740,8 +740,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                 scheduled_time,
                 round,
                 court_name,
-                home_team:teams!home_team_id(id, name, shield_url),
-                away_team:teams!away_team_id(id, name, shield_url),
+                home_team:teams!home_team_id(id, name, shield_url, primary_color, secondary_color),
+                away_team:teams!away_team_id(id, name, shield_url, primary_color, secondary_color),
                 category:categories(id, name),
                 tournament:tournaments!tournament_id(gender, best_of_sets)
             `).eq('id', matchId).single();
@@ -801,6 +801,17 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     // @ts-ignore
                     gender: tournInfo?.gender || 'S/D'
                 });
+
+                // Hidratación inteligente de colores institucionales de clubes si no existía selección previa en sheet_data
+                if (!teamColors) {
+                    const homeResolved = resolveTeamColors(hTeam?.name, hTeam, null, true);
+                    const awayResolved = resolveTeamColors(aTeam?.name, aTeam, null, false, homeResolved.primary);
+
+                    setLocalTeamColors({
+                        home: [homeResolved.primary, homeResolved.secondary],
+                        away: [awayResolved.primary, awayResolved.secondary]
+                    });
+                }
 
                 // Auto-fill Coaches from Squads (squads usa team_id = hTeam.id)
                 if (hTeam?.id) {
