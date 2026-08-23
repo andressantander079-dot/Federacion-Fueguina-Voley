@@ -9,6 +9,7 @@ import { Calendar, Trophy } from 'lucide-react'
 import Link from 'next/link'
 
 import LiveMatchFloater from '@/components/home/LiveMatchFloater'
+import LiveMatchesBanner from '@/components/home/LiveMatchesBanner'
 
 export default function HomePage() {
     const [isLoginOpen, setIsLoginOpen] = useState(false)
@@ -20,6 +21,7 @@ export default function HomePage() {
             <Navbar />
 
             {/* LIVE MATCHES BANNER */}
+            <LiveMatchesBanner />
             <LiveMatchFloater />
 
             {/* HERO SECTION */}
