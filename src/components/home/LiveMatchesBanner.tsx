@@ -14,7 +14,7 @@ export default function LiveMatchesBanner() {
     const fetchLiveMatches = async () => {
         const { data, error } = await supabase
             .from('matches')
-            .select('id, created_at, updated_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
+            .select('id, created_at, scheduled_time, home_team:teams!home_team_id(name, shield_url), away_team:teams!away_team_id(name, shield_url), sheet_data')
             .in('status', ['live', 'en_curso'])
 
         if (error) console.error("Error fetching live matches:", error);

@@ -21,6 +21,7 @@ import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/da
 import { hexToRgb, getContrastColor, resolveTeamColors } from '@/lib/colorUtils';
 import { finishLiveMatchAction } from '@/app/admin/actions/liveMatchActions';
 import { homologateMatchSheetAction } from '@/app/admin/actions/homologateAction';
+import { resumeMatchAction } from '@/app/actions/resumeMatchAction';
 
 interface OfficialMatchSheetProps {
     redirectAfterSubmit: string;
@@ -63,6 +64,22 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const [adminSignatureData, setAdminSignatureData] = useState<string | null>(null);
     const [homologateError, setHomologateError] = useState<string | null>(null);
     const [isHomologating, setIsHomologating] = useState(false);
+    const [isResumingMatch, setIsResumingMatch] = useState(false);
+
+    const handleResumeMatch = async () => {
+        if (!matchId || matchId === 'test') return;
+        setIsResumingMatch(true);
+        try {
+            const res = await resumeMatchAction(matchId);
+            if (res.success) {
+                setMatchStatus('live');
+            }
+        } catch (e: any) {
+            alert(e.message || "Error al reanudar el partido.");
+        } finally {
+            setIsResumingMatch(false);
+        }
+    };
     
     // Layout and audio control states for set break
     const [isIntermissionMinimized, setIsIntermissionMinimized] = useState(() => {
@@ -951,6 +968,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     const newData = payload.new as any;
                     if (newData && (newData.status === 'live' || newData.status === 'en_curso')) setMatchStatus('live');
                     else if (newData && newData.status === 'finalizado') setMatchStatus('finished');
+                    else if (newData && newData.status === 'suspendido') setMatchStatus('suspended');
                 })
                 .subscribe();
 
@@ -1880,6 +1898,31 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     )}
                 </div>
             </header>
+
+            {/* BANNER DE SUSPENSIÓN POR INACTIVIDAD (>40 MIN) */}
+            {matchStatus === 'suspended' && (
+                <div className="mx-2 md:mx-4 mt-2 bg-amber-950/90 border border-amber-500 text-amber-100 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 z-40">
+                    <div className="flex items-center gap-3">
+                        <AlertTriangle className="text-amber-400 shrink-0 animate-bounce" size={28} />
+                        <div className="flex flex-col">
+                            <span className="font-black text-sm uppercase tracking-wider text-amber-300">
+                                ⚠️ Partido Suspendido por Inactividad (&gt;40 min)
+                            </span>
+                            <span className="text-xs text-amber-200/90">
+                                Los datos y marcadores están protegidos e intactos. Para reanudar la anotación de puntos, presione el botón a la derecha.
+                            </span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleResumeMatch}
+                        disabled={isResumingMatch}
+                        className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs uppercase tracking-widest rounded-xl transition shadow-lg shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                        {isResumingMatch ? 'Reanudando...' : 'Reanudar Partido'}
+                    </button>
+                </div>
+            )}
 
             {/* ÁREA DE JUEGO */}
             <div className={`flex-1 flex flex-col overflow-y-auto md:overflow-hidden p-2 md:p-4 gap-4 ${closingStep === 4 ? 'hidden' : ''} ${isSidesSwapped ? 'md:flex-row-reverse' : 'md:flex-row'}`}>
