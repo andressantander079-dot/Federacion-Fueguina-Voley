@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/client';
 export async function executeLiveMatchCleanup() {
     const supabase = createClient();
 
-    // 1. Consultar partidos en curso o live
+    // 1. Consultar partidos en curso o live (usando columnas base garantizadas)
     const { data: liveMatches, error: fetchErr } = await supabase
         .from('matches')
         .select('id, scheduled_time, created_at, sheet_data')
@@ -21,7 +21,7 @@ export async function executeLiveMatchCleanup() {
         const sheet = match.sheet_data || {};
         const sets = sheet.sets_history || sheet.sets || [];
 
-        // 1. Verificar si el partido ya terminó por marcador final
+        // 1. Verificar si el partido ya terminó por marcador
         const bestOf = sheet.metadata?.bestOfSets || 5;
         const targetSets = Math.ceil(bestOf / 2);
         
@@ -33,14 +33,18 @@ export async function executeLiveMatchCleanup() {
             continue;
         }
 
-        // 2. Solo auto-suspender si hay timestamp explícito de último punto o inicio registrado y han pasado más de 40 min de inactividad
+        // 2. Evaluar sello de última actividad (last_point_at, started_at, scheduled_time o created_at)
         const lastPointTime = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
         const startedTime = sheet.started_at ? new Date(sheet.started_at).getTime() : null;
+        const scheduledTime = match.scheduled_time ? new Date(match.scheduled_time).getTime() : null;
+        const createdTime = match.created_at ? new Date(match.created_at).getTime() : null;
 
-        const lastExplicitActivity = lastPointTime || startedTime;
+        // Tomar la fecha más relevante disponible
+        const mostRecent = lastPointTime || startedTime || scheduledTime || createdTime || now;
+        const elapsed = now - mostRecent;
 
-        // Si hay registro explícito de actividad previa y supera los 40 min sin modificaciones, suspender
-        if (lastExplicitActivity && (now - lastExplicitActivity > 40 * 60 * 1000)) {
+        // Si pasaron más de 40 minutos sin modificaciones, agregar a la lista de auto-suspensión
+        if (elapsed > 40 * 60 * 1000) {
             inactiveMatchIds.push(match.id);
         }
     }

@@ -873,7 +873,6 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     }
                 }
 
-                // ✅ Formato dinámico: respeta 100% la configuración del torneo determinada por el Administrador (best_of_sets)
                 const fetchedBestOfSets = tournInfo?.best_of_sets || 3;
 
                 // ✅ Regla: siempre arrancar desde Set 1 si el partido NO fue iniciado todavía.
@@ -1236,8 +1235,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
         }, 7000);
         const timeoutId = setTimeout(async () => {
             const currentSheetData = {
-                last_point_at: new Date().toISOString(),
-                started_at: new Date().toISOString(),
+                // ... (existing data construction)
                 sets_history: sets,
                 final_score: { home: sets[currentSetIdx].home, away: sets[currentSetIdx].away },
                 roster_home: [...posHome, ...benchHome].filter(p => !!p).map(p => ({ number: p!.number, name: p!.name })),
