@@ -9,7 +9,7 @@ import { formatArgentinaDateLiteral, formatArgentinaTimeLiteral } from '@/lib/da
 
 export default function RefereeDashboard() {
     const supabase = createClient()
-    const { userId, loading: authLoading } = useRefereeAuth()
+    const { userId, isAdmin, loading: authLoading } = useRefereeAuth()
     const [matches, setMatches] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
 
@@ -38,35 +38,44 @@ export default function RefereeDashboard() {
         if (data) {
             const validMatches = data
                 .map(item => {
-                    // @ts-ignore
-                    const m = Array.isArray(item.match) ? item.match[0] : item.match;
-                    return { ...item, match: m };
+                    const matchData = Array.isArray(item.match) ? item.match[0] : item.match;
+                    if (!matchData) return null;
+                    return { ...item, match: matchData };
                 })
-                .filter(item => item.match && item.match.id && item.match.status !== 'finalizado');
+                .filter(Boolean);
 
             // Sort by date ASC
             validMatches.sort((a, b) => {
-                const dateA = a.match?.scheduled_time || '';
-                const dateB = b.match?.scheduled_time || '';
+                const dateA = a?.match?.scheduled_time || '';
+                const dateB = b?.match?.scheduled_time || '';
                 return dateA.localeCompare(dateB);
             });
 
             setMatches(validMatches)
-            setPendingCount(validMatches.filter(m => m.status === 'assigned').length)
+            setPendingCount(validMatches.filter(m => m?.status === 'assigned').length)
         }
         setLoading(false)
     }
 
-    if (authLoading || (loading && !matches.length && userId)) return (
-        <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tdf-orange"></div>
-        </div>
-    )
+    if (authLoading || loading) {
+        return (
+            <div className="min-h-[60vh] flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tdf-orange"></div>
+            </div>
+        )
+    }
 
     return (
-        <div className="max-w-xl mx-auto space-y-8 pb-20">
+        <div className="max-w-4xl mx-auto space-y-6 pb-12">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-black text-white uppercase tracking-tight">Panel de Juzgamiento</h1>
+                    <p className="text-zinc-400 text-xs font-semibold">Gestiona tus designaciones y planillas oficiales</p>
+                </div>
+            </div>
 
-            {/* HERO: MATCHES LIST */}
+            {/* Assignments List */}
             <section>
                 <div className="flex items-center justify-between mb-4 px-1">
                     <h2 className="text-lg font-black text-white uppercase flex items-center gap-2">
@@ -79,17 +88,19 @@ export default function RefereeDashboard() {
                     <div className="space-y-4">
                         {matches.map(matchItem => {
                             const isSuspended = matchItem.match.status === 'suspendido';
+                            const canBypass = isAdmin;
+
                             return (
                             <Link 
                                 key={matchItem.id} 
-                                href={isSuspended ? '#' : `/referee/partido/${matchItem.match.id}`} 
+                                href={(isSuspended && !canBypass) ? '#' : `/referee/partido/${matchItem.match.id}${canBypass ? '?override=true' : ''}`} 
                                 onClick={(e) => { 
-                                    if(isSuspended) { 
+                                    if(isSuspended && !canBypass) { 
                                         e.preventDefault(); 
                                         alert("Este partido está SUSPENDIDO. No puedes ingresar hasta que la Federación lo reprograme y te habilite nuevamente."); 
                                     } 
                                 }}
-                                className={`group relative block bg-gradient-to-br from-zinc-900 via-zinc-900 to-black rounded-3xl border ${isSuspended ? 'border-red-900/50 opacity-80 cursor-not-allowed' : 'border-zinc-800'} overflow-hidden shadow-2xl hover:shadow-orange-900/10 hover:border-zinc-700 transition-all duration-300`}
+                                className={`group relative block bg-gradient-to-br from-zinc-900 via-zinc-900 to-black rounded-3xl border ${isSuspended ? (canBypass ? 'border-amber-500/50 hover:border-amber-400' : 'border-red-900/50 opacity-80 cursor-not-allowed') : 'border-zinc-800'} overflow-hidden shadow-2xl hover:shadow-orange-900/10 hover:border-zinc-700 transition-all duration-300`}
                             >
                                 {/* Status Label */}
                                 <div className="absolute top-4 right-4 z-10 flex gap-2">

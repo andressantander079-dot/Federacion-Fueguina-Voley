@@ -9,6 +9,16 @@ import { executeLiveMatchCleanup } from '@/app/actions/liveMatchCleanup';
 
 const MAX_INACTIVE_LIVE_MS = 40 * 60 * 1000; // 40 minutos
 
+const getArgentinaDateStr = (dateInput: string | Date = new Date()) => {
+    try {
+        const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Ushuaia' }).format(d);
+    } catch (e) {
+        const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+        return d.toISOString().split('T')[0];
+    }
+};
+
 export default function LiveMatchFloater() {
     const [liveMatches, setLiveMatches] = useState<any[]>([]);
     const [isVisible, setIsVisible] = useState(true);
@@ -29,7 +39,18 @@ export default function LiveMatchFloater() {
         if (data) {
             const now = Date.now();
 
+            const todayArgentina = getArgentinaDateStr();
+
             const activeOnly = data.filter((match) => {
+                // 0. Descartar partidos pertenecientes a fechas de días anteriores usando zona horaria de Argentina
+                const matchDateStr = match.scheduled_time 
+                    ? getArgentinaDateStr(match.scheduled_time) 
+                    : (match.created_at ? getArgentinaDateStr(match.created_at) : '');
+
+                if (matchDateStr && matchDateStr !== todayArgentina) {
+                    return false;
+                }
+
                 const sheet = match.sheet_data || {};
                 const sets = sheet.sets_history || sheet.sets || [];
 
@@ -115,10 +136,11 @@ export default function LiveMatchFloater() {
                     {liveMatches.map((match) => {
                         const sheet = match.sheet_data || {};
                         const sets = sheet.sets_history || sheet.sets || [];
-                        const currentSet = sets.find((s: any) => !s.finished) || sets[sets.length - 1] || { home: 0, away: 0 };
-                        const homePts = currentSet.home ?? currentSet.homeScore ?? currentSet.score_home ?? 0;
-                        const awayPts = currentSet.away ?? currentSet.awayScore ?? currentSet.score_away ?? 0;
-                        const setNum = sets.length || 1;
+                        const currentSetIdx = typeof sheet.current_set_idx === 'number' ? sheet.current_set_idx : (sets.length > 0 ? sets.length - 1 : 0);
+                        const currentSet = sets[currentSetIdx] || sheet.final_score || { home: 0, away: 0 };
+                        const homePts = typeof currentSet.home === 'number' ? currentSet.home : (typeof currentSet.score_home === 'number' ? currentSet.score_home : (currentSet.homeScore ?? 0));
+                        const awayPts = typeof currentSet.away === 'number' ? currentSet.away : (typeof currentSet.score_away === 'number' ? currentSet.score_away : (currentSet.awayScore ?? 0));
+                        const setNum = (currentSetIdx + 1) || 1;
 
                         const homeColors = resolveTeamColors(match.home_team?.name, match.home_team, sheet.teamColors?.home, true);
                         const awayColors = resolveTeamColors(match.away_team?.name, match.away_team, sheet.teamColors?.away, false, homeColors.primary);

@@ -23,6 +23,26 @@ import { finishLiveMatchAction } from '@/app/admin/actions/liveMatchActions';
 import { homologateMatchSheetAction } from '@/app/admin/actions/homologateAction';
 import { resumeMatchAction } from '@/app/actions/resumeMatchAction';
 
+export function sanitizeSheetData(data: unknown): Record<string, unknown> {
+    if (!data || typeof data !== 'object') return {};
+
+    const sanitizeValue = (val: unknown): unknown => {
+        if (val === undefined) return null;
+        if (val === null) return null;
+        if (Array.isArray(val)) return val.map(sanitizeValue);
+        if (typeof val === 'object') {
+            const res: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+                res[k] = sanitizeValue(v);
+            }
+            return res;
+        }
+        return val;
+    };
+
+    return sanitizeValue(data) as Record<string, unknown>;
+}
+
 interface OfficialMatchSheetProps {
     redirectAfterSubmit: string;
     readOnly?: boolean;
