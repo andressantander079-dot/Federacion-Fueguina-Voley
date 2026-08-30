@@ -893,8 +893,10 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     }
                 }
 
-                // ✅ Formato dinámico: respeta 100% la configuración del torneo determinada por el Administrador (best_of_sets)
-                const fetchedBestOfSets = tournInfo?.best_of_sets || 3;
+                const catName = catInfo?.name || '';
+                const is5SetsCategory = catName.includes('16') || catName.includes('18') || catName.toLowerCase().includes('mayor') || catName.toLowerCase().includes('primera');
+                const defaultCategorySets = is5SetsCategory ? 5 : 3;
+                const fetchedBestOfSets = tournInfo?.best_of_sets || defaultCategorySets;
 
                 // ✅ Regla: siempre arrancar desde Set 1 si el partido NO fue iniciado todavía.
                 // Solo restaurar estado previo si el partido está live o suspendido (en curso).
@@ -1011,9 +1013,13 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
     const hydrateMatchState = (data: any, fallbackBestOfSets?: number) => {
         if (!data) return;
 
+        const catMeta = data.metadata?.category || '';
+        const is5SetsMeta = catMeta.includes('16') || catMeta.includes('18') || catMeta.toLowerCase().includes('mayor') || catMeta.toLowerCase().includes('primera');
+        const defaultSetsMeta = is5SetsMeta ? 5 : 3;
+
         // Map DB snake_case to Hook camelCase
         const normalizedState = {
-            bestOfSets: fallbackBestOfSets || data.metadata?.bestOfSets || 3,
+            bestOfSets: fallbackBestOfSets || defaultSetsMeta,
             sets: data.sets_history || data.sets,
             currentSetIdx: data.current_set_idx, // check if this matches save key
             posHome: data.pos_home || data.posHome,
