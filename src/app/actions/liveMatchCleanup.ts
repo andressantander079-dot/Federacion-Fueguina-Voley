@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/client';
 export async function executeLiveMatchCleanup() {
     const supabase = createClient();
 
-    // 1. Consultar partidos en curso o live (usando columnas base garantizadas)
+    // 1. Consulta limpia sin la columna inexistente 'updated_at'
     const { data: liveMatches, error: fetchErr } = await supabase
         .from('matches')
         .select('id, scheduled_time, created_at, sheet_data')
@@ -18,10 +18,10 @@ export async function executeLiveMatchCleanup() {
     const inactiveMatchIds: string[] = [];
 
     for (const match of liveMatches) {
-        const sheet = match.sheet_data || {};
-        const sets = sheet.sets_history || sheet.sets || [];
+        const sheet = (match.sheet_data || {}) as Record<string, any>;
+        const sets = (sheet.sets_history || sheet.sets || []) as any[];
 
-        // 1. Verificar si el partido ya terminó por marcador
+        // 1. Verificar si el partido terminó por marcador final
         const bestOf = sheet.metadata?.bestOfSets || 5;
         const targetSets = Math.ceil(bestOf / 2);
         
@@ -33,18 +33,14 @@ export async function executeLiveMatchCleanup() {
             continue;
         }
 
-        // 2. Evaluar sello de última actividad (last_point_at, started_at, scheduled_time o created_at)
+        // 2. REGLA ESTRICTA: NUNCA suspender basándose en scheduled_time
         const lastPointTime = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
-        const startedTime = sheet.started_at ? new Date(sheet.started_at).getTime() : null;
-        const scheduledTime = match.scheduled_time ? new Date(match.scheduled_time).getTime() : null;
-        const createdTime = match.created_at ? new Date(match.created_at).getTime() : null;
 
-        // Tomar la fecha más relevante disponible
-        const mostRecent = lastPointTime || startedTime || scheduledTime || createdTime || now;
-        const elapsed = now - mostRecent;
+        if (!lastPointTime) {
+            continue; // Si no hay puntos anotados aún, NUNCA auto-suspender
+        }
 
-        // Si pasaron más de 40 minutos sin modificaciones, agregar a la lista de auto-suspensión
-        if (elapsed > 40 * 60 * 1000) {
+        if (now - lastPointTime > 40 * 60 * 1000) {
             inactiveMatchIds.push(match.id);
         }
     }
@@ -53,12 +49,9 @@ export async function executeLiveMatchCleanup() {
         return { count: 0 };
     }
 
-    // Auto-suspensión atómica en BD
-    const { data: updatedData, error: updateErr } = await supabase
+    const { error: updateErr } = await supabase
         .from('matches')
-        .update({
-            status: 'suspendido'
-        })
+        .update({ status: 'suspendido' })
         .in('id', inactiveMatchIds)
         .in('status', ['live', 'en_curso']);
 

@@ -4,22 +4,21 @@ import { createClient } from '@/lib/supabase/client';
 
 export function useRefereeAuth() {
     const router = useRouter();
-    const supabase = useMemo(() => createClient(), []); // Stable SSR client instance
+    const supabase = useMemo(() => createClient(), []);
     const [loading, setLoading] = useState(true);
     const [userId, setUserId] = useState<string | null>(null);
     const [refereeId, setRefereeId] = useState<string | null>(null);
+    const [isAdmin, setIsAdmin] = useState(false);
 
     useEffect(() => {
         const checkAuth = async () => {
             try {
-                // 1. Get Session
                 const { data: { session } } = await supabase.auth.getSession();
                 if (!session) {
                     router.push('/login');
                     return;
                 }
 
-                // 2. Check Profile Role
                 const { data: profile, error: profileError } = await supabase
                     .from('profiles')
                     .select('id, role')
@@ -32,6 +31,8 @@ export function useRefereeAuth() {
                     return;
                 }
 
+                const userIsAdmin = profile.role === 'admin';
+                setIsAdmin(userIsAdmin);
                 setUserId(profile.id);
 
                 if (profile.role === 'referee') {
@@ -41,11 +42,8 @@ export function useRefereeAuth() {
                         .eq('user_id', profile.id)
                         .maybeSingle();
 
-                    if (refData) {
-                        setRefereeId(refData.id);
-                    }
+                    if (refData) setRefereeId(refData.id);
                 } else {
-                    // Es Administrador: asigna el id sin requerir fila en la tabla 'referees'
                     setRefereeId(profile.id);
                 }
 
@@ -58,7 +56,7 @@ export function useRefereeAuth() {
         };
 
         checkAuth();
-    }, [router]);
+    }, [router, supabase]);
 
-    return { userId, refereeId, loading };
+    return { userId, refereeId, isAdmin, loading };
 }

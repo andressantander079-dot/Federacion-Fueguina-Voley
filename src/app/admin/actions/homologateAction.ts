@@ -62,6 +62,7 @@ export async function homologateMatchSheetAction(
     email: user.email,
     timestamp: new Date().toISOString(),
     method: 'admin_override',
+    recovery_method: 'admin_override_recovery',
     seal: 'HOMOLOGACIÓN OFICIAL FVF - RESOLUCIÓN ADMINISTRATIVA',
     admin_signature: adminSignature || null,
     notes: adminNotes || 'Cierre y homologación administrativa de acta de juego'
