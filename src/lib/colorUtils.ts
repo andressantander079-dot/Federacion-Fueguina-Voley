@@ -4,39 +4,34 @@ export interface TeamColors {
 }
 
 export const DEFAULT_OFFICIAL_COLORS: Record<string, TeamColors> = {
-  'tolkeyen': { primary: '#E11D48', secondary: '#ffffff' },
-  'aep': { primary: '#1e3a8a', secondary: '#3b82f6' },
-  'academia tdf': { primary: '#eab308', secondary: '#000000' },
-  'academia de voley': { primary: '#eab308', secondary: '#16a34a' },
-  'albi': { primary: '#2563eb', secondary: '#ffffff' },
-  'casa del deporte': { primary: '#dc2626', secondary: '#ffffff' },
-  'adefu': { primary: '#15803d', secondary: '#ffffff' },
-  'universitario': { primary: '#7c3aed', secondary: '#ffffff' },
-  'estrella': { primary: '#f97316', secondary: '#000000' },
-  'galicia': { primary: '#2563eb', secondary: '#ffffff' },
-  'imago': { primary: '#ec4899', secondary: '#831843' },
-  'lasserre': { primary: '#0284c7', secondary: '#ffffff' }
+  'academia': { primary: '#0284c7', secondary: '#ffffff' },
+  'imago': { primary: '#1e293b', secondary: '#38bdf8' },
+  'adefu': { primary: '#16a34a', secondary: '#ffffff' },
+  'albi': { primary: '#dc2626', secondary: '#ffffff' },
+  'aep': { primary: '#2563eb', secondary: '#ffffff' },
+  'galicia': { primary: '#7c3aed', secondary: '#f59e0b' }
 };
 
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  if (!hex || !hex.startsWith('#')) return null;
-  const cleanHex = hex.replace('#', '');
-  const bigint = parseInt(cleanHex, 16);
-  if (isNaN(bigint)) return null;
-  return {
-    r: (bigint >> 16) & 255,
-    g: (bigint >> 8) & 255,
-    b: bigint & 255
-  };
+  const cleanHex = hex.replace('#', '').trim();
+  if (cleanHex.length === 3) {
+    const r = parseInt(cleanHex[0] + cleanHex[0], 16);
+    const g = parseInt(cleanHex[1] + cleanHex[1], 16);
+    const b = parseInt(cleanHex[2] + cleanHex[2], 16);
+    return { r, g, b };
+  } else if (cleanHex.length === 6) {
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return { r, g, b };
+  }
+  return null;
 }
 
-export function getContrastColor(hexColor: string): '#FFFFFF' | '#000000' {
-  if (!hexColor || !hexColor.startsWith('#')) return '#FFFFFF';
-  const hex = hexColor.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16) || 0;
-  const g = parseInt(hex.substring(2, 4), 16) || 0;
-  const b = parseInt(hex.substring(4, 6), 16) || 0;
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+export function getContrastColor(hex: string): '#000000' | '#FFFFFF' {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return '#FFFFFF';
+  const yiq = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
   return yiq >= 128 ? '#000000' : '#FFFFFF';
 }
 
@@ -49,17 +44,23 @@ export function resolveTeamColors(
 ): TeamColors {
   // 1° PRIORIDAD ABSOLUTA: Colores asignados en Planilla Oficial de Juego (La mesa de control manda)
   if (sheetColors) {
+    let raw = sheetColors;
+    if (typeof raw === 'object' && raw !== null) {
+      if (isHome && raw.home) raw = raw.home;
+      else if (!isHome && raw.away) raw = raw.away;
+    }
+
     let primary: string | undefined;
     let secondary: string | undefined;
 
-    if (Array.isArray(sheetColors) && sheetColors.length > 0) {
-      primary = sheetColors[0];
-      secondary = sheetColors[1] || '#ffffff';
-    } else if (typeof sheetColors === 'object') {
-      primary = sheetColors.primary || sheetColors.main || sheetColors.color;
-      secondary = sheetColors.secondary || '#ffffff';
-    } else if (typeof sheetColors === 'string') {
-      primary = sheetColors;
+    if (Array.isArray(raw) && raw.length > 0) {
+      primary = raw[0];
+      secondary = raw[1] || '#ffffff';
+    } else if (typeof raw === 'object' && raw !== null) {
+      primary = raw.primary || raw.main || raw.color || raw[0];
+      secondary = raw.secondary || raw[1] || '#ffffff';
+    } else if (typeof raw === 'string') {
+      primary = raw;
       secondary = '#ffffff';
     }
 
@@ -74,7 +75,6 @@ export function resolveTeamColors(
   // 2° Prioridad: Colores configurados por el Administrador en la tabla teams (BD)
   if (teamDbColors?.primary_color) {
     let primary = teamDbColors.primary_color;
-    // Resolución de choque cromático para el visitante si no hubo kit en planilla
     if (!isHome && opponentPrimaryColor && opponentPrimaryColor.toLowerCase() === primary.toLowerCase()) {
       primary = teamDbColors.secondary_color || '#ffffff';
     }

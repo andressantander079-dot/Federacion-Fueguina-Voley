@@ -20,7 +20,35 @@ export default function LiveMatchesBanner() {
         if (error) console.error("Error fetching live matches:", error);
 
         if (data) {
-            setLiveMatches(data);
+            const now = Date.now();
+
+            const activeOnly = data.filter((match) => {
+                const sheet = match.sheet_data || {};
+                const sets = sheet.sets_history || sheet.sets || [];
+
+                // 1. Filtrar partidos cuyo score final indique que un equipo ya ganó el partido
+                const bestOf = sheet.metadata?.bestOfSets || 5;
+                const targetSets = Math.ceil(bestOf / 2);
+                
+                const setsWonHome = sets.filter((s: any) => s.finished && ((s.home ?? s.score_home ?? 0) > (s.away ?? s.score_away ?? 0))).length;
+                const setsWonAway = sets.filter((s: any) => s.finished && ((s.away ?? s.score_away ?? 0) > (s.home ?? s.score_home ?? 0))).length;
+
+                if (setsWonHome >= targetSets || setsWonAway >= targetSets) {
+                    return false; // El encuentro ya concluyó
+                }
+
+                // 2. Solo descartar por inactividad si hay timestamp explícito de último punto registrado superior a 40 min
+                if (sheet.last_point_at) {
+                    const lastPointTime = new Date(sheet.last_point_at).getTime();
+                    if (!isNaN(lastPointTime) && (now - lastPointTime > MAX_INACTIVE_LIVE_MS)) {
+                        return false; // Descartar si pasaron más de 40 minutos desde el último punto anotado
+                    }
+                }
+
+                return true;
+            });
+
+            setLiveMatches(activeOnly);
         }
     }
 
@@ -35,7 +63,7 @@ export default function LiveMatchesBanner() {
             .subscribe()
 
         return () => { supabase.removeChannel(channel) }
-    }, [])
+    }, [supabase])
 
     if (liveMatches.length === 0) return null
 

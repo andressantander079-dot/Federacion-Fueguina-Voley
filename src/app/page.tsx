@@ -19,7 +19,7 @@ export default function HomePage() {
             {/* Navbar con acceso a callback */}
             <Navbar />
 
-            {/* LIVE MATCHES BANNER */}
+            {/* LIVE MATCH FLOATER (WIDGET FLOTANTE MULTI-PARTIDO) */}
             <LiveMatchFloater />
 
             {/* HERO SECTION */}
@@ -60,17 +60,18 @@ export default function HomePage() {
                         <div className="flex flex-col sm:flex-row items-center gap-6 animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300 w-full sm:w-auto">
                             <Link
                                 href="/fixture"
-                                className="w-full sm:w-auto px-10 py-5 bg-tdf-orange hover:bg-tdf-orange-hover text-white rounded-2xl font-bold text-lg transition-all shadow-xl hover:shadow-orange-500/20 transform hover:-translate-y-1 flex items-center justify-center gap-3 border border-white/10"
+                                className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-white text-tdf-blue font-black text-lg hover:bg-blue-50 transition shadow-xl hover:shadow-2xl active:scale-95 group"
                             >
-                                <Calendar className="w-6 h-6" />
-                                Ver Partidos
+                                <Calendar className="w-6 h-6 text-tdf-orange group-hover:scale-110 transition-transform" />
+                                <span>Ver Partidos</span>
                             </Link>
+
                             <Link
                                 href="/posiciones"
-                                className="w-full sm:w-auto px-10 py-5 bg-white/5 hover:bg-white/10 text-white border border-white/20 rounded-2xl font-bold text-lg transition-all backdrop-blur-md flex items-center justify-center gap-3 hover:border-white/30"
+                                className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-white/10 hover:bg-white/20 backdrop-blur-md text-white border border-white/20 font-black text-lg transition shadow-xl hover:shadow-2xl active:scale-95 group"
                             >
-                                <Trophy className="w-6 h-6" />
-                                Posiciones
+                                <Trophy className="w-6 h-6 text-tdf-orange group-hover:scale-110 transition-transform" />
+                                <span>Posiciones</span>
                             </Link>
                         </div>
 
@@ -78,14 +79,15 @@ export default function HomePage() {
                 </div>
             </header>
 
-            {/* SPONSORS */}
-            <SponsorsBanner />
-
-            {/* NEWS FEED */}
+            {/* SECCIÓN DE NOTICIAS Y NOVEDADES */}
             <NewsFeed />
 
-            {/* FOOTER */}
+            {/* SPONSORS SLIDER */}
+            <SponsorsBanner />
+
+            {/* FOOTER GENERAL */}
             <Footer />
+
         </div>
     )
 }
