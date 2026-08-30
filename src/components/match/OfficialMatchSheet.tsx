@@ -873,10 +873,8 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
                     }
                 }
 
-                const catName = catInfo?.name || '';
-                const is5SetsCategory = catName.includes('16') || catName.includes('18') || catName.toLowerCase().includes('mayor') || catName.toLowerCase().includes('primera');
-                const defaultCategoryBestOfSets = is5SetsCategory ? 5 : 3;
-                const fetchedBestOfSets = tournInfo?.best_of_sets || defaultCategoryBestOfSets;
+                // ✅ Formato dinámico: respeta 100% la configuración del torneo determinada por el Administrador (best_of_sets)
+                const fetchedBestOfSets = tournInfo?.best_of_sets || 3;
 
                 // ✅ Regla: siempre arrancar desde Set 1 si el partido NO fue iniciado todavía.
                 // Solo restaurar estado previo si el partido está live o suspendido (en curso).
@@ -995,7 +993,7 @@ export default function OfficialMatchSheet({ redirectAfterSubmit, readOnly = fal
 
         // Map DB snake_case to Hook camelCase
         const normalizedState = {
-            bestOfSets: data.metadata?.bestOfSets || fallbackBestOfSets || 3,
+            bestOfSets: fallbackBestOfSets || data.metadata?.bestOfSets || 3,
             sets: data.sets_history || data.sets,
             currentSetIdx: data.current_set_idx, // check if this matches save key
             posHome: data.pos_home || data.posHome,
