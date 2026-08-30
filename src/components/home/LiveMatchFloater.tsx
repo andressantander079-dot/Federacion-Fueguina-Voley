@@ -44,15 +44,13 @@ export default function LiveMatchFloater() {
                     return false;
                 }
 
-                // 2. Descartar por inactividad (>40 min) evaluando last_point_at, started_at, scheduled_time o created_at
+                // 2. Solo descartar por inactividad si hay timestamp explícito de último punto o inicio registrado y han pasado más de 40 min
                 const lastPointTime = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
                 const startedTime = sheet.started_at ? new Date(sheet.started_at).getTime() : null;
-                const scheduledTime = match.scheduled_time ? new Date(match.scheduled_time).getTime() : null;
-                const createdTime = match.created_at ? new Date(match.created_at).getTime() : null;
 
-                const mostRecent = lastPointTime || startedTime || scheduledTime || createdTime;
+                const lastExplicitActivity = lastPointTime || startedTime;
 
-                if (mostRecent && (now - mostRecent > MAX_INACTIVE_LIVE_MS)) {
+                if (lastExplicitActivity && (now - lastExplicitActivity > MAX_INACTIVE_LIVE_MS)) {
                     return false;
                 }
 
