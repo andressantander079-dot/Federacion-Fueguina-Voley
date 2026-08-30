@@ -3,10 +3,10 @@ import { createClient } from '@/lib/supabase/client';
 export async function executeLiveMatchCleanup() {
     const supabase = createClient();
 
-    // 1. Consultar partidos en curso o live
+    // 1. Consultar partidos únicamente en estado 'live' o 'en_curso'
     const { data: liveMatches, error: fetchErr } = await supabase
         .from('matches')
-        .select('id, scheduled_time, created_at, sheet_data')
+        .select('id, scheduled_time, created_at, sheet_data, updated_at')
         .in('status', ['live', 'en_curso']);
 
     if (fetchErr || !liveMatches) {
@@ -21,7 +21,7 @@ export async function executeLiveMatchCleanup() {
         const sheet = match.sheet_data || {};
         const sets = sheet.sets_history || sheet.sets || [];
 
-        // 1. Verificar si el partido ya terminó por marcador final
+        // 1. Verificar si el partido ya terminó deportivamente por marcador final
         const bestOf = sheet.metadata?.bestOfSets || 5;
         const targetSets = Math.ceil(bestOf / 2);
         
@@ -33,14 +33,18 @@ export async function executeLiveMatchCleanup() {
             continue;
         }
 
-        // 2. Solo auto-suspender si hay timestamp explícito de último punto o inicio registrado y han pasado más de 40 min de inactividad
+        // 2. REGLA ESTRICTA DE INACTIVIDAD:
+        // Jamás evaluar scheduled_time ni created_at (los retrasos en el gimnasio son normales).
+        // Únicamente evaluar si existe una marca explícita de actividad en sheet_data.last_point_at.
         const lastPointTime = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
-        const startedTime = sheet.started_at ? new Date(sheet.started_at).getTime() : null;
 
-        const lastExplicitActivity = lastPointTime || startedTime;
+        // Si NO hay marca explícita de puntos iniciados (partido sin iniciar o sin puntos), NUNCA auto-suspender
+        if (!lastPointTime) {
+            continue;
+        }
 
-        // Si hay registro explícito de actividad previa y supera los 40 min sin modificaciones, suspender
-        if (lastExplicitActivity && (now - lastExplicitActivity > 40 * 60 * 1000)) {
+        // Si existe registro explícito de puntos y han transcurrido más de 40 min ininterrumpidos sin modificaciones, suspender
+        if (now - lastPointTime > 40 * 60 * 1000) {
             inactiveMatchIds.push(match.id);
         }
     }
