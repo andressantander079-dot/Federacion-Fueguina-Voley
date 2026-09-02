@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
     Calendar, Clock, MapPin, User, Shield, AlertTriangle, CheckCircle, Search, Filter,
-    Eye, Share2, X, ClipboardCheck, ChevronLeft, ChevronRight, Layers, Award
+    Eye, Share2, X, ClipboardCheck, ChevronLeft, ChevronRight, Layers, Award, Loader2
 } from 'lucide-react';
 import { formatArgentinaDateNumerical, formatArgentinaTimeLiteral } from '@/lib/dateUtils';
 import MatchDetailsModal from '@/components/fixture/MatchDetailsModal';
@@ -165,6 +165,8 @@ export default function DesignationsPage() {
         'line_judge': ''
     });
 
+    const [saving, setSaving] = useState<boolean>(false);
+
     // Match details state
     const [detailsMatch, setDetailsMatch] = useState<any | null>(null);
 
@@ -174,9 +176,9 @@ export default function DesignationsPage() {
     const [selectedGender, setSelectedGender] = useState<string>('');
     const [selectedReferee, setSelectedReferee] = useState<string>('');
     
-    // Mes actual por defecto (1-indexed) y Año 2026
+    // Mes por defecto libre (vacío = Todos los meses) para no ocultar partidos pendientes de meses anteriores o sin fecha
     const currentDate = new Date();
-    const [selectedMonth, setSelectedMonth] = useState<string>(String(currentDate.getMonth() + 1));
+    const [selectedMonth, setSelectedMonth] = useState<string>('');
     const [selectedYear, setSelectedYear] = useState<string>('2026');
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
     const [assignmentStatus, setAssignmentStatus] = useState<'all' | 'unassigned' | 'assigned'>('all');
@@ -324,6 +326,19 @@ export default function DesignationsPage() {
     }).length;
     const unassignedCount = matches.filter(m => !getMatchOfficialsInfo(m, referees).hasRef).length;
 
+    // Helpers para resolución dual de IDs entre referees.id y profiles.id (evita FK violations)
+    function getRefereeTableId(profileOrUserId: string, refereesList: any[]): string | null {
+        if (!profileOrUserId) return null;
+        const found = refereesList.find(r => r.profile?.id === profileOrUserId || r.id === profileOrUserId);
+        return found ? found.id : profileOrUserId;
+    }
+
+    function getProfileUserId(profileOrUserId: string, refereesList: any[]): string | null {
+        if (!profileOrUserId) return null;
+        const found = refereesList.find(r => r.profile?.id === profileOrUserId || r.id === profileOrUserId);
+        return found?.profile?.id || found?.id || profileOrUserId;
+    }
+
     // Incompatibilidades para el modal de asignación
     function getAvailableReferees(match: any) {
         if (!match) return [];
@@ -346,36 +361,81 @@ export default function DesignationsPage() {
 
     async function saveAssignments(e: React.FormEvent) {
         e.preventDefault();
-        if (!selectedMatch) return;
+        if (!selectedMatch || saving) return;
 
-        const roles = ['1st_referee', '2nd_referee', 'scorer', 'line_judge'];
+        setSaving(true);
+        try {
+            const roles: ('1st_referee' | '2nd_referee' | 'scorer' | 'line_judge')[] = [
+                '1st_referee', '2nd_referee', 'scorer', 'line_judge'
+            ];
+            
+            const staffKeyMap: Record<string, string> = {
+                '1st_referee': 'ref1',
+                '2nd_referee': 'ref2',
+                'scorer': 'scorer',
+                'line_judge': 'linesman'
+            };
 
-        for (const role of roles) {
-            // @ts-ignore
-            const refereeId = assignments[role];
-            const existing = selectedMatch.match_officials?.find((mo: any) => mo.role === role);
+            const currentStaff = { ...(selectedMatch.sheet_data?.staff || {}) };
 
-            if (refereeId) {
-                const { error } = await supabase.from('match_officials').upsert({
-                    match_id: selectedMatch.id,
-                    role: role,
-                    user_id: refereeId,
-                    status: 'assigned'
-                }, { onConflict: 'match_id, role' });
+            for (const role of roles) {
+                const rawSelectedId = assignments[role];
+                const profileUserId = getProfileUserId(rawSelectedId, referees);
 
-                if (error) console.error('Error al asignar ' + role, error);
-            } else if (existing) {
-                await supabase.from('match_officials').delete().eq('id', existing.id);
+                if (profileUserId && profileUserId !== '') {
+                    // 1. Asignación / Upsert en match_officials (Usa profile.id / user_id)
+                    const { error } = await supabase.from('match_officials').upsert({
+                        match_id: selectedMatch.id,
+                        role: role,
+                        user_id: profileUserId,
+                        status: 'assigned'
+                    }, { onConflict: 'match_id, role' });
+
+                    if (error) console.error(`Error asignando ${role}:`, error);
+
+                    // Actualizar staff JSONB
+                    currentStaff[staffKeyMap[role]] = profileUserId;
+                } else {
+                    // 2. Desasignación Atómica: DELETE en match_officials
+                    await supabase
+                        .from('match_officials')
+                        .delete()
+                        .eq('match_id', selectedMatch.id)
+                        .eq('role', role);
+
+                    // Limpiar clave en staff JSONB
+                    delete currentStaff[staffKeyMap[role]];
+                }
             }
-        }
 
-        // Si se asignó 1st_referee, actualizamos también referee_id en la tabla matches
-        if (assignments['1st_referee']) {
-            await supabase.from('matches').update({ referee_id: assignments['1st_referee'] }).eq('id', selectedMatch.id);
-        }
+            // 3. Resuelve el referees.id correspondiente para la columna matches.referee_id
+            const raw1stRef = assignments['1st_referee'];
+            const refereeTableIdForMatch = raw1stRef ? getRefereeTableId(raw1stRef, referees) : null;
 
-        setSelectedMatch(null);
-        fetchMatches();
+            const updatedSheetData = {
+                ...(selectedMatch.sheet_data || {}),
+                staff: currentStaff
+            };
+
+            // 4. Actualización atómica en la tabla matches (referee_id y sheet_data.staff)
+            const { error: matchUpdateErr } = await supabase
+                .from('matches')
+                .update({
+                    referee_id: refereeTableIdForMatch,
+                    sheet_data: updatedSheetData
+                })
+                .eq('id', selectedMatch.id);
+
+            if (matchUpdateErr) console.error("Error al actualizar matches.referee_id y sheet_data:", matchUpdateErr);
+
+            // 5. Cierre de modal y refresco reactivo instantáneo (0 ms)
+            setSelectedMatch(null);
+            await fetchMatches();
+        } catch (err) {
+            console.error("Error en saveAssignments:", err);
+        } finally {
+            setSaving(false);
+        }
     }
 
     const availableReferees = getAvailableReferees(selectedMatch);
@@ -389,13 +449,13 @@ export default function DesignationsPage() {
         setSelectedTeam('');
         setSelectedGender('');
         setSelectedReferee('');
-        setSelectedMonth(String(currentDate.getMonth() + 1));
+        setSelectedMonth('');
         setSelectedYear('2026');
         setSortOrder('desc');
         setAssignmentStatus('all');
     };
 
-    const isFilterActive = selectedCategory || selectedTeam || selectedGender || selectedReferee || selectedMonth !== String(currentDate.getMonth() + 1) || selectedYear !== '2026' || assignmentStatus !== 'all';
+    const isFilterActive = Boolean(selectedCategory || selectedTeam || selectedGender || selectedReferee || selectedMonth !== '' || selectedYear !== '2026' || assignmentStatus !== 'all');
 
     return (
         <div className="p-4 md:p-8 min-h-screen bg-gray-50 dark:bg-black">
@@ -784,13 +844,14 @@ export default function DesignationsPage() {
                             <div>
                                 <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">1° Árbitro Principal</label>
                                 <select
-                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition"
+                                    disabled={saving}
+                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition disabled:opacity-50"
                                     value={assignments['1st_referee']}
                                     onChange={e => setAssignments({ ...assignments, '1st_referee': e.target.value })}
                                 >
-                                    <option value="">Seleccionar 1° Árbitro...</option>
+                                    <option value="">-- Sin designar --</option>
                                     {availableReferees.map(r => (
-                                        <option key={r.id} value={r.profile?.id}>
+                                        <option key={r.id} value={r.profile?.id || r.id}>
                                             {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
@@ -801,13 +862,14 @@ export default function DesignationsPage() {
                             <div>
                                 <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">2° Árbitro Asistente</label>
                                 <select
-                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition"
+                                    disabled={saving}
+                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition disabled:opacity-50"
                                     value={assignments['2nd_referee']}
                                     onChange={e => setAssignments({ ...assignments, '2nd_referee': e.target.value })}
                                 >
-                                    <option value="">Seleccionar 2° Árbitro (Opcional)...</option>
+                                    <option value="">-- Sin designar --</option>
                                     {availableReferees.map(r => (
-                                        <option key={r.id} value={r.profile?.id}>
+                                        <option key={r.id} value={r.profile?.id || r.id}>
                                             {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
@@ -818,13 +880,14 @@ export default function DesignationsPage() {
                             <div>
                                 <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Apuntador / Planillero</label>
                                 <select
-                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition"
+                                    disabled={saving}
+                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition disabled:opacity-50"
                                     value={assignments['scorer']}
                                     onChange={e => setAssignments({ ...assignments, 'scorer': e.target.value })}
                                 >
-                                    <option value="">Seleccionar Apuntador...</option>
+                                    <option value="">-- Sin designar --</option>
                                     {availableReferees.map(r => (
-                                        <option key={r.id} value={r.profile?.id}>
+                                        <option key={r.id} value={r.profile?.id || r.id}>
                                             {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
@@ -835,13 +898,14 @@ export default function DesignationsPage() {
                             <div>
                                 <label className="block text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Juez de Línea</label>
                                 <select
-                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition"
+                                    disabled={saving}
+                                    className="w-full text-xs font-bold p-3 rounded-xl bg-slate-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-slate-700 dark:text-white outline-none focus:border-tdf-blue transition disabled:opacity-50"
                                     value={assignments['line_judge']}
                                     onChange={e => setAssignments({ ...assignments, 'line_judge': e.target.value })}
                                 >
-                                    <option value="">Seleccionar Juez de Línea (Opcional)...</option>
+                                    <option value="">-- Sin designar --</option>
                                     {availableReferees.map(r => (
-                                        <option key={r.id} value={r.profile?.id}>
+                                        <option key={r.id} value={r.profile?.id || r.id}>
                                             {r.profile?.full_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ({r.category || 'Oficial'})
                                         </option>
                                     ))}
@@ -852,16 +916,24 @@ export default function DesignationsPage() {
                         <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-zinc-800">
                             <button 
                                 type="button" 
+                                disabled={saving}
                                 onClick={() => setSelectedMatch(null)} 
-                                className="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-bold text-xs transition"
+                                className="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-bold text-xs transition disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
                             <button 
                                 type="submit" 
-                                className="px-5 py-2.5 rounded-xl bg-tdf-blue hover:bg-blue-600 text-white font-bold text-xs transition shadow-md"
+                                disabled={saving}
+                                className="px-5 py-2.5 rounded-xl bg-tdf-blue hover:bg-blue-600 text-white font-bold text-xs transition shadow-md disabled:opacity-50 flex items-center gap-2"
                             >
-                                Guardar Designación
+                                {saving ? (
+                                    <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Guardando...
+                                    </>
+                                ) : (
+                                    'Guardar Designación'
+                                )}
                             </button>
                         </div>
                     </form>

@@ -26,26 +26,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        await fetchUserRole(session.user.id);
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          if (sessionError.message?.includes('Refresh Token') || sessionError.message?.includes('invalid')) {
+            await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+          }
+          setUser(null);
+          setRole(null);
+          setLoading(false);
+          return;
+        }
+
+        if (session?.user) {
+          setUser(session.user);
+          await fetchUserRole(session.user.id);
+        }
+      } catch (err) {
+        console.warn("Auth check warning:", err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     checkUser();
 
     // Escuchar cambios en la sesión
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
-      console.log(session);
       if (session?.user) {
         setUser(session.user);
         await fetchUserRole(session.user.id);
       } else {
         setUser(null);
         setRole(null);
-        router.push('/login');
       }
       setLoading(false);
     });

@@ -16,6 +16,9 @@ export default function PasesRestrictedLayout({ children }: { children: React.Re
             try {
                 const { data: { session }, error: sessionError } = await supabase.auth.getSession();
                 if (sessionError || !session) {
+                    if (sessionError?.message?.includes('Refresh Token') || sessionError?.message?.includes('invalid')) {
+                        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+                    }
                     router.push('/login');
                     return;
                 }
