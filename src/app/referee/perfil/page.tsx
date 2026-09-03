@@ -60,8 +60,8 @@ export default function RefereeProfilePage() {
         const { data: refData } = await supabase
             .from('referees')
             .select('category')
-            .eq('id', uid)
-            .single()
+            .or(`id.eq.${uid},user_id.eq.${uid}`)
+            .maybeSingle()
 
         if (refData) {
             setCategory(refData.category)

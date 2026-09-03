@@ -32,13 +32,14 @@ export default function RefereeAgendaPage() {
             .from('match_officials')
             .select(`
                 id, role,
-                match:matches (
-                    id, scheduled_time, court_name,
+                match:matches!inner (
+                    id, scheduled_time, court_name, status, sheet_status,
                     home_team:teams!home_team_id(name, shield_url),
                     away_team:teams!away_team_id(name, shield_url)
                 )
             `)
             .eq('user_id', user.id)
+            .neq('match.status', 'finalizado')
 
         // 2. Fetch General Calendar Events
         const { data: eventsData } = await supabase
@@ -53,7 +54,7 @@ export default function RefereeAgendaPage() {
             .map(item => {
                 // @ts-ignore
                 const m = Array.isArray(item.match) ? item.match[0] : item.match;
-                if (!m || !m.id) return null;
+                if (!m || !m.id || m.status === 'finalizado' || m.sheet_status === 'submitted') return null;
 
                 const homeName = Array.isArray(m.home_team) ? (m.home_team[0] as any)?.name : (m.home_team as any)?.name;
                 const homeShield = Array.isArray(m.home_team) ? (m.home_team[0] as any)?.shield_url : (m.home_team as any)?.shield_url;
