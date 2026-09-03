@@ -41,7 +41,7 @@ export default function RefereeLayout({ children }: { children: React.ReactNode 
                         .from('referees')
                         .select('status')
                         .eq('user_id', user.id)
-                        .single();
+                        .maybeSingle();
                         
                     if (refereeData && refereeData.status === 'pendiente') {
                         setIsPending(true);

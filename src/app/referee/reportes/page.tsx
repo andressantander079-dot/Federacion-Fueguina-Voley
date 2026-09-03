@@ -46,18 +46,20 @@ export interface OfficialAssignmentRecord {
     match: MatchDataRef;
 }
 
-export function getArgentinaDateStr(dateInput: string | Date = new Date()): string {
+export function getArgentinaDateStr(dateInput?: string | Date | null): string {
+    if (!dateInput) return '';
     try {
         const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+        if (isNaN(d.getTime())) return typeof dateInput === 'string' ? dateInput.slice(0, 10) : '';
         return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Ushuaia' }).format(d);
     } catch {
-        const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-        return d.toISOString().split('T')[0];
+        return typeof dateInput === 'string' ? dateInput.slice(0, 10) : '';
     }
 }
 
-export function getArgentinaYearMonthStr(dateInput: string | Date = new Date()): string {
-    return getArgentinaDateStr(dateInput).slice(0, 7);
+export function getArgentinaYearMonthStr(dateInput?: string | Date | null): string {
+    const fullDate = getArgentinaDateStr(dateInput);
+    return fullDate ? fullDate.slice(0, 7) : '';
 }
 
 export function normalizeRefereeRole(rawRole?: string | null): StandardRefereeRole {
@@ -83,9 +85,37 @@ function MatchDetailsHandler() {
     const router = useRouter();
     const pathname = usePathname();
     const matchId = searchParams.get('match_details');
-    
+
     if (!matchId) return null;
     return <MatchDetailsModal matchId={matchId} onClose={() => router.push(pathname, { scroll: false })} />;
+}
+
+export function getEffectiveRoleForMatch(
+    userId: string,
+    match: MatchDataRef,
+    fallbackRole?: StandardRefereeRole
+): StandardRefereeRole {
+    const staff = (match.sheet_data?.staff || {}) as Record<string, string>;
+    const ref1Sheet = staff.ref1;
+    const ref2Sheet = staff.ref2;
+    const scorerSheet = staff.scorer;
+    const linesmanSheet = staff.linesman;
+    const refereeIdMatch = match.referee_id;
+
+    if (ref1Sheet === userId || (refereeIdMatch === userId && !ref1Sheet)) {
+        return '1st_referee';
+    }
+    if (ref2Sheet === userId) {
+        return '2nd_referee';
+    }
+    if (scorerSheet === userId) {
+        return 'scorer';
+    }
+    if (linesmanSheet === userId) {
+        return 'line_judge';
+    }
+
+    return fallbackRole || '1st_referee';
 }
 
 export default function RefereeReportsPage() {
@@ -96,7 +126,7 @@ export default function RefereeReportsPage() {
     const [loading, setLoading] = useState(true);
     const [selectedPeriod, setSelectedPeriod] = useState<string>('all-2026');
     const [allData, setAllData] = useState<OfficialAssignmentRecord[]>([]);
-    
+
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [selectedGender, setSelectedGender] = useState<string>('');
 
@@ -114,7 +144,7 @@ export default function RefereeReportsPage() {
             .select(`
                 id, role, status,
                 match:matches (
-                    id, scheduled_time, status, court_name,
+                    id, scheduled_time, status, court_name, referee_id, sheet_data,
                     home:teams!home_team_id(id, name, shield_url),
                     away:teams!away_team_id(id, name, shield_url),
                     category:categories(name),
@@ -138,6 +168,37 @@ export default function RefereeReportsPage() {
 
         const matchesMap = new Map<string, OfficialAssignmentRecord>();
 
+        // 1. Carga de asignaciones previas de match_officials
+        if (officialsData) {
+            officialsData.forEach((item: any) => {
+                const matchObj = Array.isArray(item.match) ? item.match[0] : item.match;
+                if (matchObj && matchObj.status === 'finalizado') {
+                    const match: MatchDataRef = {
+                        id: matchObj.id,
+                        scheduled_time: matchObj.scheduled_time,
+                        status: matchObj.status,
+                        court_name: matchObj.court_name,
+                        referee_id: matchObj.referee_id,
+                        sheet_data: matchObj.sheet_data,
+                        home: Array.isArray(matchObj.home) ? matchObj.home[0] : matchObj.home,
+                        away: Array.isArray(matchObj.away) ? matchObj.away[0] : matchObj.away,
+                        category: Array.isArray(matchObj.category) ? matchObj.category[0] : matchObj.category,
+                        tournament: Array.isArray(matchObj.tournament) ? matchObj.tournament[0] : matchObj.tournament,
+                    };
+
+                    const rawRole = normalizeRefereeRole(item.role);
+                    const effectiveRole = getEffectiveRoleForMatch(user.id, match, rawRole);
+
+                    matchesMap.set(match.id, {
+                        id: item.id,
+                        role: effectiveRole,
+                        match
+                    });
+                }
+            });
+        }
+
+        // 2. Prevalencia MANDATORIA de la planilla oficial de juego (sheet_data.staff) sobre asignaciones previas
         if (fallbackMatches) {
             fallbackMatches.forEach((m: any) => {
                 const match: MatchDataRef = {
@@ -153,43 +214,15 @@ export default function RefereeReportsPage() {
                     tournament: Array.isArray(m.tournament) ? m.tournament[0] : m.tournament,
                 };
 
-                const staff = (match.sheet_data?.staff || {}) as Record<string, string>;
-                const ref1 = match.referee_id;
-                const ref1Sheet = staff.ref1;
-                const ref2Sheet = staff.ref2;
-                const scorerSheet = staff.scorer;
+                const existing = matchesMap.get(match.id);
+                const fallbackRole = existing?.role || '1st_referee';
+                const effectiveRole = getEffectiveRoleForMatch(user.id, match, fallbackRole);
 
-                if (ref1 === user.id || ref1Sheet === user.id) {
-                    matchesMap.set(match.id, { id: `m-1st-${match.id}`, role: '1st_referee', match });
-                } else if (ref2Sheet === user.id) {
-                    matchesMap.set(match.id, { id: `m-2nd-${match.id}`, role: '2nd_referee', match });
-                } else if (scorerSheet === user.id) {
-                    matchesMap.set(match.id, { id: `m-scr-${match.id}`, role: 'scorer', match });
-                }
-            });
-        }
-
-        if (officialsData) {
-            officialsData.forEach((item: any) => {
-                const matchObj = Array.isArray(item.match) ? item.match[0] : item.match;
-                if (matchObj && matchObj.status === 'finalizado') {
-                    const match: MatchDataRef = {
-                        id: matchObj.id,
-                        scheduled_time: matchObj.scheduled_time,
-                        status: matchObj.status,
-                        court_name: matchObj.court_name,
-                        home: Array.isArray(matchObj.home) ? matchObj.home[0] : matchObj.home,
-                        away: Array.isArray(matchObj.away) ? matchObj.away[0] : matchObj.away,
-                        category: Array.isArray(matchObj.category) ? matchObj.category[0] : matchObj.category,
-                        tournament: Array.isArray(matchObj.tournament) ? matchObj.tournament[0] : matchObj.tournament,
-                    };
-
-                    matchesMap.set(match.id, {
-                        id: item.id,
-                        role: normalizeRefereeRole(item.role),
-                        match
-                    });
-                }
+                matchesMap.set(match.id, {
+                    id: existing?.id || `m-eff-${match.id}`,
+                    role: effectiveRole,
+                    match
+                });
             });
         }
 
@@ -301,11 +334,11 @@ export default function RefereeReportsPage() {
                 </div>
             </div>
 
-            {/* Historial de Partidos Pitados */}
+            {/* Historial de Partidos Dirigidos */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-black text-white flex items-center gap-2">
-                        <CheckCircle size={18} className="text-emerald-500" /> Historial de Partidos Pitados
+                        <CheckCircle size={18} className="text-emerald-500" /> Historial de Partidos Dirigidos
                     </h3>
                 </div>
 
@@ -320,8 +353,8 @@ export default function RefereeReportsPage() {
                             const roleBadge = record.role === '1st_referee'
                                 ? { label: '1° ÁRBITRO', style: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' }
                                 : record.role === '2nd_referee'
-                                ? { label: '2° ÁRBITRO', style: 'bg-blue-500/10 text-blue-400 border-blue-500/20' }
-                                : { label: 'ANOTADOR / MESA', style: 'bg-amber-500/10 text-amber-400 border-amber-500/20' };
+                                    ? { label: '2° ÁRBITRO', style: 'bg-blue-500/10 text-blue-400 border-blue-500/20' }
+                                    : { label: 'ANOTADOR / MESA', style: 'bg-amber-500/10 text-amber-400 border-amber-500/20' };
 
                             return (
                                 <div key={record.id} className="py-4 flex justify-between items-center first:pt-0 last:pb-0">

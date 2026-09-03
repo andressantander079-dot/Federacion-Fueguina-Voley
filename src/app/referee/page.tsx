@@ -21,38 +21,45 @@ export default function RefereeDashboard() {
     }, [userId])
 
     async function fetchAssignments(uid: string) {
-        const { data } = await supabase
+        setLoading(true)
+        const { data, error } = await supabase
             .from('match_officials')
             .select(`
                 id, role, status,
-                match:matches (
-                    id, scheduled_time, court_name, status,
-                    home_team:teams!home_team_id(name, shield_url),
-                    away_team:teams!away_team_id(name, shield_url),
-                    category:categories(name),
-                    tournament:tournaments(gender)
+                match:matches!inner (
+                    id, scheduled_time, court_name, status, sheet_status,
+                    home_team:teams!home_team_id(id, name, shield_url),
+                    away_team:teams!away_team_id(id, name, shield_url),
+                    category:categories(id, name),
+                    tournament:tournaments(id, name, gender)
                 )
             `)
             .eq('user_id', uid)
+            .neq('match.status', 'finalizado')
 
-        if (data) {
+        if (!error && data) {
             const validMatches = data
                 .map(item => {
                     const matchData = Array.isArray(item.match) ? item.match[0] : item.match;
-                    if (!matchData) return null;
+                    if (!matchData || matchData.status === 'finalizado' || matchData.sheet_status === 'submitted') {
+                        return null;
+                    }
                     return { ...item, match: matchData };
                 })
-                .filter(Boolean);
+                .filter(Boolean) as any[];
 
-            // Sort by date ASC
+            // Sort by date ASC with deterministic id tie-breaking
             validMatches.sort((a, b) => {
                 const dateA = a?.match?.scheduled_time || '';
                 const dateB = b?.match?.scheduled_time || '';
-                return dateA.localeCompare(dateB);
+                const dateComp = dateA.localeCompare(dateB);
+                if (dateComp !== 0) return dateComp;
+                return (a?.match?.id || '').localeCompare(b?.match?.id || '');
             });
 
             setMatches(validMatches)
-            setPendingCount(validMatches.filter(m => m?.status === 'assigned').length)
+            const activePending = validMatches.filter(m => m?.match?.status !== 'suspendido').length;
+            setPendingCount(activePending)
         }
         setLoading(false)
     }
