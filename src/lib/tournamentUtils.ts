@@ -1,3 +1,21 @@
+import {
+    compareFederativeStandings,
+    normalizeStandingStats,
+    type SetScoreEntry,
+    type MatchReference,
+    type RawStandingInput,
+    type FederativeStandingRow
+} from '@/lib/tiebreakerEngine';
+
+export {
+    compareFederativeStandings,
+    normalizeStandingStats,
+    type SetScoreEntry,
+    type MatchReference,
+    type RawStandingInput,
+    type FederativeStandingRow
+};
+
 export type Match = {
     id: string;
     home_team_id: string;
@@ -5,8 +23,13 @@ export type Match = {
     home_score: number;
     away_score: number;
     set_scores: string[] | null;
-    sheet_data?: any;
+    sheet_data?: {
+        sets_history?: SetScoreEntry[];
+        sets?: SetScoreEntry[];
+        [key: string]: unknown;
+    } | null;
     status: string;
+    round?: string;
     home_team?: { name: string };
     away_team?: { name: string };
 };
@@ -43,10 +66,10 @@ export function calculateStandings(matches: Match[], pointSystem: string, partic
 
         // 1. Try sheet_data.sets_history
         if (m.sheet_data?.sets_history && Array.isArray(m.sheet_data.sets_history)) {
-            m.sheet_data.sets_history.forEach((s: any) => {
+            m.sheet_data.sets_history.forEach((s: SetScoreEntry) => {
                 if (s.finished !== false) {
-                    const h = parseInt(s.home ?? s.score_home ?? s.homeScore ?? 0, 10);
-                    const a = parseInt(s.away ?? s.score_away ?? s.awayScore ?? 0, 10);
+                    const h = parseInt(String(s.home ?? s.score_home ?? s.homeScore ?? s.scoreA ?? 0), 10);
+                    const a = parseInt(String(s.away ?? s.score_away ?? s.awayScore ?? s.scoreB ?? 0), 10);
                     if (h > 0 || a > 0) {
                         pwHome += h; pwAway += a;
                         if (h > a) swHome++; else if (a > h) swAway++;
@@ -56,9 +79,9 @@ export function calculateStandings(matches: Match[], pointSystem: string, partic
         }
         // 2. Try sheet_data.sets
         else if (m.sheet_data?.sets && Array.isArray(m.sheet_data.sets)) {
-            m.sheet_data.sets.forEach((s: any) => {
-                const h = parseInt(s.homeScore ?? s.home_score ?? s.scoreA ?? 0, 10);
-                const a = parseInt(s.awayScore ?? s.away_score ?? s.scoreB ?? 0, 10);
+            m.sheet_data.sets.forEach((s: SetScoreEntry) => {
+                const h = parseInt(String(s.homeScore ?? s.home_score ?? s.scoreA ?? s.home ?? 0), 10);
+                const a = parseInt(String(s.awayScore ?? s.away_score ?? s.scoreB ?? s.away ?? 0), 10);
                 if (h > 0 || a > 0) {
                     pwHome += h; pwAway += a;
                     if (h > a) swHome++; else if (a > h) swAway++;
@@ -126,15 +149,8 @@ export function calculateStandings(matches: Match[], pointSystem: string, partic
     });
 
     return Object.values(stats).sort((a, b) => {
-        // Jerarquía FIVB Estricta: 1° PG, 2° PTS, 3° Cociente Sets, 4° Cociente Tantos
-        if (b.pg !== a.pg) return b.pg - a.pg;     // 1° Partidos Ganados
-        if (b.pts !== a.pts) return b.pts - a.pts; // 2° Puntos Acumulados
-        const aSetRatio = a.setsL === 0 ? a.setsW : a.setsW / a.setsL;
-        const bSetRatio = b.setsL === 0 ? b.setsW : b.setsW / b.setsL;
-        if (bSetRatio !== aSetRatio) return bSetRatio - aSetRatio; // 3° Cociente de Sets
-
-        const aPointRatio = a.pL === 0 ? a.pW : a.pW / a.pL;
-        const bPointRatio = b.pL === 0 ? b.pW : b.pW / b.pL;
-        return bPointRatio - aPointRatio; // 4° Cociente de Tantos
+        const normA = normalizeStandingStats(a);
+        const normB = normalizeStandingStats(b);
+        return compareFederativeStandings(normA, normB, matches as unknown as MatchReference[]);
     });
 }

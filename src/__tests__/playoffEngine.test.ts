@@ -16,14 +16,25 @@ describe('Playoff Tiebreaker Engine', () => {
     expect(result[2].team_id).toBe('3');
   });
 
-  it('Desempata por Puntos cuando Partidos Ganados son idénticos', () => {
+  it('Prioriza Puntos Acumulados sobre Partidos Ganados (Caso FEVA: Estrella Voley 26 PTS supera a Casa del Deporte 25 PTS)', () => {
     const teams: TeamStats[] = [
-      { team_id: 'A', matchesWon: 3, points: 8, setsWon: 9, setsLost: 4, pointsWon: 250, pointsLost: 200 },
-      { team_id: 'B', matchesWon: 3, points: 9, setsWon: 9, setsLost: 2, pointsWon: 250, pointsLost: 150 }
+      { team_id: 'CasaDelDeporte', matchesWon: 9, points: 25, setsWon: 27, setsLost: 5, pointsWon: 700, pointsLost: 500 },
+      { team_id: 'EstrellaVoley', matchesWon: 8, points: 26, setsWon: 26, setsLost: 8, pointsWon: 720, pointsLost: 550 },
     ];
     
     const result = calculateStandings(teams);
-    expect(result[0].team_id).toBe('B'); // B tiene más puntos acumulados
+    expect(result[0].team_id).toBe('EstrellaVoley');
+    expect(result[1].team_id).toBe('CasaDelDeporte');
+  });
+
+  it('Desempata por Partidos Ganados cuando los Puntos son idénticos', () => {
+    const teams: TeamStats[] = [
+      { team_id: 'A', matchesWon: 2, points: 8, setsWon: 9, setsLost: 4, pointsWon: 250, pointsLost: 200 },
+      { team_id: 'B', matchesWon: 3, points: 8, setsWon: 9, setsLost: 2, pointsWon: 250, pointsLost: 150 }
+    ];
+    
+    const result = calculateStandings(teams);
+    expect(result[0].team_id).toBe('B'); // B tiene más partidos ganados con mismos puntos
   });
 
   it('Desempata por Cociente de Sets cuando Partidos Ganados y Puntos empatan', () => {

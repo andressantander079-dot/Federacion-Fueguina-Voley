@@ -1,7 +1,9 @@
-import { createClient } from '@/lib/supabase/client';
+'use server';
+
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function executeLiveMatchCleanup() {
-    const supabase = createClient();
+    const supabase = createAdminClient();
 
     // 1. Consulta limpia sin la columna inexistente 'updated_at'
     const { data: liveMatches, error: fetchErr } = await supabase

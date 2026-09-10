@@ -7,12 +7,14 @@ description: Ejecuta la lógica de cruces de llaves y aplica las métricas de de
 ## Objetivo
 Calcular las posiciones exactas de los equipos en la tabla general de un torneo de voleibol y generar los cruces precisos para las fases de eliminación directa (Play-Offs).
 
-## Instrucciones de Desempate (Jerarquía Estricta)
+## Instrucciones de Desempate (Jerarquía Estricta FEVA / FVF)
 Cuando ordenes una tabla de posiciones o calcules quién pasa a la siguiente fase, DEBES aplicar las siguientes métricas en este orden exacto:
-1. **Partidos Ganados:** El equipo con más partidos ganados queda por encima.
-2. **Puntos Acumulados:** Si hay empate en partidos ganados, se define por puntos de torneo.
-3. **Diferencia/Cociente de Sets:** Si persiste el empate, calcula los Sets a Favor vs. Sets en Contra.
-4. **Diferencia/Cociente de Puntos:** Si persiste el empate, calcula los Puntos a Favor vs. Puntos en Contra de todos los partidos.
+1. **Puntos Acumulados (PTS):** Clasificador Primario. El equipo con más puntos queda por encima (ej. 26 PTS supera a 25 PTS independientemente de los partidos ganados).
+2. **Partidos Ganados (PG):** Si hay empate en puntos acumulados, se define por mayor cantidad de victorias.
+3. **Cociente de Sets General (SF / SC):** Si persiste el empate, calcula Sets a Favor divididos Sets en Contra.
+4. **Cociente de Tantos General (PF / PC):** Si persiste el empate, calcula Puntos a Favor divididos Puntos en Contra de todos los partidos.
+5. **Duelo Directo (Head-to-Head) Agregado:** Si persiste el empate entre dos equipos, se computa la serie mano a mano en Fase Regular (Victorias Directas > Puntos Directos > Cociente Sets Directo > Cociente Tantos Directo).
+6. **Diferencia Aritmética de Puntos General (PF - PC):** Si persiste el empate.
 
 ## ⚠️ REGLA CRÍTICA: Empate Absoluto
 Si después de aplicar TODAS las métricas anteriores (hasta la diferencia de puntos) dos o más equipos tienen un empate EXACTO y ABSOLUTO:

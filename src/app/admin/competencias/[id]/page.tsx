@@ -285,7 +285,16 @@ export default function DetalleTorneoPage() {
                                  <th className="px-2 py-3 md:p-4 text-center text-xs">PG</th>
                                  <th className="px-2 py-3 md:p-4 text-center text-xs">PP</th>
                                  <th className="px-2 py-3 md:p-4 text-center text-xs">DIF</th>
-                                 {showMetrics && <><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Sets G</th><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Sets P</th><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Tantos G</th><th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs">Tantos P</th></>}
+                                  {showMetrics && (
+                                     <>
+                                        <th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs" title="Sets Ganados">Sets G</th>
+                                        <th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs" title="Sets Perdidos">Sets P</th>
+                                        <th className="px-2 py-3 md:p-4 text-center bg-purple-900/20 text-purple-400 text-xs font-bold cursor-help" title="Coeficiente de Sets = Sets Ganados ÷ Sets Perdidos">Coef S</th>
+                                        <th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs" title="Tantos a Favor">Tantos G</th>
+                                        <th className="px-2 py-3 md:p-4 text-center bg-blue-900/10 text-tdf-blue text-xs" title="Tantos en Contra">Tantos P</th>
+                                        <th className="px-2 py-3 md:p-4 text-center bg-emerald-900/20 text-emerald-400 text-xs font-bold cursor-help" title="Coeficiente de Tantos = Tantos a Favor ÷ Tantos en Contra">Coef T</th>
+                                     </>
+                                  )}
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-zinc-800">
@@ -306,10 +315,60 @@ export default function DetalleTorneoPage() {
                                            );
                                         })()}
                                      </td>
-                                    {showMetrics && <><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.setsW}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.setsL}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.pW}</td><td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-500">{fila.pL}</td></>}
+                                    {showMetrics && (() => {
+                                       const coefSets = fila.setsL === 0 ? (fila.setsW > 0 ? 'MAX' : '0.000') : (fila.setsW / fila.setsL).toFixed(3);
+                                       const coefTantos = fila.pL === 0 ? (fila.pW > 0 ? 'MAX' : '0.000') : (fila.pW / fila.pL).toFixed(3);
+                                       const detalleSets = fila.setsL === 0
+                                          ? (fila.setsW > 0 ? `${fila.setsW} Sets G ÷ 0 Sets P = MAX (Invicto en sets)` : '0 Sets G ÷ 0 Sets P = 0.000')
+                                          : `${fila.setsW} Sets G ÷ ${fila.setsL} Sets P = ${coefSets}`;
+                                       const detalleTantos = fila.pL === 0
+                                          ? (fila.pW > 0 ? `${fila.pW} Tantos G ÷ 0 Tantos P = MAX` : '0 Tantos G ÷ 0 Tantos P = 0.000')
+                                          : `${fila.pW} Tantos G ÷ ${fila.pL} Tantos P = ${coefTantos}`;
+
+                                       const isTopRows = i < 2;
+
+                                       return (
+                                          <>
+                                             <td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-400">{fila.setsW}</td>
+                                             <td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-400">{fila.setsL}</td>
+                                             <td 
+                                                className="px-2 py-3 md:p-4 text-center bg-purple-950/20 font-mono text-[10px] md:text-xs text-purple-300 relative group cursor-help select-none"
+                                                title={`Cálculo Coeficiente de Sets: ${detalleSets}`}
+                                             >
+                                                <span className="font-bold underline decoration-dotted decoration-purple-500/50 underline-offset-4">{coefSets}</span>
+                                                {/* Tooltip flotante */}
+                                                <div className={`absolute ${isTopRows ? 'top-full mt-2' : 'bottom-full mb-2'} left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none drop-shadow-2xl`}>
+                                                   {isTopRows && <div className="w-2 h-2 bg-zinc-950 border-l border-t border-purple-500/40 rotate-45 -mb-1 z-10"></div>}
+                                                   <div className="bg-zinc-950 text-white text-[11px] font-sans px-3 py-2 rounded-xl border border-purple-500/40 shadow-2xl whitespace-nowrap text-center">
+                                                      <span className="font-bold text-purple-400 block text-[10px] uppercase tracking-wider mb-0.5">Coeficiente de Sets</span>
+                                                      <span className="text-zinc-300 font-mono">{detalleSets}</span>
+                                                   </div>
+                                                   {!isTopRows && <div className="w-2 h-2 bg-zinc-950 border-r border-b border-purple-500/40 rotate-45 -mt-1"></div>}
+                                                </div>
+                                             </td>
+                                             <td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-400">{fila.pW}</td>
+                                             <td className="px-2 py-3 md:p-4 text-center bg-blue-900/5 font-mono text-[10px] md:text-xs text-zinc-400">{fila.pL}</td>
+                                             <td 
+                                                className="px-2 py-3 md:p-4 text-center bg-emerald-950/20 font-mono text-[10px] md:text-xs text-emerald-300 relative group cursor-help select-none"
+                                                title={`Cálculo Coeficiente de Tantos: ${detalleTantos}`}
+                                             >
+                                                <span className="font-bold underline decoration-dotted decoration-emerald-500/50 underline-offset-4">{coefTantos}</span>
+                                                {/* Tooltip flotante */}
+                                                <div className={`absolute ${isTopRows ? 'top-full mt-2' : 'bottom-full mb-2'} left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none drop-shadow-2xl`}>
+                                                   {isTopRows && <div className="w-2 h-2 bg-zinc-950 border-l border-t border-emerald-500/40 rotate-45 -mb-1 z-10"></div>}
+                                                   <div className="bg-zinc-950 text-white text-[11px] font-sans px-3 py-2 rounded-xl border border-emerald-500/40 shadow-2xl whitespace-nowrap text-center">
+                                                      <span className="font-bold text-emerald-400 block text-[10px] uppercase tracking-wider mb-0.5">Coeficiente de Tantos</span>
+                                                      <span className="text-zinc-300 font-mono">{detalleTantos}</span>
+                                                   </div>
+                                                   {!isTopRows && <div className="w-2 h-2 bg-zinc-950 border-r border-b border-emerald-500/40 rotate-45 -mt-1"></div>}
+                                                </div>
+                                             </td>
+                                          </>
+                                       );
+                                    })()}
                                  </tr>
                               ))}
-                              {tablaPosiciones.length === 0 && <tr><td colSpan={10} className="p-12 text-center text-zinc-600">Aún no hay partidos jugados.</td></tr>}
+                              {tablaPosiciones.length === 0 && <tr><td colSpan={showMetrics ? 12 : 6} className="p-12 text-center text-zinc-600">Aún no hay partidos jugados.</td></tr>}
                            </tbody>
                         </table>
                      </div>

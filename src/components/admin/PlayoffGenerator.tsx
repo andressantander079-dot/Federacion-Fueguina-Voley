@@ -42,17 +42,17 @@ export default function PlayoffGenerator({ tournamentId, categoryId, tablaGenera
     const stats: TeamStats[] = tablaGeneral.map(t => ({
       team_id: t.id,
       name: t.name,
-      matchesWon: t.pg || 0,
-      points: t.pts || 0,
-      setsWon: t.setsW || 0,
-      setsLost: t.setsL || 0,
-      pointsWon: t.pW || 0,
-      pointsLost: t.pL || 0
+      matchesWon: t.pg ?? t.matchesWon ?? 0,
+      points: t.pts ?? t.points ?? 0,
+      setsWon: t.setsW ?? t.sf ?? t.setsWon ?? 0,
+      setsLost: t.setsL ?? t.sc ?? t.setsLost ?? 0,
+      pointsWon: t.pW ?? t.pf ?? t.pointsWon ?? 0,
+      pointsLost: t.pL ?? t.pc ?? t.pointsLost ?? 0
     }));
 
     try {
-      // 1. Aplicar motor matemático
-      const validStandings = calculateStandings(stats);
+      // 1. Aplicar motor matemático oficial FEVA / FVF
+      const validStandings = calculateStandings(stats, matches);
       
       // 2. Extraer Top N 
       const selectedOption = options.find(o => o.label === selectedRound);
@@ -132,7 +132,7 @@ export default function PlayoffGenerator({ tournamentId, categoryId, tablaGenera
                 <Trophy className="text-tdf-orange" /> Engine de Play-Offs <span className="bg-tdf-orange/20 text-tdf-orange text-[10px] px-2 py-0.5 rounded tracking-widest uppercase">Motor Automático</span>
             </h2>
             <p className="text-zinc-400 text-sm leading-relaxed mb-6">
-                El sistema aplicará las métricas oficiales de FIVB (PG, PTS, Cociente Sets, Cociente Tantos) para cruzar al 1° vs Último de la tabla general según la etapa elegida. Fallará obligando revisión manual si halla un *Empate Absoluto*.
+                El sistema aplicará las métricas oficiales FEVA / FVF (1° PTS, 2° PG, 3° Cociente Sets, 4° Cociente Tantos, 5° Duelo Directo) para cruzar al 1° vs Último de la tabla general según la etapa elegida. Fallará obligando revisión manual si halla un *Empate Absoluto*.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-3">
