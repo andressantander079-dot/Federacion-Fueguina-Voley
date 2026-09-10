@@ -5,33 +5,105 @@ import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
 import { resolveTeamColors } from '@/lib/colorUtils';
-import { executeLiveMatchCleanup } from '@/app/actions/liveMatchCleanup';
 
-const MAX_INACTIVE_LIVE_MS = 40 * 60 * 1000; // 40 minutos
+const MAX_INACTIVE_LIVE_MS = 40 * 60 * 1000; // 40 minutos de abandono dentro del set
+const MAX_LIVE_WINDOW_MS = 18 * 60 * 60 * 1000; // 18 horas de ventana móvil defensiva anti-zombis
+const POLLING_INTERVAL_MS = 8000; // 8 segundos de Dual-Engine Sync
 
-const getArgentinaDateStr = (dateInput: string | Date = new Date()) => {
-    try {
-        const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-        return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Ushuaia' }).format(d);
-    } catch (e) {
-        const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-        return d.toISOString().split('T')[0];
+export interface LiveMatchSet {
+    number?: number;
+    home?: number;
+    away?: number;
+    score_home?: number;
+    score_away?: number;
+    homeScore?: number;
+    awayScore?: number;
+    finished?: boolean;
+    [key: string]: unknown;
+}
+
+export interface LiveMatchSheetData {
+    last_point_at?: string | null;
+    started_at?: string | null;
+    sets_history?: LiveMatchSet[];
+    sets?: LiveMatchSet[];
+    metadata?: {
+        bestOfSets?: number;
+        [key: string]: unknown;
+    };
+    current_set_idx?: number;
+    final_score?: {
+        home?: number;
+        away?: number;
+    };
+    teamColors?: {
+        home?: string[];
+        away?: string[];
+    };
+    [key: string]: unknown;
+}
+
+export interface LiveMatchCandidate {
+    id: string;
+    status: string;
+    scheduled_time?: string | null;
+    created_at?: string | null;
+    home_team?: {
+        id?: string;
+        name?: string;
+        shield_url?: string | null;
+        primary_color?: string | null;
+        secondary_color?: string | null;
+    } | null;
+    away_team?: {
+        id?: string;
+        name?: string;
+        shield_url?: string | null;
+        primary_color?: string | null;
+        secondary_color?: string | null;
+    } | null;
+    sheet_data?: LiveMatchSheetData | null;
+}
+
+export function parseTimestamp(val: unknown): number | null {
+    if (typeof val === 'string' && val.trim().length > 0) {
+        const ms = new Date(val).getTime();
+        return !isNaN(ms) ? ms : null;
     }
-};
+    if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
+    return null;
+}
+
+export function getLatestActivityTimestamp(match: LiveMatchCandidate): number {
+    const sheet = match.sheet_data || {};
+    const candidates: number[] = [];
+
+    const tLastPoint = parseTimestamp(sheet.last_point_at);
+    if (tLastPoint !== null) candidates.push(tLastPoint);
+
+    const tStarted = parseTimestamp(sheet.started_at);
+    if (tStarted !== null) candidates.push(tStarted);
+
+    const tScheduled = parseTimestamp(match.scheduled_time);
+    if (tScheduled !== null) candidates.push(tScheduled);
+
+    const tCreated = parseTimestamp(match.created_at);
+    if (tCreated !== null) candidates.push(tCreated);
+
+    // Si no existe ningún timestamp válido (caso extremo), usar Date.now() para jamás descartar erróneamente un partido activo
+    return candidates.length > 0 ? Math.max(...candidates) : Date.now();
+}
 
 export default function LiveMatchFloater() {
-    const [liveMatches, setLiveMatches] = useState<any[]>([]);
+    const [liveMatches, setLiveMatches] = useState<LiveMatchCandidate[]>([]);
     const [isVisible, setIsVisible] = useState(true);
     const [isMinimized, setIsMinimized] = useState(false);
     const [supabase] = useState(() => createClient());
 
     const fetchLiveMatches = async () => {
-        // Ejecutar limpieza autónoma en segundo plano
-        executeLiveMatchCleanup().catch(err => console.error("Error running live cleanup background action:", err));
-
         const { data, error } = await supabase
             .from('matches')
-            .select('id, created_at, scheduled_time, home_team:teams!home_team_id(id, name, shield_url), away_team:teams!away_team_id(id, name, shield_url), sheet_data')
+            .select('id, status, created_at, scheduled_time, home_team:teams!home_team_id(id, name, shield_url), away_team:teams!away_team_id(id, name, shield_url), sheet_data')
             .in('status', ['live', 'en_curso']);
 
         if (error) console.error("Error fetching live matches floater:", error);
@@ -39,39 +111,31 @@ export default function LiveMatchFloater() {
         if (data) {
             const now = Date.now();
 
-            const todayArgentina = getArgentinaDateStr();
-
-            const activeOnly = data.filter((match) => {
-                // 0. Descartar partidos pertenecientes a fechas de días anteriores usando zona horaria de Argentina
-                const matchDateStr = match.scheduled_time 
-                    ? getArgentinaDateStr(match.scheduled_time) 
-                    : (match.created_at ? getArgentinaDateStr(match.created_at) : '');
-
-                if (matchDateStr && matchDateStr !== todayArgentina) {
-                    return false;
-                }
-
+            const activeOnly = (data as unknown as LiveMatchCandidate[]).filter((match) => {
                 const sheet = match.sheet_data || {};
                 const sets = sheet.sets_history || sheet.sets || [];
 
-                // 1. Filtrar partidos cuyo score final indique que un equipo ya ganó el partido
+                // 1. REGLA DE CIERRE DEPORTIVO: Si un equipo ya alcanzó los sets reglamentarios para ganar
                 const bestOf = sheet.metadata?.bestOfSets || 5;
                 const targetSets = Math.ceil(bestOf / 2);
                 
-                const setsWonHome = sets.filter((s: any) => s.finished && ((s.home ?? s.score_home ?? 0) > (s.away ?? s.score_away ?? 0))).length;
-                const setsWonAway = sets.filter((s: any) => s.finished && ((s.away ?? s.score_away ?? 0) > (s.home ?? s.score_home ?? 0))).length;
+                const setsWonHome = sets.filter((s) => s.finished && ((s.home ?? s.score_home ?? 0) > (s.away ?? s.score_away ?? 0))).length;
+                const setsWonAway = sets.filter((s) => s.finished && ((s.away ?? s.score_away ?? 0) > (s.home ?? s.score_home ?? 0))).length;
 
                 if (setsWonHome >= targetSets || setsWonAway >= targetSets) {
                     return false;
                 }
 
-                // 2. Solo descartar por inactividad si hay timestamp explícito de último punto o inicio registrado y han pasado más de 40 min
-                const lastPointTime = sheet.last_point_at ? new Date(sheet.last_point_at).getTime() : null;
-                const startedTime = sheet.started_at ? new Date(sheet.started_at).getTime() : null;
+                // 2. REGLA ESTRICTA DE ABANDONO EN JUEGO: Si pasaron >40 min ininterrumpidos desde el último punto registrado
+                const lastPointMs = parseTimestamp(sheet.last_point_at);
+                if (lastPointMs !== null && (now - lastPointMs > MAX_INACTIVE_LIVE_MS)) {
+                    return false;
+                }
 
-                const lastExplicitActivity = lastPointTime || startedTime;
-
-                if (lastExplicitActivity && (now - lastExplicitActivity > MAX_INACTIVE_LIVE_MS)) {
+                // 3. VENTANA DEFENSIVA ANTI-PARTIDOS ZOMBI (18 HORAS):
+                // Si la actividad más reciente del partido supera las 18 horas, descartar de la portada
+                const latestActivityMs = getLatestActivityTimestamp(match);
+                if (now - latestActivityMs > MAX_LIVE_WINDOW_MS) {
                     return false;
                 }
 
@@ -85,14 +149,25 @@ export default function LiveMatchFloater() {
     useEffect(() => {
         fetchLiveMatches();
 
+        // 1. Canal Realtime con telemetría de suscripción
         const channel = supabase
             .channel('live_matches_floater')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
                 fetchLiveMatches();
             })
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR') {
+                    console.warn("Realtime live_matches_floater error, relying on polling fallback.");
+                }
+            });
 
-        return () => { supabase.removeChannel(channel); };
+        // 2. Polling Fallback cada 8 segundos (Dual-Engine Sync)
+        const intervalId = setInterval(fetchLiveMatches, POLLING_INTERVAL_MS);
+
+        return () => {
+            supabase.removeChannel(channel);
+            clearInterval(intervalId);
+        };
     }, [supabase]);
 
     if (liveMatches.length === 0 || !isVisible) return null;
@@ -142,8 +217,8 @@ export default function LiveMatchFloater() {
                         const awayPts = typeof currentSet.away === 'number' ? currentSet.away : (typeof currentSet.score_away === 'number' ? currentSet.score_away : (currentSet.awayScore ?? 0));
                         const setNum = (currentSetIdx + 1) || 1;
 
-                        const homeColors = resolveTeamColors(match.home_team?.name, match.home_team, sheet.teamColors?.home, true);
-                        const awayColors = resolveTeamColors(match.away_team?.name, match.away_team, sheet.teamColors?.away, false, homeColors.primary);
+                        const homeColors = resolveTeamColors(match.home_team?.name || 'Local', match.home_team, sheet.teamColors?.home, true);
+                        const awayColors = resolveTeamColors(match.away_team?.name || 'Visita', match.away_team, sheet.teamColors?.away, false, homeColors.primary);
 
                         return (
                             <Link key={match.id} href={`/vivo/${match.id}`} className="group block">
@@ -171,7 +246,7 @@ export default function LiveMatchFloater() {
                                     <div className="flex-1 flex flex-col gap-1 min-w-0 pt-1">
                                         
                                         <div className="flex items-center justify-between gap-2">
-                                            {/* Equipo Local */}
+                                             {/* Equipo Local */}
                                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                                 {match.home_team?.shield_url ? (
                                                     <img src={match.home_team.shield_url} className="w-5 h-5 object-contain shrink-0 drop-shadow" alt="" />

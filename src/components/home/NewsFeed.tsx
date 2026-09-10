@@ -16,6 +16,27 @@ interface NewsItem {
     pinned: boolean
 }
 
+export interface ToggleLikeResponse {
+    liked: boolean;
+    likes_count: number;
+}
+
+export function getOrCreateClientId(): string {
+    if (typeof window === 'undefined') return ''
+    try {
+        let id = localStorage.getItem('fvf_news_client_id')
+        if (!id) {
+            id = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                ? crypto.randomUUID()
+                : `client_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+            localStorage.setItem('fvf_news_client_id', id)
+        }
+        return id
+    } catch {
+        return 'temp_client_' + Date.now()
+    }
+}
+
 export default function NewsFeed() {
     const [news, setNews] = useState<NewsItem[]>([])
     const [loading, setLoading] = useState(true)
@@ -24,8 +45,11 @@ export default function NewsFeed() {
     const supabase = createClient()
 
     useEffect(() => {
+        const clientId = getOrCreateClientId()
+
         async function fetchNews() {
             try {
+                // 1. Cargar noticias publicadas
                 const { data, error } = await supabase
                     .from('news')
                     .select('id, title, body, image_url, created_at, published_at, likes, category, pinned')
@@ -36,30 +60,69 @@ export default function NewsFeed() {
 
                 if (error) throw error
                 if (data) setNews(data)
+
+                // 2. Sincronizar likes reales del cliente desde la tabla news_likes
+                if (clientId) {
+                    const { data: likesData, error: likesError } = await supabase
+                        .from('news_likes')
+                        .select('news_id')
+                        .eq('client_identifier', clientId)
+
+                    if (!likesError && likesData) {
+                        const dbLiked: Record<string, boolean> = {}
+                        likesData.forEach((item: { news_id: string }) => {
+                            dbLiked[item.news_id] = true
+                        })
+                        setLikedNewsIds(dbLiked)
+
+                        // Saneamiento de localStorage para eliminar drift de pruebas antiguas
+                        if (typeof window !== 'undefined') {
+                            try {
+                                for (let i = 0; i < localStorage.length; i++) {
+                                    const key = localStorage.key(i)
+                                    if (key && key.startsWith('voley_news_liked_')) {
+                                        const id = key.replace('voley_news_liked_', '')
+                                        if (!dbLiked[id]) {
+                                            localStorage.removeItem(key)
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Error syncing localStorage:", e)
+                            }
+                        }
+                    } else {
+                        loadLocalLikesFallback()
+                    }
+                } else {
+                    loadLocalLikesFallback()
+                }
             } catch (error) {
                 console.error("Error fetching news:", error)
             } finally {
                 setLoading(false)
             }
         }
-        fetchNews()
 
-        // Cargar estado de likes locales desde localStorage al montar en el cliente
-        if (typeof window !== 'undefined') {
-            const liked: Record<string, boolean> = {}
-            try {
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i)
-                    if (key && key.startsWith('voley_news_liked_')) {
-                        const id = key.replace('voley_news_liked_', '')
-                        liked[id] = localStorage.getItem(key) === 'true'
+        function loadLocalLikesFallback() {
+            if (typeof window !== 'undefined') {
+                const liked: Record<string, boolean> = {}
+                try {
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i)
+                        if (key && key.startsWith('voley_news_liked_')) {
+                            const id = key.replace('voley_news_liked_', '')
+                            liked[id] = localStorage.getItem(key) === 'true'
+                        }
                     }
+                } catch (e) {
+                    console.error("Error reading localStorage keys:", e)
                 }
-            } catch (e) {
-                console.error("Error reading localStorage keys:", e)
+                setLikedNewsIds(liked)
             }
-            setLikedNewsIds(liked)
         }
+
+        fetchNews()
     }, [])
 
     // Actualiza el likes en el array
@@ -205,24 +268,38 @@ function LikeButton({
         e.preventDefault()
         e.stopPropagation()
 
-        const isLiking = !liked
-        const newCount = isLiking ? likesCount + 1 : Math.max(0, likesCount - 1)
+        const clientId = getOrCreateClientId()
+        if (!clientId) return
 
-        setLikesCount(newCount)
-        onLikesChange(newsId, newCount)
+        const previousLiked = liked
+        const previousCount = likesCount
+
+        // Optimistic UI inmediato
+        const isLiking = !liked
+        const optimisticCount = isLiking ? likesCount + 1 : Math.max(0, likesCount - 1)
+
+        setLikesCount(optimisticCount)
+        onLikesChange(newsId, optimisticCount)
         onLikedToggle(newsId, isLiking)
 
         try {
-            const rpcName = isLiking ? 'increment_likes' : 'decrement_likes'
-            const { error } = await supabase.rpc(rpcName, { row_id: newsId })
-            if (error) throw error
+            const { data, error } = await supabase.rpc('toggle_news_like', {
+                p_news_id: newsId,
+                p_client_id: clientId
+            }) as { data: ToggleLikeResponse | null; error: Error | null }
+
+            if (error || !data) throw (error || new Error('Respuesta inválida'))
+
+            // Sincronización con el valor definitivo retornado por PostgreSQL
+            setLikesCount(data.likes_count)
+            onLikesChange(newsId, data.likes_count)
+            onLikedToggle(newsId, data.liked)
         } catch (error) {
             console.error("Error toggling like:", error)
-            // Revertir
-            const revertCount = isLiking ? newCount - 1 : newCount + 1
-            setLikesCount(revertCount)
-            onLikesChange(newsId, revertCount)
-            onLikedToggle(newsId, !isLiking)
+            // Revertir limpiamente al estado previo
+            setLikesCount(previousCount)
+            onLikesChange(newsId, previousCount)
+            onLikedToggle(newsId, previousLiked)
         }
     }
 

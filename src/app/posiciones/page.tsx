@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Trophy, Medal, AlertCircle, Loader2, Frown, MapPin } from 'lucide-react';
+import { compareFederativeStandings, normalizeStandingStats, type MatchReference } from '@/lib/tiebreakerEngine';
 
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
@@ -213,20 +214,11 @@ export default function PosicionesPage() {
         });
       }
 
-      // Convertir a Array y Ordenar bajo Jerarquía Estricta FIVB
+      // Convertir a Array y Ordenar bajo Jerarquía Oficial FEVA / FVF
       const sortedTable = Array.from(table.values()).sort((a, b) => {
-        // 1. Partidos Ganados (PG)
-        if (b.pg !== a.pg) return b.pg - a.pg;
-        // 2. Puntos (PTS)
-        if (b.pts !== a.pts) return b.pts - a.pts;
-        // 3. Cociente de Sets
-        const setRatioA = a.sc === 0 ? a.sf : a.sf / a.sc;
-        const setRatioB = b.sc === 0 ? b.sf : b.sf / b.sc;
-        if (setRatioB !== setRatioA) return setRatioB - setRatioA;
-        // 4. Cociente de Tantos / Diferencia de Puntos
-        const difA = a.pf - a.pc;
-        const difB = b.pf - b.pc;
-        return difB - difA;
+        const normA = normalizeStandingStats(a);
+        const normB = normalizeStandingStats(b);
+        return compareFederativeStandings(normA, normB, (matches || []) as unknown as MatchReference[]);
       });
 
       setStandings(sortedTable);
@@ -373,8 +365,8 @@ export default function PosicionesPage() {
                           {index > 2 && <span>{index + 1}</span>}
                         </td>
                         <td className="px-4 py-4 font-bold text-slate-800 dark:text-white whitespace-nowrap flex items-center gap-3">
-                          <img src={row.team.shield_url || '/placeholder.png'} className="w-6 h-6 object-contain" alt="" />
-                          {row.team.name}
+                          <img src={row.team?.shield_url || '/placeholder.png'} className="w-6 h-6 object-contain" alt="" />
+                          {row.team?.name || row.name}
                         </td>
                         <td className="px-4 py-4 font-black text-center text-tdf-blue dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 text-base">
                           {row.pts}
@@ -419,7 +411,7 @@ export default function PosicionesPage() {
             <div className="mt-4 flex items-start gap-2 text-xs text-slate-400 px-2">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <p>
-                PTS: Puntos • PJ: Jugados • PG: Ganados • PP: Perdidos • DIF: Diferencia de Puntos (PF-PC) — Criterio de desempate si igualan en PTS •
+                PTS: Puntos • PJ: Jugados • PG: Ganados • PP: Perdidos • DIF: Diferencia de Puntos (PF-PC) — Criterios oficiales de clasificación y desempate FEVA / FVF •
                 Se suman 3 pts por victoria clara (3-0/3-1) y 2 pts por tie-break (3-2).
               </p>
             </div>

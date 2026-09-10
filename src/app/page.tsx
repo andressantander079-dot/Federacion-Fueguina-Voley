@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from 'react'
 import Navbar from '@/components/layout/Navbar'
 import SponsorsBanner from '@/components/home/SponsorsBanner'
